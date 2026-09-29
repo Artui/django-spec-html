@@ -13,6 +13,13 @@ no machine's path, and carries the process id so two runs never share a file.
 
 Each test app belongs to the tests of one concern, so the models one set of
 tests needs never grow into another's.
+
+One template directory, and no app templates: ``SpecFormView`` renders a page,
+and the one template its tests and the forms example on the HTTP page render
+is the whole of what the suite needs. It holds a form tag, the CSRF token, the
+form and a named submit button - the page a person posts - so what those tests
+render is what a project's own template would send back. The path is built
+from this file's location, so it holds no machine's path.
 """
 
 from __future__ import annotations
@@ -43,3 +50,10 @@ DATABASES = {
 }
 
 USE_TZ = True
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [os.path.join(os.path.dirname(__file__), "templates")],
+    }
+]
