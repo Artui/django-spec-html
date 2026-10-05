@@ -24,6 +24,8 @@ from django.test import AsyncRequestFactory, RequestFactory
 from django.urls import get_resolver
 
 from django_service_specs import (
+    ActionUnavailable,
+    AdditionalInputRequired,
     DispatchError,
     InvalidArguments,
     NotPermitted,
@@ -186,7 +188,9 @@ def test_the_pages_status_table_is_the_one_shipped() -> None:
         NotPermitted(),
         PrincipalUnavailable(),
         ServiceNotFound(),
+        ActionUnavailable(code="c"),
         ServiceConflict(),
+        AdditionalInputRequired("x", schema={}),
         ServiceError(),
         UnsupportedMediaType(),
         DispatchError(),

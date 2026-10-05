@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from django.contrib.auth import get_user_model
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 
 from django_service_specs.authorization.permission_check import PermissionCheck
 from django_service_specs.authorization.unrestricted import Unrestricted
@@ -16,6 +16,8 @@ from django_service_specs.output.presenter import Presenter
 from django_service_specs.parameters.parameter import Parameter
 from django_service_specs.parameters.parameters import Parameters
 from django_service_specs.pool.pool_seeds import DEFAULT_POOL_SEEDS
+from django_service_specs.specs.service_spec import ServiceSpec
+from django_service_specs.types.affordance import Affordance
 from django_service_specs.validation.validation_context import ValidationContext
 from django_service_specs.validation.validator import Validator
 from tests.dispatch_app.models import Note
@@ -125,3 +127,42 @@ def shaping_refused(source: str, returned: str) -> str:
         f"spec but {source} returned {returned}, which is not a Django QuerySet. Drop the "
         "shaping fields or have the callable return a QuerySet."
     )
+
+
+class NoteRows(Presenter):
+    """Renders a note, or a mapping shaped like one, as its pk and title."""
+
+    def output(self) -> Output:
+        return Output((OutputField("id", "integer"), OutputField("title", "string")))
+
+    def present(self, value: Any) -> Any:
+        if isinstance(value, Mapping):
+            return {"id": value["id"], "title": value["title"]}
+        return {"id": value.pk, "title": value.title}
+
+
+# Renaming a note, with one condition of each kind, so every path that answers
+# a selector spec's ``affordances`` is asked both: a condition on the row, and
+# a callable over the seeds. ``EDIT`` declares none, so its answer is always
+# available.
+NOT_ARCHIVED = Affordance(
+    code="note_archived", reason="An archived note cannot be renamed.", when=Q(archived=False)
+)
+BOOKS_OPEN = Affordance(
+    code="books_closed", reason="Renaming is paused while the books close.", when=lambda: True
+)
+BOOKS_CLOSED = Affordance(
+    code="books_closed", reason="Renaming is paused while the books close.", when=lambda: False
+)
+RENAME = ServiceSpec(service=Record(), permissions=OPEN, affordances=[NOT_ARCHIVED, BOOKS_OPEN])
+EDIT = ServiceSpec(service=Record(), permissions=OPEN)
+REFUSED_ARCHIVED = {
+    "available": False,
+    "code": "note_archived",
+    "reason": "An archived note cannot be renamed.",
+}
+REFUSED_CLOSED = {
+    "available": False,
+    "code": "books_closed",
+    "reason": "Renaming is paused while the books close.",
+}

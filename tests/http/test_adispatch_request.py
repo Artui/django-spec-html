@@ -23,7 +23,15 @@ from django_service_specs.http.adispatch_request import adispatch_request
 from django_service_specs.parameters.parameters import Parameters
 from django_service_specs.specs.service_spec import ServiceSpec
 from django_service_specs.validation.unknown_arguments import UnknownArguments
-from tests.dispatch.utils import TENANT_SEEDS, Record, Refuse, Titled, make_user
+from tests.dispatch.utils import (
+    REFUSED_ARCHIVED,
+    RENAME,
+    TENANT_SEEDS,
+    Record,
+    Refuse,
+    Titled,
+    make_user,
+)
 from tests.dispatch_app.models import Note
 from tests.http.utils import ASYNC_FACTORY, Conflicting, body, note_spec, notes_spec, titled_spec
 
@@ -151,3 +159,14 @@ async def test_the_grant_seeds_and_policy_reach_adispatch() -> None:
     )
     assert response.status_code == 200
     assert spec.service.calls[0]["tenant"] == "tenant-of-grace"
+
+
+async def test_each_presented_row_carries_its_affordances(ada: Any) -> None:
+    await Note.objects.acreate(owner=ada, title="Two", archived=True)
+
+    response = await adispatch_request(notes_spec(affordances={"rename": RENAME}), get(ada))
+
+    assert body(response) == [
+        {"title": "One", "affordances": {"rename": {"available": True}}},
+        {"title": "Two", "affordances": {"rename": REFUSED_ARCHIVED}},
+    ]

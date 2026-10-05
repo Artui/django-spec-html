@@ -8,6 +8,7 @@ translations included.
 from __future__ import annotations
 
 import json
+from types import MappingProxyType
 from typing import Any, ClassVar
 
 import pytest
@@ -20,6 +21,8 @@ from django_service_specs.authorization.principal_unavailable import PrincipalUn
 from django_service_specs.http.error_response import error_response
 from django_service_specs.http.unsupported_media_type import UnsupportedMediaType
 from django_service_specs.parameters.invalid_arguments import InvalidArguments
+from django_service_specs.services.action_unavailable import ActionUnavailable
+from django_service_specs.services.additional_input_required import AdditionalInputRequired
 from django_service_specs.services.service_conflict import ServiceConflict
 from django_service_specs.services.service_error import ServiceError
 from django_service_specs.services.service_not_found import ServiceNotFound
@@ -75,6 +78,71 @@ def test_invalid_arguments_is_400_with_the_tree_as_the_body() -> None:
         400,
         {"title": ["Required."], "books": {"1": {"non_field_errors": ["Expected an object."]}}},
     )
+
+
+class TestActionUnavailable:
+    """A conflict like any other, with the affordance's code beside the sentence."""
+
+    def test_it_is_409_with_the_code_beside_the_detail(self) -> None:
+        exc = ActionUnavailable("A shipped order cannot be cancelled.", code="order_shipped")
+        assert answered(exc) == (
+            409,
+            {"detail": "A shipped order cannot be cancelled.", "code": "order_shipped"},
+        )
+
+    def test_it_is_answered_before_its_base(self) -> None:
+        # Its base answers 409 too, so only the body tells the two arms apart.
+        assert "code" in answered(ActionUnavailable(code="order_shipped"))[1]
+
+
+class TestAdditionalInputRequired:
+    """A 422 like any other service error, with what is missing beside the sentence."""
+
+    # The guard is ``isinstance(exc, AdditionalInputRequired) and exc.schema
+    # is not None``. The first test holds the pair; the second holds the
+    # second half (without it, a missing schema would be written as null);
+    # the parametrized ``Postponed`` row above holds the first half, since a
+    # plain service error has no ``schema`` to read.
+    def test_a_schema_of_any_mapping_is_written_at_any_depth(self) -> None:
+        # A frozen mapping at the top, in a property, in a list and in a tuple:
+        # each is an object on the wire, where the encoder alone would refuse it.
+        frozen = MappingProxyType
+        schema = frozen(
+            {
+                "choice": frozen({"oneOf": [frozen({"const": 1})], "examples": (frozen({}),)}),
+            }
+        )
+        exc = AdditionalInputRequired("Pick one.", schema=schema)
+        assert answered(exc) == (
+            422,
+            {
+                "detail": "Pick one.",
+                "schema": {"choice": {"oneOf": [{"const": 1}], "examples": [{}]}},
+            },
+        )
+
+    def test_a_schema_joins_the_detail(self) -> None:
+        exc = AdditionalInputRequired(
+            "120 rows match. Confirm to proceed.",
+            schema={"confirmed": {"type": "boolean"}, "count": {"type": "integer", "minimum": 1}},
+        )
+        # ``minimum`` stays a number: DRF would write it as the string "1".
+        assert answered(exc) == (
+            422,
+            {
+                "detail": "120 rows match. Confirm to proceed.",
+                "schema": {
+                    "confirmed": {"type": "boolean"},
+                    "count": {"type": "integer", "minimum": 1},
+                },
+            },
+        )
+
+    def test_without_a_schema_the_body_is_the_plain_detail(self) -> None:
+        assert answered(AdditionalInputRequired("Confirm to proceed.")) == (
+            422,
+            {"detail": "Confirm to proceed."},
+        )
 
 
 class TestServiceValidationError:
@@ -137,6 +205,8 @@ def test_no_refusal_is_ever_a_401() -> None:
         ServiceValidationError("x"),
         ServiceNotFound(),
         ServiceConflict(),
+        ActionUnavailable(code="c"),
+        AdditionalInputRequired("x", schema={}),
         UnsupportedMediaType(),
     ]
     assert 401 not in {error_response(exc).status_code for exc in refusals}

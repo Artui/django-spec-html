@@ -26,6 +26,7 @@ from django.utils.translation import gettext
 from django.views import View
 
 from django_service_specs.authorization.principal_unavailable import PrincipalUnavailable
+from django_service_specs.authorization.utils import is_deactivated
 from django_service_specs.parameters.parameters import Parameters
 from django_service_specs.pool.pool_seeds import DEFAULT_POOL_SEEDS, PoolSeeds
 from django_service_specs.specs.selector_spec import SelectorSpec
@@ -47,16 +48,14 @@ def request_principal(request: HttpRequest) -> Any:
     whether anonymous may act, and the spec declares that check; refusing it
     here would make every spec's policy stricter than the one it states.
 
-    A deactivated account is refused. ``ModelBackend`` never logs one in, but
-    ``AllowAllUsersModelBackend`` and a project's own backend may, and the
-    kernel's rule - the one ``resolve_principal`` enforces off HTTP - is that a
-    deactivated principal never acts. ``AnonymousUser.is_active`` is ``False``,
-    so the guard asks about authenticated users alone, and a custom user model
-    with no ``is_active`` reads as active, as ``ModelBackend`` reads it.
-
-    Each condition is held by its own test:
-    ``test_anonymous_reaches_the_permission_check`` (``is_authenticated``) and
-    ``test_the_request_user_is_the_principal`` (``not is_active``).
+    A deactivated account is refused, by the rule dispatch itself applies and
+    ``resolve_principal`` applies off HTTP: ``ModelBackend`` never logs one in,
+    but ``AllowAllUsersModelBackend`` and a project's own backend may. The rule
+    asks about authenticated users alone, since ``AnonymousUser.is_active`` is
+    ``False``, and a custom user model with no ``is_active`` reads as active.
+    Dispatch would refuse the same user; refusing here as well is what keeps
+    the request unread for one, as ``adispatch`` resolves a ``principal_id``
+    before looking at its arguments.
 
     Touching ``request.user`` evaluates the lazy object AuthenticationMiddleware
     leaves there, which is a session query, so the async entry point calls this
@@ -66,7 +65,7 @@ def request_principal(request: HttpRequest) -> Any:
         PrincipalUnavailable: an authenticated user whose ``is_active`` is false.
     """
     user = request.user
-    if user.is_authenticated and not getattr(user, "is_active", True):
+    if is_deactivated(user):
         raise PrincipalUnavailable()
     return user
 
@@ -116,19 +115,40 @@ def success_response(
 
     The default is djangorestframework-services': 204 for a service with
     nothing to present, 200 otherwise. A read whose value is ``None`` - an
-    ``allow_none`` retrieve that found nothing - answers ``null`` at 200,
-    because ``None`` is its value rather than the absence of one. Each
-    condition of the 204 rule is held by its own test:
+    ``allow_none`` retrieve that found nothing - answers ``null``, at 200 or
+    at the caller's status, because ``None`` is its value rather than the
+    absence of one. Each condition of what counts as nothing to present is
+    held by its own test:
     ``test_a_selector_that_allows_none_answers_null_at_200`` (the spec's kind)
     and ``test_a_service_with_a_body_is_200`` (the body).
 
     A 204 carries no body, whichever way it was chosen: it is the status that
-    says there is none, and a client may not read one.
+    says there is none, and a client may not read one. Like an empty body at
+    any other status, it carries no ``Content-Type``, which would describe
+    nothing, as DRF drops it.
+
+    **A service with nothing to present, at a caller's status other than
+    204, answers an empty body with no** ``Content-Type``, as
+    djangorestframework-services answers it: DRF renders ``None`` as no bytes
+    and then drops the header, which would describe nothing. The status stays
+    the caller's, even where an output selector's re-read found nothing,
+    which djangorestframework-services answers 204 whatever the caller named.
+    That is a departure on purpose: the caller named the status, and the
+    kernel already says what an empty re-read is, the value ``None``. Held by
+    ``test_an_empty_re_read_keeps_the_callers_status``.
     """
+    nothing = isinstance(spec, ServiceSpec) and body is None
     if success_status is None:
-        success_status = 204 if isinstance(spec, ServiceSpec) and body is None else 200
-    if success_status == 204:
-        return HttpResponse(status=204)
+        success_status = 204 if nothing else 200
+    if success_status == 204 or nothing:
+        # No body either way: a 204 says there is none, whatever was presented.
+        # ``HttpResponse`` stamps ``text/html`` on whatever it is given, and an
+        # empty body is no HTML document. Each side is held by its own test:
+        # test_a_204_carries_no_body_and_no_content_type (a read's body at 204)
+        # and test_a_service_presenting_nothing_answers_an_empty_body_at_the_callers_status.
+        response = HttpResponse(status=success_status)
+        del response["Content-Type"]
+        return response
     # ``safe=False`` because a list is as much a body as an object is; the
     # default encoder renders lazy translations, decimals, dates and UUIDs.
     return JsonResponse(body, status=success_status, safe=False)

@@ -31,9 +31,14 @@ It reads the principal and the arguments, dispatches with the `grant`,
 - **A not-found result** is 404, `{"detail": "Not found."}`.
 - **A success** is the presented value, bare, with no envelope around it. The
   status is the caller's `success_status`, or else 204 for a service with
-  nothing to present and 200 for everything else. A 204 has no body. A read
-  whose value is `None` (an `allow_none` retrieve that found nothing) answers
-  `null` at 200, since `None` is its value.
+  nothing to present and 200 for everything else. A 204 has no body. A service
+  with nothing to present at any other status the caller names answers an
+  empty body with no `Content-Type`, at that status. djangorestframework-services
+  answers the same, except that where an output selector ran and found nothing
+  it answers 204 whatever the caller named. Here the status stays the caller's:
+  the caller named it, and an empty re-read already has a meaning, the value
+  `None`. A read whose value is `None` (an `allow_none`
+  retrieve that found nothing) answers `null`, since `None` is its value.
 - **A refusal of either family** is
   [`error_response`](#refusals)'s answer. Anything else propagates, a
   configuration error included: it is wrong for every caller, so it belongs to
@@ -137,15 +142,20 @@ user rather than being pre-empted.
 **A deactivated account is refused**, as `PrincipalUnavailable` (403), before
 anything else is read. Django's `ModelBackend` never logs one in, but
 `AllowAllUsersModelBackend` and a project's own backend may, and a deactivated
-principal never acts, on HTTP or off it.
+principal never acts, on HTTP or off it. `dispatch` refuses one by the same
+rule, so a hand-written view handing `request.user` to it is covered too; the
+entry points refuse first so that the request is never read.
 
 ## Refusals
 
 [`error_response`][django_service_specs.http.error_response.error_response]
 answers both [families](arguments.md#two-families-of-error), with the statuses
-djangorestframework-services uses. One body differs from its answer: a
+djangorestframework-services uses. Two bodies differ from its answer. A
 service's string or list detail, which DRF answers as a bare list and this as
-a field map under `non_field_errors`, so every 400 here has one shape:
+a field map under `non_field_errors`, so every 400 here has one shape. And an
+`AdditionalInputRequired` schema, which DRF reads as an error detail and so
+writes with every value a string (`"minimum": "1"`), and this writes as the
+JSON Schema it is:
 
 | Refusal | Status | Body |
 | --- | --- | --- |
@@ -153,7 +163,9 @@ a field map under `non_field_errors`, so every 400 here has one shape:
 | `ServiceValidationError` | 400 | its detail, as a field map |
 | `NotPermitted`, `PrincipalUnavailable` | 403 | `{"detail": message}` |
 | `ServiceNotFound` | 404 | `{"detail": message}` |
+| `ActionUnavailable` | 409 | `{"detail": message, "code": code}` |
 | `ServiceConflict` | 409 | `{"detail": message}` |
+| `AdditionalInputRequired`, with a schema | 422 | `{"detail": message, "schema": schema}` |
 | `ServiceError` | 422 | `{"detail": message}` |
 | `UnsupportedMediaType` | 415 | `{"detail": message}` |
 | `DispatchError` | 400 | `{"detail": message}` |

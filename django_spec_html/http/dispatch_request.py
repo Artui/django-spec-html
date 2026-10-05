@@ -41,7 +41,8 @@ def dispatch_request(
        spec's permission check is what decides whether anonymous may act. An
        authenticated user whose ``is_active`` is false is refused as
        ``PrincipalUnavailable``: a backend other than ``ModelBackend`` can log
-       one in, and a deactivated principal never acts.
+       one in, and a deactivated principal never acts. Dispatch refuses one by
+       the same rule; refusing here as well keeps the request unread for it.
     2. **The arguments** are
        [`request_arguments`][django_service_specs.http.request_arguments.request_arguments]
        for ``spec.parameters()``, with ``url_kwargs`` merged last.
@@ -65,8 +66,9 @@ def dispatch_request(
     """
     try:
         # The principal first, as ``adispatch`` resolves a ``principal_id``
-        # before its shape check: a deactivated account is refused without
-        # learning anything about its request.
+        # and ``dispatch`` refuses a deactivated principal before its shape
+        # check: a deactivated account is refused without learning anything
+        # about its request.
         principal = request_principal(request)
         arguments = request_arguments(request, spec.parameters(), url_kwargs=url_kwargs)
         result = dispatch(
