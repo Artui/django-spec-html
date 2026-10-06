@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 import pytest
+from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.functional import SimpleLazyObject
@@ -14,7 +15,7 @@ from django_service_specs.http.async_spec_view import AsyncSpecView
 from django_service_specs.validation.unknown_arguments import UnknownArguments
 from tests.dispatch.utils import TENANT_SEEDS, make_user
 from tests.dispatch_app.models import Note
-from tests.http.utils import ASYNC_FACTORY, body, note_spec, notes_spec, titled_spec
+from tests.http.utils import ASYNC_FACTORY, DEEP_JSON, body, note_spec, notes_spec, titled_spec
 
 # transaction=True for the reason test_adispatch_request gives.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -90,6 +91,25 @@ async def test_a_seed_reaches_the_service(ada: Any) -> None:
     view = AsyncSpecView.as_view(spec=spec, pool_seeds=TENANT_SEEDS)
     await send(view, "POST", ada, {"title": "x"})
     assert spec.service.calls[0]["tenant"] == "tenant-of-ada"
+
+
+async def test_a_body_nested_past_the_decoder_is_the_clients_400(ada: Any) -> None:
+    # Decoded off the loop, in the executor hop, where the RecursionError
+    # would otherwise reach the host as surely as on the sync path. That
+    # thread can have a deeper stack than the loop's, so the body is checked
+    # against the decoder there: one it decodes would be refused as "Expected
+    # an object." and never reach the refusal this names.
+    with pytest.raises(RecursionError):
+        await sync_to_async(json.loads, thread_sensitive=True)(DEEP_JSON)
+    spec = titled_spec({"id": 1})
+    request = ASYNC_FACTORY.generic("POST", "/", data=DEEP_JSON, content_type="application/json")
+    request.user = ada
+    response = await AsyncSpecView.as_view(spec=spec)(request)
+    assert (response.status_code, body(response)) == (
+        400,
+        {"non_field_errors": ["The request body is not valid JSON."]},
+    )
+    assert spec.service.calls == []
 
 
 async def test_an_undeclared_url_kwarg_propagates_from_the_executor_hop(ada: Any) -> None:

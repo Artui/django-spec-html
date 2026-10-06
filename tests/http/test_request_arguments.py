@@ -23,6 +23,7 @@ from django_service_specs.http.unsupported_media_type import UnsupportedMediaTyp
 from django_service_specs.parameters.invalid_arguments import InvalidArguments
 from django_service_specs.parameters.parameter import Parameter
 from django_service_specs.parameters.parameters import Parameters
+from tests.http.utils import DEEP_JSON
 
 FACTORY = RequestFactory()
 FORM = "application/x-www-form-urlencoded"
@@ -245,12 +246,31 @@ class TestJsonBody:
         assert request.content_type == "application/json"
         assert read(request) == {}
 
-    @pytest.mark.parametrize("body", [b"{", b"{'count': 2}", b'{"title": "\xff"}', b'{"n": NaN}'])
+    @pytest.mark.parametrize(
+        "body",
+        [
+            b"{",
+            b"{'count': 2}",
+            b'{"title": "\xff"}',
+            b'{"n": NaN}',
+            pytest.param(b'{"n": ' + b"1" * 5000 + b"}", id="an-integer-of-5000-digits"),
+        ],
+    )
     def test_a_malformed_body_is_refused_under_non_field_errors(self, body: bytes) -> None:
         # NaN and the infinities are Python's extension, not JSON: no JSON
         # encoder produces one, and a decoder that took one would hand a
-        # Validator a value coerce_flat refuses on the flat route.
+        # Validator a value coerce_flat refuses on the flat route. The
+        # integer is longer than the 4300 digits Python converts from a
+        # string, which the decoder raises as a bare ValueError.
         request = FACTORY.post("/", data=body, content_type="application/json")
+        assert refusal(request) == {"non_field_errors": [NOT_JSON]}
+
+    def test_a_body_nested_past_the_decoder_is_refused_under_non_field_errors(self) -> None:
+        # Sized so the decoder's own refusal is the one that answers: had it
+        # decoded, the list would be refused as "Expected an object." instead.
+        with pytest.raises(RecursionError):
+            json.loads(DEEP_JSON)
+        request = FACTORY.post("/", data=DEEP_JSON, content_type="application/json")
         assert refusal(request) == {"non_field_errors": [NOT_JSON]}
 
     @pytest.mark.parametrize("payload", [[1, 2], "count", 3, None])

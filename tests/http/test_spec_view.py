@@ -14,7 +14,15 @@ from django_service_specs.http.spec_view import SpecView
 from django_service_specs.validation.unknown_arguments import UnknownArguments
 from tests.dispatch.utils import TENANT_SEEDS, make_user
 from tests.dispatch_app.models import Note
-from tests.http.utils import FACTORY, body, note_spec, notes_spec, signed_in, titled_spec
+from tests.http.utils import (
+    DEEP_JSON,
+    FACTORY,
+    body,
+    note_spec,
+    notes_spec,
+    signed_in,
+    titled_spec,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -99,6 +107,19 @@ class TestServing:
         response = send(view, "POST", ada, {"title": "x", "colour": "red"})
         assert (response.status_code, body(response)) == (201, {"id": 1})
         assert spec.service.calls[0]["tenant"] == "tenant-of-ada"
+
+    def test_a_body_nested_past_the_decoder_is_the_clients_400(self, ada: Any) -> None:
+        # The decoder raises RecursionError, which no refusal above
+        # request_arguments catches, so unless it is refused there the
+        # request is the host's 500 rather than the client's 400.
+        spec = titled_spec({"id": 1})
+        request = FACTORY.generic("POST", "/", data=DEEP_JSON, content_type="application/json")
+        response = SpecView.as_view(spec=spec)(signed_in(request, ada))
+        assert (response.status_code, body(response)) == (
+            400,
+            {"non_field_errors": ["The request body is not valid JSON."]},
+        )
+        assert spec.service.calls == []
 
     def test_a_subclass_may_declare_its_spec(self, ada: Any) -> None:
         class Notes(SpecView):

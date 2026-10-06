@@ -21,6 +21,22 @@ from tests.dispatch.utils import OPEN, PK, Record, Titled, Titles, note_by_pk, n
 FACTORY = RequestFactory()
 ASYNC_FACTORY = AsyncRequestFactory()
 
+DEEP_JSON = b"[" * 1_000_000 + b"]" * 1_000_000
+"""A body nested past the decoder's reach, which ``json.loads`` answers with ``RecursionError``.
+
+The reach moves with the interpreter and with the thread. Through 3.13 it is
+a counter: about 1,000 levels on 3.10 and 3.11, and 10,000 on 3.12 and 3.13.
+From 3.14 it is the stack, and so the environment the suite runs in. On
+macOS: about 74,000 levels on an 8 MB main thread, 150,000 on the 16 MB
+thread macOS gives Python's workers, which is where the async path decodes,
+and 600,000 on the 64 MB main thread a ``make`` target runs with, because
+macOS make raises the stack limit to the hard one for its children. On
+Linux with an 8 MB stack, about 87,000 on either thread. A body sized for
+one of those decodes under another, and a test sent it is refused as
+"Expected an object." without reaching the refusal it names. 1,000,000
+levels is past each, at 2 MB, under the 2.5 MB body Django reads by default.
+"""
+
 
 def signed_in(request: HttpRequest, user: Any = None) -> HttpRequest:
     """``request`` as AuthenticationMiddleware leaves it: carrying its user, anonymous or not."""
