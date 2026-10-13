@@ -18,6 +18,7 @@ import pytest
 from django import forms
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import Http404, HttpResponse
 from django.urls import path, reverse_lazy
 from django.utils import timezone, translation
@@ -92,6 +93,23 @@ class WithAnExtra(EntryForm):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.fields["extra"] = forms.CharField(required=False)
+
+
+class Held:
+    """The file a page shows as one the row holds: a name and a url, as a ``FieldFile`` has."""
+
+    name = "covers/old.txt"
+    url = "/media/covers/old.txt"
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class CoverForm(forms.Form):
+    """An optional file shown beside the one held, so its widget renders the clear checkbox."""
+
+    title = forms.CharField()
+    cover = forms.FileField(required=False, initial=Held())
 
 
 class Watched(FormValidator):
@@ -416,6 +434,38 @@ class TestReadingThroughTheWidgets:
         response = post(form_view(spec), ada, {"title": "Hi", "code": "E-9"})
         assert response.status_code == 302
         assert received(spec)["code"] == "E-1"
+
+
+class TestClearingAFile:
+    """The page's clear checkbox, which the widget reads as the field's value."""
+
+    def test_the_rendered_checkbox_ticked_clears_the_file(self, ada: Any) -> None:
+        spec = entry_spec(validator=Watched(CoverForm))
+        page = get(form_view(spec), ada).render()
+        # The checkbox the page offers, named as the Validator declares it.
+        assert b'type="checkbox" name="cover-clear"' in page.content
+        response = post(form_view(spec), ada, {"title": "Hi", "cover-clear": "on"})
+        assert response.status_code == 302
+        # The form's own value for a cleared file, as the Validator returns it.
+        assert received(spec)["cover"] is False
+
+    def test_left_unticked_the_held_file_is_kept(self, ada: Any) -> None:
+        spec = entry_spec(validator=Watched(CoverForm))
+        assert post(form_view(spec), ada, {"title": "Hi"}).status_code == 302
+        assert isinstance(received(spec)["cover"], Held)
+        assert spec.validator.calls == [{"title": "Hi"}]
+
+    def test_an_upload_and_the_ticked_box_are_refused_in_the_form_s_words(self, ada: Any) -> None:
+        spec = entry_spec(validator=Watched(CoverForm))
+        upload = SimpleUploadedFile("new.txt", b"new")
+        data = {"title": "Hi", "cover": upload, "cover-clear": "on"}
+        response = post(form_view(spec), ada, data)
+        assert response.status_code == 400
+        # The Validator's form answered, not the shape check.
+        assert validated(spec) == 1
+        contradiction = forms.FileField.default_error_messages["contradiction"]
+        assert refused(response) == {"cover": [contradiction]}
+        assert spec.service.calls == []
 
 
 class TestRefusals:

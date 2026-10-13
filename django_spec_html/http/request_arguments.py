@@ -9,6 +9,7 @@ from typing import Any, NoReturn
 
 from django.http import HttpRequest, QueryDict
 from django.http.multipartparser import MultiPartParser
+from django.utils.datastructures import MultiValueDict
 from django.utils.translation import gettext
 
 from django_service_specs.http.unsupported_media_type import UnsupportedMediaType
@@ -21,6 +22,13 @@ from django_service_specs.parameters.utils import NON_FIELD_ERRORS, expected_typ
 
 _CSRF_FIELD = "csrfmiddlewaretoken"
 """The field ``{% csrf_token %}`` renders into a form: Django's, and never an argument."""
+
+_COMMA_SEPARABLE = ("number", "integer", "boolean")
+"""The element types a comma can never be part of, so ``?ids=1,2`` is two elements, not one.
+
+A string can hold a comma, and so can anything the reader leaves as a string
+(a decimal, a date), so those arrays take a value whole, unless choices say
+otherwise: see ``_splits``."""
 
 _URLENCODED = "application/x-www-form-urlencoded"
 _MULTIPART = "multipart/form-data"
@@ -36,9 +44,9 @@ def request_arguments(
     - **GET and HEAD**: the query string, which is flat. Any body is ignored.
     - **Any other method, with an** ``application/json`` **body**: the body,
       read as it is. It must be a JSON object; an empty body is no arguments,
-      as DRF's parser reads one. Its values are not coerced: a JSON caller
-      that sends ``"5"`` for an integer has sent a string, and the shape check
-      says so.
+      as DRF's parser reads one. Its values are not coerced here: a ``"5"``
+      sent for an integer is the shape check's to read, as it reads one from
+      any caller.
     - **Any other method, with a form body** (``application/x-www-form-urlencoded``
       or ``multipart/form-data``): the fields, which are flat. Django parses
       one into ``request.POST`` for POST alone, so a PUT, PATCH or DELETE
@@ -51,7 +59,16 @@ def request_arguments(
 
     **A flat source** is read by the declaration. A parameter of type
     ``array`` takes every value its key was sent with, and anything else takes
-    the last, as ``QueryDict`` reads a repeated key. **A blank value is
+    the last, as ``QueryDict`` reads a repeated key. **An array of numbers,
+    integers or booleans also reads a value holding commas as its elements**,
+    ``?ids=1,2`` as ``[1, 2]`` with the space around a part trimmed, because
+    a comma cannot be part of such a value and it is the spelling a
+    django-filter CSV filter advertises; repeated keys and commas may mix. An
+    empty part (``?ids=1,,2``) is not dropped as a blank element is: it is
+    refused at its index as any malformed element is. A string array is
+    split only where its choices hold no comma, as an ordering's do, so
+    ``?o=title,-pk`` is ``["title", "-pk"]``; otherwise it is never split,
+    since a comma is part of a string. **A blank value is
     absent unless** ``""`` **is one the parameter can take**: a plain string
     can, and a number, a boolean, a date, a decimal, or a string whose
     choices leave the blank out cannot. A flat wire has no other spelling of
@@ -63,10 +80,17 @@ def request_arguments(
     which leaves an undeclared key as it is, so the closed argument set in
     dispatch stays the one place that refuses it, under the caller's policy.
 
-    **Files are not arguments.** Parameters have no file type, so an upload in
-    a multipart body is never one. A POST's uploads are in ``request.FILES``,
-    which Django fills for POST alone: those in a PUT, PATCH or DELETE body
-    parsed here are dropped.
+    **An upload is an argument**, under the name its part carries, as each
+    field is: the upload itself, Django's ``UploadedFile``, for a parameter of
+    type ``file``, every upload under the name for an array, and the last
+    of repeated ones for anything else. It replaces a field of the same name,
+    since a browser sends a file input only as a file: a single value reads as
+    the upload in DRF's merged data too, where an array there would hold the
+    field and the uploads together. A POST's uploads are Django's own ``request.FILES``; those in a
+    PUT, PATCH or DELETE body are parsed here with its fields. An upload under
+    a name ``parameters`` do not declare passes through like an undeclared
+    field, for the closed argument set to refuse, and a file input left empty
+    is no upload, so it is absent. Only a multipart body carries one.
 
     **URL kwargs are merged last**, through ``coerce_flat`` as well since a
     path segment with no converter is a string. The route wins a clash, as it
@@ -90,7 +114,10 @@ def request_arguments(
         return coerce_flat(parameters, {**_flat(parameters, request.GET), **route})
     if request.content_type == "application/json":
         return {**_json_object(request), **coerce_flat(parameters, route)}
-    return coerce_flat(parameters, {**_flat(parameters, _form(request)), **route})
+    fields, uploads = _form(request)
+    return coerce_flat(
+        parameters, {**_flat(parameters, fields), **_uploads(parameters, uploads), **route}
+    )
 
 
 def _flat(parameters: Parameters, source: QueryDict) -> dict[str, Any]:
@@ -106,7 +133,23 @@ def _flat(parameters: Parameters, source: QueryDict) -> dict[str, Any]:
         # second, without which every declared value would become a list).
         if param is not None and param.type == "array":
             keep = _takes_blank(param.items, param)
-            values = [value for value in source.getlist(key) if keep or value != ""]
+            # The element type and its choices decide whether a value is split,
+            # and _splits names the test holding each condition. A blank is
+            # dropped first, so an empty part left by a stray comma is the
+            # reader's malformed element rather than a blank.
+            split = _splits(param)
+            values: list[str] = []
+            for value in source.getlist(key):
+                # One branch to coverage, so each condition is held by its own
+                # test: test_blank_elements_of_a_non_string_array_are_dropped
+                # (the blank: without it every element is dropped) and
+                # test_blank_elements_of_a_string_array_are_kept (``not keep``).
+                if value == "" and not keep:
+                    continue
+                if split:
+                    values.extend(part.strip() for part in value.split(","))
+                else:
+                    values.append(value)
             if values:
                 raw[key] = values
             continue
@@ -127,12 +170,43 @@ def _flat(parameters: Parameters, source: QueryDict) -> dict[str, Any]:
     return raw
 
 
+def _splits(param: Parameter) -> bool:
+    """Whether a comma in one of the array's values separates elements, so ``?o=a,-b`` is two.
+
+    An element type that can never hold a comma splits. So does an array of
+    strings whose declared choices hold none: every element must be one of
+    them, so a value holding a comma can only be several, and refused whole it
+    would refuse the spelling django-filter's ``OrderingFilter`` takes,
+    ``?o=title,-pk``. Without choices, or with one choice that holds a comma,
+    a string array takes each value whole, since a comma may be part of it.
+    Repeated keys make a list either way, and the two may mix.
+
+    One branch to coverage, so each condition is held by its own test:
+    test_a_number_array_reads_a_comma_separated_value_as_its_elements (the
+    types that split),
+    test_an_array_with_no_declared_element_is_not_split_by_its_choices
+    (``"string"``: without it an undeclared element with comma-free choices
+    would split), test_a_string_array_is_not_split (the choices declared),
+    test_a_string_array_whose_choices_hold_a_comma_is_not_split (none holds a
+    comma), and test_a_string_array_whose_choices_hold_no_comma_is_split.
+    """
+    if param.items in _COMMA_SEPARABLE:
+        return True
+    return (
+        param.items == "string"
+        and param.choices is not None
+        and not any("," in str(choice) for choice in param.choices)
+    )
+
+
 def _takes_blank(json_type: object, param: Parameter, *, fmt: str | None = None) -> bool:
     """Whether ``""`` is a value of ``json_type`` under ``param``, so a blank is kept rather than absent.
 
     ``json_type`` is the parameter's own type, or an array's element type:
     ``None`` for an undeclared element, which ``coerce_flat`` leaves as the
     string it arrived as, and a ``Parameters`` for a row, which is no string.
+    An ``"any"`` parameter is untyped, and an untyped read is handed what was
+    sent, so its blank is kept as ``""`` as a string's is.
     A format names what a string decodes into, and no date or decimal is
     blank. ``choices`` constrain a scalar and each element of an array alike,
     so a blank they leave out is refused by the shape check rather than read
@@ -141,20 +215,35 @@ def _takes_blank(json_type: object, param: Parameter, *, fmt: str | None = None)
     One branch to coverage, so each condition is held by its own test:
     test_blank_elements_of_an_undeclared_element_type_are_kept (``None``),
     test_blank_elements_of_a_string_array_are_kept (``"string"``),
+    test_a_blank_untyped_read_is_kept (``"any"``),
     test_a_blank_date_is_absent (the format),
     test_a_blank_the_choices_leave_out_is_absent (the choices, whole),
     test_a_blank_string_is_kept (``choices is None``), and
     test_a_blank_the_choices_name_is_kept (``"" in choices``).
     """
     return (
-        (json_type is None or json_type == "string")
+        (json_type is None or json_type in ("string", "any"))
         and fmt is None
         and (param.choices is None or "" in param.choices)
     )
 
 
-def _form(request: HttpRequest) -> QueryDict:
-    """The form fields a request's body carries, whatever its method."""
+def _uploads(parameters: Parameters, source: MultiValueDict) -> dict[str, Any]:
+    """A body's uploads, by name: every one for an array, the last for anything else."""
+    # One branch to coverage, so each condition is held by its own test:
+    # test_an_undeclared_upload_passes_through_for_the_closed_set_to_refuse
+    # (the declaration) and test_a_file_takes_the_last_of_repeated_uploads (the
+    # array: without it every upload becomes a list).
+    return {
+        key: source.getlist(key)
+        if (param := parameters.get(key)) is not None and param.type == "array"
+        else source[key]
+        for key in source
+    }
+
+
+def _form(request: HttpRequest) -> tuple[QueryDict, MultiValueDict]:
+    """The form fields and the uploads a request's body carries, whatever its method."""
     if request.content_type not in (_URLENCODED, _MULTIPART):
         # Readable even once ``request.POST`` has been, as CsrfViewMiddleware
         # reads it: Django leaves the stream unread for a body it does not parse.
@@ -163,19 +252,31 @@ def _form(request: HttpRequest) -> QueryDict:
                 gettext('Unsupported media type "%(media_type)s" in request.')
                 % {"media_type": request.content_type}
             )
-        return QueryDict(encoding=request.encoding)
+        return QueryDict(encoding=request.encoding), MultiValueDict()
     if request.method == "POST":
         # Django's own parse, which CsrfViewMiddleware may already have done:
-        # the stream can be read once, and ``request.POST`` is where it went.
-        return request.POST
+        # the stream can be read once, and ``request.POST`` and
+        # ``request.FILES`` are where it went.
+        return request.POST, request.FILES
     if request.content_type == _URLENCODED:
-        return QueryDict(request.body, encoding=request.encoding)
-    # The parser Django runs for a POST, over the buffered body. Its files
-    # are discarded, since no parameter can declare one.
-    fields, _files = MultiPartParser(
-        request.META, BytesIO(request.body), request.upload_handlers, request.encoding
-    ).parse()
-    return fields
+        return QueryDict(request.body, encoding=request.encoding), MultiValueDict()
+    # The parser Django runs for a POST, which hands back the uploads beside
+    # the fields, fed from the request's own stream while nothing has read it.
+    # Read whole first, a body past DATA_UPLOAD_MAX_MEMORY_SIZE was refused
+    # with RequestDataTooBig, where the parser streams a file part to the
+    # upload handlers and bounds only the fields, so a PATCH refused the
+    # upload a POST took. Once the stream has been read, ``request.body`` is
+    # the buffer if something kept one, and raises RawPostDataException if
+    # not: parsing the spent stream would read no arguments at all and say
+    # nothing, where Django's own POST parse does the same.
+    # test_an_upload_past_the_body_size_limit_is_read_whatever_the_method
+    # holds the stream, and test_a_multipart_stream_read_without_a_buffer_is_refused
+    # the read one; a buffered body would parse from either, since Django
+    # rewinds the stream onto the buffer it keeps. ``_read_started`` is the flag Django's own POST parse
+    # reads to make the same choice; the stubs do not declare it.
+    started: bool = request._read_started  # ty: ignore[unresolved-attribute]
+    stream = BytesIO(request.body) if started else request
+    return MultiPartParser(request.META, stream, request.upload_handlers, request.encoding).parse()
 
 
 def _json_object(request: HttpRequest) -> dict[str, Any]:

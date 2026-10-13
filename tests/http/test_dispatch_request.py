@@ -27,6 +27,7 @@ from tests.dispatch.utils import (
     make_user,
 )
 from tests.dispatch_app.models import Note
+from tests.filters.utils import NoteFilters
 from tests.http.utils import (
     FACTORY,
     Conflicting,
@@ -70,6 +71,28 @@ class TestSuccess:
         response = dispatch_request(notes_spec(), signed_in(FACTORY.get("/"), ada))
         assert response.status_code == 200
         assert body(response) == [{"title": "One"}, {"title": "Two"}]
+
+    def test_a_csv_filter_reads_the_comma_separated_spelling_its_help_advertises(
+        self, ada: Any
+    ) -> None:
+        # ``?pks=1,2`` is what django-filter's help text promises for a CSV
+        # filter, so it must narrow the rows over the wire and not only as
+        # the list a JSON caller sends.
+        keys = [Note.objects.create(owner=ada, title=name).pk for name in ("One", "Two", "Three")]
+        spec = notes_spec(filter_set=NoteFilters)
+
+        response = dispatch_request(spec, signed_in(FACTORY.get(f"/?pks={keys[0]},{keys[2]}"), ada))
+        assert response.status_code == 200
+        assert body(response) == [{"title": "One"}, {"title": "Three"}]
+
+        between = dispatch_request(
+            spec, signed_in(FACTORY.get(f"/?pk_between={keys[1]}, {keys[2]}"), ada)
+        )
+        assert body(between) == [{"title": "Two"}, {"title": "Three"}]
+
+        refused = dispatch_request(spec, signed_in(FACTORY.get(f"/?pks={keys[0]},,x"), ada))
+        assert refused.status_code == 400
+        assert body(refused) == {"pks": {"1": ["Enter a number."], "2": ["Enter a number."]}}
 
     def test_each_presented_row_carries_its_affordances(self, ada: Any) -> None:
         Note.objects.create(owner=ada, title="One")

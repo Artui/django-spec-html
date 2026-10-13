@@ -10,6 +10,7 @@ from typing import Any, Final, cast
 
 from django import forms
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
+from django.forms.widgets import FILE_INPUT_CONTRADICTION
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBase, HttpResponseRedirect
 from django.shortcuts import resolve_url
 from django.utils.decorators import classonlymethod
@@ -312,6 +313,26 @@ def _form_arguments(
         if field.disabled:
             continue
         value = form[name].data
+        widget = field.widget
+        # A ticked clear checkbox is read by the file's widget, as ``False``,
+        # or as a marker where a file was uploaded beside it. Neither is a
+        # file the shape check takes, and the Validator declares the checkbox
+        # as an argument of its own, named as the widget names it: so the
+        # checkbox is passed as that, and the file as what was uploaded, if
+        # anything was. With nothing uploaded the file is absent, and the
+        # Validator's form reads the checkbox as a cleared file; beside an
+        # upload, that form refuses the pair in its own words. One
+        # branch to coverage, so each condition is held by its own test:
+        # test_a_checked_box_is_true_and_an_unchecked_one_false (the widget:
+        # an unticked ``BooleanField`` reads ``False`` too),
+        # test_the_rendered_checkbox_ticked_clears_the_file (``False``) and
+        # test_an_upload_and_the_ticked_box_are_refused_in_the_form_s_words
+        # (the marker).
+        if isinstance(widget, forms.ClearableFileInput) and (
+            value is False or value is FILE_INPUT_CONTRADICTION
+        ):
+            read[widget.clear_checkbox_name(name)] = True
+            value = form.files.get(form[name].html_name)
         # A form reads a missing field and a blank one alike, so both are
         # absent here and the shape check never sees a blank it would refuse
         # where the form takes it. One branch to coverage, so each condition is

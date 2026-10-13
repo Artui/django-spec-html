@@ -69,6 +69,35 @@ class OwnerOnly(PermissionCheck):
         return bool(target.owner_id == principal.pk)
 
 
+class Scoped(PermissionCheck):
+    """Admits every principal; records each row and each scope it is asked about.
+
+    ``refuse_scope`` refuses every scope, a set or nothing, in words no other
+    check uses; a row is refused unless the principal owns it, as ``OwnerOnly``
+    refuses one.
+    """
+
+    message = "Not within your scope."
+
+    def __init__(self, *, refuse_scope: bool = False) -> None:
+        self.refuse_scope = refuse_scope
+        self.rows: list[Any] = []
+        self.scopes: list[Any] = []
+
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        return True
+
+    def has_object_permission(self, principal: Any, spec: Any, target: Any) -> bool:
+        self.rows.append(target)
+        return bool(target.owner_id == principal.pk)
+
+    def has_scope_permission(self, principal: Any, spec: Any, scope: Any) -> bool:
+        # A set is recorded as its rows, so a test reads what was asked
+        # rather than a queryset that would re-query when compared.
+        self.scopes.append(None if scope is None else list(scope))
+        return not self.refuse_scope
+
+
 class Titled(Validator):
     """Declares a required title and strips it; records every call.
 
@@ -123,9 +152,9 @@ class Record:
 def shaping_refused(source: str, returned: str) -> str:
     """``shape_queryset``'s refusal, as it names the selector that returned a non-queryset."""
     return (
-        "select_related / prefetch_related / annotations / extend_queryset are set on the "
-        f"spec but {source} returned {returned}, which is not a Django QuerySet. Drop the "
-        "shaping fields or have the callable return a QuerySet."
+        "select_related / prefetch_related / annotations / extend_queryset / filter_set are "
+        f"set on the spec but {source} returned {returned}, which is not a Django QuerySet. "
+        "Drop the shaping fields or have the callable return a QuerySet."
     )
 
 

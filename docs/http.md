@@ -85,12 +85,22 @@ reads them, by method and body:
 | --- | --- | --- |
 | GET, HEAD | the query string | yes, with `coerce_flat` |
 | any other method, `application/json` body | the body, which must be an object | no |
-| any other method, form or multipart body | the form fields | yes, with `coerce_flat` |
+| any other method, form or multipart body | the form fields, and a multipart body's uploads | yes, with `coerce_flat` |
 | any other method, no body | nothing | - |
 | any other method, any other body | refused, 415 | - |
 
 **A flat source is read by the declaration.** An `array` parameter takes every
 value its key was sent with (`?ids=1&ids=2`), and anything else takes the last.
+An array of numbers, integers or booleans also reads a value holding commas as
+its elements, `?ids=1,2` as `[1, 2]` with the space around each part trimmed:
+a comma cannot be part of such a value, and it is the spelling a django-filter
+CSV filter advertises. Repeated keys and commas may mix, and an empty part
+(`?ids=1,,2`) is refused at its index as any malformed element is. An array
+of strings is split the same way when it declares choices and none of them
+holds a comma, as a django-filter `OrderingFilter`'s do: every element must be
+a choice, so `?o=title,-pk` can only be `["title", "-pk"]`. An array of
+strings with no choices, or with a choice holding a comma, and an array of
+decimals or dates, is never split, since a comma can be part of a string.
 A blank value is absent unless `""` is one the parameter can take: a plain
 string can, and a number, a boolean, a date, a decimal, or a string whose
 `choices` leave the blank out cannot. A flat wire has no other spelling of
@@ -99,9 +109,10 @@ refusal to count or a malformed date. Django's `csrfmiddlewaretoken` is never an
 [`coerce_flat`](arguments.md#flat-transports) types the strings, and leaves an
 undeclared key for the closed argument set to refuse under the caller's policy.
 
-**A JSON body is read as it is.** Its values are not coerced, because a JSON
-caller that sends `"5"` for an integer has sent a string, and the shape check
-says so. A body that does not parse, or is not an object, is refused as
+**A JSON body is read as it is.** Its values are not coerced here: a `"5"`
+sent for an integer is the shape check's to read, and it reads it as 5, as it
+reads one from any caller (see [the shape check](arguments.md#the-shape-check)).
+A body that does not parse, or is not an object, is refused as
 `InvalidArguments` under `non_field_errors`. An empty body is no arguments.
 
 **A body in any other format is refused** as
@@ -113,11 +124,32 @@ no body carries no arguments whatever its `Content-Type` says, so a
 `fetch(url, {method: "POST"})` for an operation its route names is served.
 
 Django parses a form body into `request.POST` for POST alone, so a PUT, PATCH
-or DELETE form is parsed here the same way rather than arriving empty. **Files
-are not arguments**: a parameter has no file type. A POST's uploads are in
-`request.FILES` for the view, since Django parses them; it fills
-`request.FILES` for POST alone, and the uploads in a PUT, PATCH or DELETE body
-parsed here are dropped.
+or DELETE form is parsed here the same way rather than arriving empty. **An
+upload is an argument**, under the name its part carries, as each field is:
+the upload itself, Django's `UploadedFile`, for a parameter of type `file`,
+every upload under the name for an array, and the last of repeated ones for
+anything else. It replaces a field of the same name, since a browser sends a
+file input only as a file. A POST's uploads are Django's own `request.FILES`;
+those in a PUT, PATCH or DELETE body are parsed here with its fields, by
+Django's own parser from the request's stream, so a file part is streamed to
+the upload handlers and `DATA_UPLOAD_MAX_MEMORY_SIZE` bounds the fields alone,
+as it does for a POST. Like a POST, such a body is gone once parsed: reading
+`request.body` afterwards, or calling `request_arguments` on the request a
+second time, raises Django's `RawPostDataException`. The entry points here
+read the arguments once, so this reaches only code that reads the body after
+the view - a middleware, an audit log, an error reporter. Reading
+`request.body` before the view keeps the body, and the arguments are then
+parsed from it as often as they are asked for; that read is a whole-body
+read, so `DATA_UPLOAD_MAX_MEMORY_SIZE` bounds the whole body again, uploads
+included, and a larger one raises `RequestDataTooBig`. An
+upload under a name the spec does not declare reaches the closed argument set
+like any undeclared field, and is refused under `REJECT`; a file input left
+empty is no upload, so it is absent. Only a multipart body carries one.
+An optional file's [clear checkbox](forms.md#clearing-a-file) is a field of
+the same body, `attachment-clear=true`, and is read as every flat `boolean`
+is: `true`, `false`, `1` or `0`. A checkbox with no `value` attribute posts
+`on`, which is refused, so a page posting to a `SpecView` gives it
+`value="true"`.
 
 **The URL kwargs are arguments too**, merged last so the route wins a clash, as
 it does in djangorestframework-services. A client-supplied value must not move
@@ -260,6 +292,11 @@ the form's own widgets**, which is how Django reads a form:
   the shape check never refuses what the form accepts. A value the field
   refuses is sent on as it came, and refused in the kernel's words, which are
   the field's own.
+- **A ticked [clear checkbox](forms.md#clearing-a-file)** is read by its
+  file's widget, which answers `False`, and is sent on as the argument the
+  Validator declares for it, `attachment-clear`, so the file is cleared.
+  Ticked beside an upload, both are sent, and the form refuses the pair in
+  its own words.
 - The URL kwargs are merged last, so the route wins a clash, and typed with
   [`coerce_flat`](arguments.md#flat-transports) in the same call as
   everything else: one refusal carries every problem. Each is an argument,

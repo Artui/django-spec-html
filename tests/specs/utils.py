@@ -26,6 +26,16 @@ class Titled(Validator):
         return dict(arguments)
 
 
+class Bare(Validator):
+    """A Validator declaring nothing: it is what a spec needs to take ``input_data``."""
+
+    def parameters(self) -> Parameters:
+        return Parameters()
+
+    def validate(self, arguments: Mapping[str, Any], context: ValidationContext) -> dict[str, Any]:
+        return dict(arguments)
+
+
 class Named(Presenter):
     def output(self) -> Output:
         return Output((OutputField("name", "string"),))
