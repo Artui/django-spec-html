@@ -6,13 +6,13 @@ from django_service_specs.http.async_spec_view import AsyncSpecView
 from django_service_specs.http.dispatch_request import dispatch_request
 from django_service_specs.http.error_response import error_response
 from django_service_specs.http.request_arguments import request_arguments
-from django_service_specs.http.spec_form_view import SpecFormView
+from django_service_specs.http.request_principal import request_principal
+from django_service_specs.http.route_arguments import route_arguments
 from django_service_specs.http.spec_view import SpecView
 from django_service_specs.http.unsupported_media_type import UnsupportedMediaType
 
 __all__ = [
     "AsyncSpecView",
-    "SpecFormView",
     "SpecView",
     "UnsupportedMediaType",
     "add_argument_errors",
@@ -20,4 +20,6 @@ __all__ = [
     "dispatch_request",
     "error_response",
     "request_arguments",
+    "request_principal",
+    "route_arguments",
 ]

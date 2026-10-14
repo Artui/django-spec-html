@@ -1,7 +1,7 @@
 """``add_argument_errors``: a refusal tree placed on a bound form, beside its own errors, once.
 
-Every form here is bound and never validated before the call, as a view hands
-one over: the form's own errors are whatever its validation finds when the
+Every form here but one is bound and never validated before the call, as a
+view hands one over: the form's own errors are whatever its validation finds when the
 placement validates it, with the guards a ``FormValidator``'s form is
 validated with, which is what the placement reads to know what the form
 already says.
@@ -113,6 +113,18 @@ class TestNeverADuplicate:
         form = bound(title="Hi", tags=["a", "c"])
         add_argument_errors(form, {"tags": {1: [refused]}})
         assert errors(form) == {"tags": [refused]}
+
+
+class TestAFormAlreadyValidated:
+    def test_a_form_already_validated_is_compared_as_it_stands(self) -> None:
+        # A view that validated its form and placed a message of its own hands
+        # over a form whose errors are its state. Validating it again would
+        # start that state over and drop the view's message.
+        form = bound(title="Hi")
+        assert form.is_valid()
+        form.add_error(None, "Added by the view.")
+        add_argument_errors(form, {"title": ["Taken."]})
+        assert errors(form) == {"__all__": ["Added by the view."], "title": ["Taken."]}
 
 
 class TestMessages:

@@ -23,10 +23,14 @@ from tests.http.utils import (
     signed_in,
     titled_spec,
 )
+from tests.specs.utils import Foreign
 
 pytestmark = pytest.mark.django_db
 
-NO_SPEC = "SpecView.as_view() needs a spec: a ServiceSpec or a SelectorSpec, got {got}."
+NO_SPEC = (
+    "SpecView.as_view() needs a spec: expected a ServiceSpec or SelectorSpec, or an object "
+    "with as_kernel_spec(); got {got}."
+)
 
 
 @pytest.fixture
@@ -142,6 +146,14 @@ class TestConfiguration:
             SpecView.as_view(spec=notes_spec)
         assert str(refused.value) == NO_SPEC.format(got="function")
 
+    def test_an_object_compiling_to_itself_that_is_no_spec_is_refused(self) -> None:
+        class SelfCompiling:
+            def as_kernel_spec(self) -> SelfCompiling:
+                return self
+
+        with pytest.raises(ImproperlyConfigured, match="SelfCompiling.as_kernel_spec.. answers"):
+            SpecView.as_view(spec=SelfCompiling())
+
     def test_a_method_it_cannot_answer_is_refused_at_as_view(self) -> None:
         with pytest.raises(ImproperlyConfigured) as refused:
             SpecView.as_view(spec=notes_spec(), methods=["get", "options", "trace"])
@@ -172,3 +184,33 @@ class TestCsrf:
         request = signed_in(FACTORY.post("/", data={"title": "x"}), ada)
         assert CsrfViewMiddleware(view).process_view(request, view, (), {}) is None
         assert view(request).status_code == 200
+
+
+class TestSources:
+    def test_a_selector_source_answers_get_and_refuses_post(self, ada: Any) -> None:
+        view = SpecView.as_view(spec=Foreign(notes_spec()))
+
+        assert send(view, "GET", ada).status_code == 200
+        assert (send(view, "POST", ada).status_code, send(view, "POST", ada)["Allow"]) == (
+            405,
+            "GET, HEAD, OPTIONS",
+        )
+
+    def test_a_service_source_answers_post_as_its_compiled_spec(self, ada: Any) -> None:
+        view = SpecView.as_view(spec=Foreign(titled_spec(None)))
+
+        response = send(view, "POST", ada, {"title": "x"})
+
+        assert (response.status_code, response.content) == (204, b"")
+
+    def test_a_source_whose_compile_is_wrong_is_refused_at_as_view(self) -> None:
+        class Wrong:
+            def as_kernel_spec(self) -> Any:
+                return "a spec"
+
+        with pytest.raises(ImproperlyConfigured) as refused:
+            SpecView.as_view(spec=Wrong())
+        assert str(refused.value) == (
+            "SpecView.as_view() needs a spec: Wrong.as_kernel_spec() must return a ServiceSpec "
+            "or SelectorSpec; got str."
+        )

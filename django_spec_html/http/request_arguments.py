@@ -12,15 +12,15 @@ from django.http.multipartparser import MultiPartParser
 from django.utils.datastructures import MultiValueDict
 from django.utils.translation import gettext
 
+from django_service_specs.http.route_arguments import route_arguments
 from django_service_specs.http.unsupported_media_type import UnsupportedMediaType
-from django_service_specs.http.utils import route_arguments
 from django_service_specs.parameters.coded_message import CodedMessage
 from django_service_specs.parameters.coerce_flat import coerce_flat
 from django_service_specs.parameters.invalid_arguments import InvalidArguments
+from django_service_specs.parameters.non_field_errors import NON_FIELD_ERRORS
 from django_service_specs.parameters.parameter import Parameter
 from django_service_specs.parameters.parameters import Parameters
 from django_service_specs.parameters.utils import (
-    NON_FIELD_ERRORS,
     expected_type,
     max_length_in_force,
 )
@@ -118,7 +118,7 @@ def request_arguments(
         UnsupportedMediaType: a body that is neither JSON nor a form.
         ImproperlyConfigured: a URL kwarg ``parameters`` does not declare,
             which is the host's route rather than the client's request; see
-            ``route_arguments`` in this subpackage's ``utils``.
+            [`route_arguments`][django_service_specs.http.route_arguments.route_arguments].
     """
     route = route_arguments(parameters, url_kwargs)
     if request.method in ("GET", "HEAD"):

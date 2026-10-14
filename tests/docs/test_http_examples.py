@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
+from django.core.exceptions import ImproperlyConfigured
 from django.middleware.csrf import CsrfViewMiddleware
 from django.test import AsyncRequestFactory, RequestFactory
 from django.urls import get_resolver
@@ -37,6 +38,7 @@ from django_service_specs import (
     UnsupportedMediaType,
     error_response,
 )
+from docs.examples import http
 from tests.dispatch_app.models import Note
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -104,6 +106,15 @@ class TestFunctionView:
             403,
             {"detail": "The acting principal is unavailable."},
         )
+
+
+class TestRouteArguments:
+    def test_the_route_wins_a_clash_and_everything_is_typed_in_one_call(self) -> None:
+        assert http.form_arguments({"pk": "9", "title": "x"}, {"pk": 3}) == {"pk": 3, "title": "x"}
+
+    def test_a_kwarg_the_spec_does_not_declare_is_the_hosts_configuration(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match="The route captures org,"):
+            http.form_arguments({}, {"org": 1})
 
 
 @pytest.mark.django_db

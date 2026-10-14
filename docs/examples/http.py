@@ -7,11 +7,21 @@ method or an answer the package does not have.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from django.http import HttpRequest, HttpResponse
 from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
 
-from django_service_specs import AsyncSpecView, SpecView, adispatch_request, dispatch_request
+from django_service_specs import (
+    AsyncSpecView,
+    SpecView,
+    adispatch_request,
+    coerce_flat,
+    dispatch_request,
+    route_arguments,
+)
 from docs.examples.declaring import list_notes_spec
 from docs.examples.quickstart import rename_note_spec
 
@@ -28,6 +38,17 @@ async def arename_note(request: HttpRequest, pk: int) -> HttpResponse:
 
 
 # --8<-- [end:function_view]
+
+
+# --8<-- [start:route_arguments]
+def form_arguments(posted: Mapping[str, Any], url_kwargs: Mapping[str, Any]) -> dict[str, Any]:
+    # A view reading its fields some other way merges the route last, so the
+    # route wins a clash, and types everything in one call.
+    parameters = rename_note_spec.parameters()
+    return coerce_flat(parameters, {**posted, **route_arguments(parameters, url_kwargs)})
+
+
+# --8<-- [end:route_arguments]
 
 
 # --8<-- [start:urls]

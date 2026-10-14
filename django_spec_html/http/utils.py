@@ -1,14 +1,13 @@
-"""What the HTTP entry points share: the principal, the route, the answer, the view's half.
+"""What the HTTP entry points share: the answer, and the view's half.
 
 ``dispatch_request`` and ``adispatch_request`` differ only in how they reach
-the kernel, so everything either does to a request before dispatch and to a
-result after it is written once here. The async one reads the request in an
-executor hop and builds its responses on the loop, which is why the two
-halves are separate functions: the read may query, and the answer never does.
-
-Nothing here imports ``request_arguments``, which reads the route through
-``route_arguments``: a shared helper that did would make the two import each
-other.
+the kernel, so everything either does to a result after dispatch is written
+once here. What either reads off a request before dispatch - the principal,
+the route, the arguments - is public, each in its own module, since a host's
+own view reads them by the same rules. The async one reads the request in an
+executor hop and builds its responses on the loop, which is why the read and
+the answer are separate functions: the read may query, and the answer never
+does.
 
 ``SpecView`` and ``AsyncSpecView`` likewise differ only in their handlers, so
 everything else about them is ``SpecViewBase``.
@@ -16,7 +15,7 @@ everything else about them is ``SpecViewBase``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, Final, cast
 
 from django.core.exceptions import ImproperlyConfigured
@@ -25,12 +24,13 @@ from django.utils.decorators import classonlymethod
 from django.utils.translation import gettext
 from django.views import View
 
-from django_service_specs.authorization.principal_unavailable import PrincipalUnavailable
-from django_service_specs.authorization.utils import is_deactivated
-from django_service_specs.parameters.parameters import Parameters
+from django_service_specs.dispatch.check_requested_input import check_requested_input
 from django_service_specs.pool.pool_seeds import DEFAULT_POOL_SEEDS, PoolSeeds
+from django_service_specs.services.additional_input_required import AdditionalInputRequired
+from django_service_specs.specs.kernel_spec import kernel_spec
 from django_service_specs.specs.selector_spec import SelectorSpec
 from django_service_specs.specs.service_spec import ServiceSpec
+from django_service_specs.specs.spec_source import SpecSource
 from django_service_specs.validation.unknown_arguments import UnknownArguments
 
 ANSWERABLE: Final = ("get", "head", "post", "put", "patch", "delete")
@@ -41,61 +41,17 @@ spec has nothing to add to that answer. TRACE is not one either, since
 nothing about an operation is a loop-back of the request."""
 
 
-def request_principal(request: HttpRequest) -> Any:
-    """``request.user``, anonymous included, unless it is a deactivated account.
+def check_asked_input(spec: ServiceSpec | SelectorSpec | SpecSource, refused: Exception) -> None:
+    """Refuse, as the service's own error, a request for input no route could hear answered.
 
-    Anonymous is passed through because a permission check is what decides
-    whether anonymous may act, and the spec declares that check; refusing it
-    here would make every spec's policy stricter than the one it states.
-
-    A deactivated account is refused, by the rule dispatch itself applies and
-    ``resolve_principal`` applies off HTTP: ``ModelBackend`` never logs one in,
-    but ``AllowAllUsersModelBackend`` and a project's own backend may. The rule
-    asks about authenticated users alone, since ``AnonymousUser.is_active`` is
-    ``False``, and a custom user model with no ``is_active`` reads as active.
-    Dispatch would refuse the same user; refusing here as well is what keeps
-    the request unread for one, as ``adispatch`` resolves a ``principal_id``
-    before looking at its arguments.
-
-    Touching ``request.user`` evaluates the lazy object AuthenticationMiddleware
-    leaves there, which is a session query, so the async entry point calls this
-    off the event loop.
-
-    Raises:
-        PrincipalUnavailable: an authenticated user whose ``is_active`` is false.
+    A 422 body carries the schema a service asked under, and a client builds
+    its next call from it. A schema naming a key the closed argument set would
+    refuse, or a shape a transport cannot render, is not the caller's mistake,
+    so it surfaces as the ``ImproperlyConfigured`` it is rather than as a
+    well-formed answer that cannot be answered. Anything else passes.
     """
-    user = request.user
-    if is_deactivated(user):
-        raise PrincipalUnavailable()
-    return user
-
-
-def route_arguments(parameters: Parameters, url_kwargs: Mapping[str, Any] | None) -> dict[str, Any]:
-    """The kwargs a route captured, as arguments, each one a parameter the spec declares.
-
-    Every URL kwarg is an argument, so a route capturing one its spec does not
-    declare is the host's configuration, wrong for every request the route
-    serves, rather than anything a client sent. It is refused as one - Django
-    answers it 500 and shows it under ``DEBUG`` - where a client's own
-    undeclared argument is a 400. The ``unknown_arguments`` policy does not
-    reach it: that policy is about what a client sends, and no client can send
-    a route kwarg or stop sending one.
-
-    Returned as a plain copy and uncoerced, so each caller merges it last,
-    where the route wins a clash, and coerces it beside what the client sent.
-
-    Raises:
-        ImproperlyConfigured: naming every undeclared kwarg.
-    """
-    route = dict(url_kwargs or {})
-    undeclared = sorted(set(route) - parameters.names())
-    if undeclared:
-        raise ImproperlyConfigured(
-            f"The route captures {', '.join(undeclared)}, which the spec does not declare. "
-            "Every URL kwarg is an argument: declare each one as a parameter, or leave it "
-            "out of url_kwargs."
-        )
-    return route
+    if isinstance(refused, AdditionalInputRequired):
+        check_requested_input(spec, refused.schema)
 
 
 def not_found_response() -> JsonResponse:
@@ -161,21 +117,33 @@ def answered_methods(spec: Any, methods: Sequence[str] | None, *, label: str) ->
     an HTTP client. A view that names ``methods`` answers exactly those,
     spelled in either case and returned in ``ANSWERABLE``'s order.
 
-    Checked when the view is built, so a view with no spec, or one naming a
-    method it could never answer, fails when the URLconf is imported rather
+    ``spec`` may be a
+    [`SpecSource`][django_service_specs.specs.spec_source.SpecSource], and its
+    default is that of the spec it compiles to. Checked when the view is
+    built, so a view with no spec, one whose declaration does not compile, or
+    one naming a method it could never answer, fails when the URLconf is imported rather
     than on the first request to reach it.
 
     Raises:
-        ImproperlyConfigured: ``spec`` is not a spec, or ``methods`` names one
+        ImproperlyConfigured: ``spec`` is not a spec and does not compile to
+            one, or ``methods`` names one
             outside ``ANSWERABLE``.
     """
-    if not isinstance(spec, ServiceSpec | SelectorSpec):
+    try:
+        # Compiled here, when the URLconf is imported, so a declaration that
+        # does not compile fails there too, and the cache answers every request.
+        compiled = kernel_spec(spec)
+    except TypeError as error:
+        raise ImproperlyConfigured(f"{label}.as_view() needs a spec: {error}") from error
+    # ``kernel_spec`` tells a spec by its compiling to itself, which an object
+    # that is no spec can also do; it would otherwise fail on the first request.
+    if not isinstance(compiled, ServiceSpec | SelectorSpec):
         raise ImproperlyConfigured(
-            f"{label}.as_view() needs a spec: a ServiceSpec or a SelectorSpec, got "
-            f"{type(spec).__name__}."
+            f"{label}.as_view() needs a spec: {type(compiled).__name__}.as_kernel_spec() answers "
+            "itself but it is neither a ServiceSpec nor a SelectorSpec."
         )
     if methods is None:
-        return ("get", "head") if isinstance(spec, SelectorSpec) else ("post",)
+        return ("get", "head") if isinstance(compiled, SelectorSpec) else ("post",)
     named = {method.lower() for method in methods}
     unknown = sorted(named - set(ANSWERABLE))
     if unknown:
@@ -194,7 +162,7 @@ class SpecViewBase(View):
     sync one: Django serves a class async only when all of its handlers are.
     """
 
-    spec: ServiceSpec | SelectorSpec | None = None
+    spec: ServiceSpec | SelectorSpec | SpecSource | None = None
     success_status: int | None = None
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT
     pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS
@@ -225,6 +193,6 @@ class SpecViewBase(View):
         methods = answered_methods(self.spec, self.methods, label=type(self).__name__)
         self.http_method_names = [*methods, "options"]
 
-    def served_spec(self) -> ServiceSpec | SelectorSpec:
+    def served_spec(self) -> ServiceSpec | SelectorSpec | SpecSource:
         """``spec``, which ``as_view`` refused to build a view without."""
-        return cast("ServiceSpec | SelectorSpec", self.spec)
+        return cast("ServiceSpec | SelectorSpec | SpecSource", self.spec)

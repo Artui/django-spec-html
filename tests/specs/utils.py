@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 from django_service_specs.authorization.permission_check import PermissionCheck
@@ -11,6 +12,8 @@ from django_service_specs.output.output_field import OutputField
 from django_service_specs.output.presenter import Presenter
 from django_service_specs.parameters.parameter import Parameter
 from django_service_specs.parameters.parameters import Parameters
+from django_service_specs.specs.selector_spec import SelectorSpec
+from django_service_specs.specs.service_spec import ServiceSpec
 from django_service_specs.validation.validation_context import ValidationContext
 from django_service_specs.validation.validator import Validator
 
@@ -50,3 +53,32 @@ class Nobody(PermissionCheck):
 
 
 PK = Parameters.of(Parameter("pk", "integer", required=True))
+
+
+@dataclass(frozen=True)
+class Foreign:
+    """A stand-in for djangorestframework-services' spec: a declaration compiling to a kernel one.
+
+    Shaped as the real one is where the compile seam reads it: a frozen
+    dataclass, so it compares by its fields, holding a list, so it has no hash.
+    It counts its compiles, so a test can tell a cached spec from a recompiled
+    one.
+    """
+
+    compiled: ServiceSpec | SelectorSpec
+    labels: list[str] = field(default_factory=list)
+    compiles: list[int] = field(default_factory=list, compare=False)
+
+    def as_kernel_spec(self) -> ServiceSpec | SelectorSpec:
+        self.compiles.append(1)
+        return self.compiled
+
+
+@dataclass(frozen=True)
+class ForeignWithContract(Foreign):
+    """A ``Foreign`` that answers ``agent_contract()``, as the real one does while it carries one."""
+
+    contract: Any = None
+
+    def agent_contract(self) -> Any:
+        return self.contract

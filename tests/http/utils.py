@@ -12,6 +12,7 @@ from django.test import AsyncRequestFactory, RequestFactory
 from django_service_specs.authorization.permission_check import PermissionCheck
 from django_service_specs.output.output import Output
 from django_service_specs.output.presenter import Presenter
+from django_service_specs.services.additional_input_required import AdditionalInputRequired
 from django_service_specs.services.service_conflict import ServiceConflict
 from django_service_specs.specs.selector_kind import SelectorKind
 from django_service_specs.specs.selector_spec import SelectorSpec
@@ -90,3 +91,17 @@ def titled_spec(returns: Any = None, **kwargs: Any) -> ServiceSpec:
     kwargs.setdefault("permissions", OPEN)
     kwargs.setdefault("validator", Titled())
     return ServiceSpec(service=Record(returns), **kwargs)
+
+
+def asking_spec(schema: Any) -> ServiceSpec:
+    """A write that answers every call by asking for more, under ``schema``.
+
+    It declares ``title`` and nothing else, so a schema keyed ``title`` asks for
+    a declared value and any other key asks for one the closed argument set
+    would refuse.
+    """
+
+    def ask(**pool: Any) -> None:
+        raise AdditionalInputRequired("Say which.", schema=schema)
+
+    return ServiceSpec(service=ask, permissions=OPEN, validator=Titled())

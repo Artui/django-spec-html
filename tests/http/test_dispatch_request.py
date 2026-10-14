@@ -32,12 +32,14 @@ from tests.http.utils import (
     FACTORY,
     Conflicting,
     Seen,
+    asking_spec,
     body,
     note_spec,
     notes_spec,
     signed_in,
     titled_spec,
 )
+from tests.specs.utils import Foreign
 
 pytestmark = pytest.mark.django_db
 
@@ -318,3 +320,49 @@ class TestPassedThrough:
             url_kwargs={"pk": mine.pk},
         )
         assert body(response) == {"title": "Mine"}
+
+
+class TestAskedInput:
+    # The schema a service asks under is checked before it is written to the
+    # body: a schema the route could not hear answered is the raiser's error.
+    def test_a_schema_naming_a_declared_key_is_written_as_the_422_body(self, ada: Any) -> None:
+        schema = {"title": {"type": "string"}}
+        response = dispatch_request(asking_spec(schema), post(ada, {"title": "x"}))
+        assert (response.status_code, body(response)) == (
+            422,
+            {"detail": "Say which.", "schema": schema},
+        )
+
+    def test_a_schema_naming_an_undeclared_key_is_the_services_error_not_a_422(
+        self, ada: Any
+    ) -> None:
+        with pytest.raises(ImproperlyConfigured, match="colour"):
+            dispatch_request(asking_spec({"colour": {"type": "string"}}), post(ada, {"title": "x"}))
+
+
+class TestSources:
+    # The shape of a host serving another library's declarations: the object
+    # it holds is handed in as it is.
+    def test_a_list_source_answers_its_presented_rows(self, ada: Any) -> None:
+        Note.objects.create(owner=ada, title="One")
+        response = dispatch_request(Foreign(notes_spec()), signed_in(FACTORY.get("/"), ada))
+        assert (response.status_code, body(response)) == (200, [{"title": "One"}])
+
+    def test_a_service_source_with_nothing_to_present_is_204(self, ada: Any) -> None:
+        # Read off the source itself, a service would not be one and would
+        # answer ``null`` at 200.
+        response = dispatch_request(Foreign(titled_spec(None)), post(ada, {"title": "Final"}))
+        assert (response.status_code, response.content) == (204, b"")
+
+    def test_a_source_s_asked_schema_is_written_as_the_422_body(self, ada: Any) -> None:
+        schema = {"title": {"type": "string"}}
+        response = dispatch_request(Foreign(asking_spec(schema)), post(ada, {"title": "x"}))
+        assert (response.status_code, body(response)) == (
+            422,
+            {"detail": "Say which.", "schema": schema},
+        )
+
+    def test_a_source_s_undeclared_asked_key_is_the_services_error(self, ada: Any) -> None:
+        source = Foreign(asking_spec({"colour": {"type": "string"}}))
+        with pytest.raises(ImproperlyConfigured, match="colour"):
+            dispatch_request(source, post(ada, {"title": "x"}))

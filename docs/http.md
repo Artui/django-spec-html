@@ -11,8 +11,12 @@ from django_service_specs import AsyncSpecView, SpecView, adispatch_request, dis
 ```
 
 It is the plumbing, not the pages: a view here answers JSON to a script, a
-`fetch()` or an htmx request. The one page it serves is a spec's own form, from
-[`SpecFormView`](#forms), for a spec a Django form validates.
+`fetch()` or an htmx request. A page a person reads, such as a spec's own form
+rendered and re-rendered with its refusal, is a host's own view. The pieces
+the entry points are built from are public so that such a view reads a request
+by the same rules: [`request_principal`](#the-principal),
+[`route_arguments`](#the-route-on-its-own) and
+[`add_argument_errors`](#a-refusal-placed-on-a-form).
 
 ## A function view
 
@@ -69,7 +73,11 @@ OPTIONS is Django's own answer.
 
 `as_view()` checks the spec and the methods when the view is built, so a view
 with no spec, or one naming a method it cannot serve, fails when the URLconf is
-imported rather than on its first request.
+imported rather than on its first request. The `spec` may be a declaration of
+another library's, a
+[`SpecSource`][django_service_specs.specs.spec_source.SpecSource]: it is
+compiled there too, a declaration that does not compile is refused there, and
+its methods follow the spec it compiles to.
 
 [`AsyncSpecView`][django_service_specs.http.async_spec_view.AsyncSpecView] is
 the same view with every handler async, through `adispatch_request`. Django
@@ -172,6 +180,21 @@ read by middleware, say) calls
 [`dispatch_request`][django_service_specs.http.dispatch_request.dispatch_request]
 from its own view and passes the `url_kwargs` the spec declares.
 
+### The route on its own
+
+[`route_arguments`][django_service_specs.http.route_arguments.route_arguments]
+is that rule on its own, for a view that reads the rest of its arguments some
+other way, such as through a bound form's widgets. It returns the kwargs as a
+plain, uncoerced copy, or raises `ImproperlyConfigured` naming every one the
+spec does not declare, so the caller merges it last and types it in the same
+call as everything else, and one refusal carries every problem:
+
+```python
+--8<--
+docs/examples/http.py:route_arguments
+--8<--
+```
+
 ## The principal
 
 The principal is `request.user`, **anonymous included**: the spec's permission
@@ -184,6 +207,13 @@ anything else is read. Django's `ModelBackend` never logs one in, but
 principal never acts, on HTTP or off it. `dispatch` refuses one by the same
 rule, so a hand-written view handing `request.user` to it is covered too; the
 entry points refuse first so that the request is never read.
+
+[`request_principal`][django_service_specs.http.request_principal.request_principal]
+is that reading, public, so a host's own view refuses by the same rule and
+before it reads anything else. It raises `PrincipalUnavailable` for a
+deactivated account and returns `request.user` otherwise. Reading
+`request.user` is a session query, so an async view calls it off the event
+loop, as `adispatch_request` does.
 
 ## Refusals
 
@@ -216,6 +246,14 @@ matched before its base. **Every 400 body is a field map**: a
 tree too, and the tree's integer row keys are strings on the wire. Messages
 render in the active language, lazy ones included.
 
+**A schema no route could hear answered is not a 422.** `dispatch_request` and
+`adispatch_request` pass an `AdditionalInputRequired` schema through
+[`check_requested_input`][django_service_specs.dispatch.check_requested_input.check_requested_input]
+before writing it: a schema naming a key the spec does not declare, or a shape
+an MCP elicitation form cannot render, raises `ImproperlyConfigured` naming the
+key, as it does on every other route. `error_response` alone has no spec in
+hand and writes whatever it is given.
+
 **Never 401.** A session has no challenge to answer, and a 401 tells a client
 to start an authentication flow it has no way to finish. An anonymous caller
 a permission check refuses is a 403, like any other refused principal.
@@ -234,169 +272,12 @@ docs/examples/http.py:csrf
 --8<--
 ```
 
-## Forms
-
-[`SpecFormView`][django_service_specs.http.spec_form_view.SpecFormView] serves
-a spec whose Validator is a [`FormValidator`](forms.md) as the page a person
-fills that form in on: the form that validates the arguments is the form the
-page renders.
-
-```python
---8<--
-docs/examples/http_forms.py:spec
---8<--
-```
-
-```python
---8<--
-docs/examples/http_forms.py:urls
---8<--
-```
-
-The template is any template that renders the form inside a POST form with
-its token. The one above is as small as that:
-
-```html
---8<--
-tests/templates/spec_form.html
---8<--
-```
-
-**GET** renders `template_name` with an unbound form under `form`, and `view`
-and `spec` beside it: the names Django's `FormView` uses, with
-`extra_context` merged in as Django's `ContextMixin` does. The spec's
-class-level permission check runs first, so the page is never offered to a
-principal the post would refuse: an anonymous visitor above gets Django's own
-`PermissionDenied`, which the host's 403 page answers.
-
-**An update's page shows the row it updates.** Every GET then finds its
-target as dispatch would, through
-[`resolve_target`][django_service_specs.dispatch.resolve_target.resolve_target]
-on the route's kwargs, coerced as a post's are: the row or set a target
-selector resolves, or `None` for a create.
-
-- A check refusing it - the object-level check on a row, the scope check on a
-  set or on `None` - raises `PermissionDenied`, as the post would be refused;
-  a missing row, or a selector's `ServiceNotFound`, is `Http404`; and a route
-  value the spec's parameters refuse is Django's `BadRequest`, which the
-  host's 400 page answers.
-- The form stays unbound, and shows the row's values for its own fields. A
-  `ModelForm` of the row's model is built on a copy of the row, as the
-  [`FormValidator`][django_service_specs.adapters.forms.form_validator.FormValidator]
-  binds it, so its own `__init__` sees the row it edits. Any other form takes
-  the row's values for the fields it names as its `initial`, and a field no
-  model field matches keeps its own, as does a disabled one, which the post
-  cleans from that initial rather than reading.
-- So a file the row holds is shown, linked, with the
-  [clear checkbox](forms.md#clearing-a-file) an optional file's
-  `ClearableFileInput` offers beside it.
-- A create, a collection target and a missing row the instance selector's
-  `allow_none` lets through show an empty form.
-
-```python
---8<--
-docs/examples/http_forms.py:update
---8<--
-```
-
-The URLconf above routes it as `books/<int:pk>/edit/`.
-
-**POST starts as GET does**: the route first, then the same check, and only
-then is the form built from the post. A refused post is answered with the
-page again, and dispatch's shape check comes before its own permission check,
-so without it a principal the spec refuses would be shown the page - every
-row a choice field lists, and `extra_context` - by posting a malformed form,
-and a form whose constructor reads rows would read them for that principal.
-The `Grant` the check returns goes to dispatch, so it runs once.
-
-**Then the post finds its target, as the page does**, before the form is
-built or read. So the form a refused post re-renders is built on the row as
-the page's was, and shows its held file and the clear checkbox beside it. And
-the target answers **before the shape check**: a principal the object-level or
-scope check refuses is `PermissionDenied`, and a missing row `Http404`, even
-for a post that is malformed, where dispatch's own order would refuse the
-malformed post first and re-render the page for them. Dispatch is handed the
-target and the grant `resolve_target` returns, so it looks nothing up again and
-asks no check twice. One case is left to dispatch: a route value the target's
-reads refuse, which comes back in dispatch's one refusal beside the form's
-own, as a non-field error. A create resolves `None` and a collection target
-its set, each handed on the same way.
-
-**POST** then binds the form to the post and reads the arguments **through
-the form's own widgets**, which is how Django reads a form:
-
-- A checkbox is `True` or `False` and a multi-select a list, where a flat
-  reading would refuse a checkbox's `"on"`. Only the form's fields are read,
-  so the CSRF token and a named submit button never become arguments, and a
-  disabled field is not read at all, since the form ignores what is posted
-  for it.
-- **A field left blank is absent**, for every field, as it is to the form. An
-  optional date, number or choice left empty is simply not sent, and a
-  required field left empty is refused with `"This field is required."`,
-  once.
-- **A number, a date or a date-time in one of the field's input formats** -
-  `10/25/1974`, a localized `12,50`, `5.0` for an integer - is read by the
-  field's own `to_python` and sent on in the form the shape check reads: an
-  ISO date, an ISO date-time with its offset, a decimal string, a number. So
-  the shape check never refuses what the form accepts. A value the field
-  refuses is sent on as it came, and refused in the kernel's words, which are
-  the field's own.
-- **A ticked [clear checkbox](forms.md#clearing-a-file)** is read by its
-  file's widget, which answers `False`, and is sent on as the argument the
-  Validator declares for it, `attachment-clear`, so the file is cleared.
-  Ticked beside an upload, both are sent, and the form refuses the pair in
-  its own words.
-- The URL kwargs are merged last, so the route wins a clash, and typed with
-  [`coerce_flat`](arguments.md#flat-transports) in the same call as
-  everything else: one refusal carries every problem. Each is an argument,
-  so the spec declares each one. A kwarg the route captures and the spec does
-  not declare is the host's misconfiguration, wrong for every caller, so it
-  raises `ImproperlyConfigured` under either `unknown_arguments` policy - the
-  policy governs what a client sends - rather than blaming the client with a
-  refused post.
-
-Then [`dispatch`](dispatching.md). **A success redirects** to
-`get_success_url(result)`, which resolves `success_url` as Django's
-`redirect()` does, so a path, a `reverse_lazy` or a URL name all work. Override
-it to read the result, as `AddBookThenShowIt` does to reach the book it
-created. A refusal:
-
-| Refusal | The form view answers |
-| --- | --- |
-| `InvalidArguments`, `ServiceValidationError` | 400, the form re-rendered |
-| `ServiceConflict` | 409, the form re-rendered |
-| `ServiceError` | 422, the form re-rendered |
-| `DispatchError` | 400, the form re-rendered |
-| `NotPermitted`, `PrincipalUnavailable` | `PermissionDenied` |
-| `ServiceNotFound`, a not-found result | `Http404` |
-
-The first two rows place the refusal on the form, and a service's string or
-list detail is about the whole form. Every other re-rendered refusal is its
-message, among the form's non-field errors. **The re-rendered form carries
-the refusal and nothing else**, so the page says what dispatch decided. The
-page's own form is never validated: its errors start empty and the refusal is
-placed on it, so nothing the Validator did not decide reaches it, and a value
-the Validator refused because no column holds it - a key past 64 bits - never
-reaches the database through the page's own checks. So after a shape-check
-refusal - a required field left blank, a date that does not parse - the
-form's further checks, such as a length, `clean()` or uniqueness, answer the
-next post rather than this one. The statuses are
-[`error_response`](#refusals)'s, so a client reading a refused post - htmx,
-or Turbo, which will not render a failed post answered 200 - reads it the
-same way it reads the JSON views.
-
-`as_view()` refuses, when the URLconf is imported, a view with no
-`ServiceSpec`, a spec whose Validator is not a `FormValidator`, a `many`
-spec, whose list of rows no form posts, and a view with neither a
-`success_url` nor its own `get_success_url`. The view is **sync
-only** in this release.
-
-### A refusal, placed on the form
+## A refusal, placed on a form
 
 [`add_argument_errors`][django_service_specs.http.add_argument_errors.add_argument_errors]
-is how the view places a refusal, on a form whose errors it has started empty,
-and a hand-written view with its own bound form can call it the same way. It
-uses Django's public `form.add_error`, beside whatever errors the form carries:
+places a refusal on a host's own bound form, for a page that re-renders the
+form it posted with what dispatch refused. It uses Django's public
+`form.add_error`, beside whatever errors the form carries:
 
 - **A key naming one of the form's fields** puts its messages on that field.
 - `non_field_errors`, and Django's own `"__all__"`, go to the form's non-field

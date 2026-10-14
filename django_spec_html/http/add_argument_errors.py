@@ -8,7 +8,7 @@ from typing import Any, Final
 from django.core.exceptions import NON_FIELD_ERRORS as FORM_NON_FIELD_ERRORS
 from django.forms import BaseForm
 
-from django_service_specs.parameters.utils import NON_FIELD_ERRORS
+from django_service_specs.parameters.non_field_errors import NON_FIELD_ERRORS
 from django_service_specs.relations.utils import clean_held_to_their_columns
 
 _NON_FIELD_KEYS: Final = (NON_FIELD_ERRORS, FORM_NON_FIELD_ERRORS)
@@ -67,9 +67,8 @@ def add_argument_errors(form: BaseForm, detail: Mapping[Any, Any]) -> None:
     # on no form, hence ``Any``. Each way is held by its own test:
     # test_a_list_s_key_past_its_column_is_refused_once (not yet validated,
     # so validated here with the guards) and
-    # test_the_page_form_s_own_checks_add_nothing_to_dispatch_s_refusal
-    # (``SpecFormView``'s page form, given an empty error state and never
-    # validated, which validating here would fill with its own errors).
+    # test_a_form_already_validated_is_compared_as_it_stands (an error state
+    # the caller already holds, which validating here would start over).
     bound: Any = form
     if bound._errors is None:
         clean_held_to_their_columns(form)

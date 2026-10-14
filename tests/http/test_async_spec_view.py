@@ -16,6 +16,7 @@ from django_service_specs.validation.unknown_arguments import UnknownArguments
 from tests.dispatch.utils import TENANT_SEEDS, make_user
 from tests.dispatch_app.models import Note
 from tests.http.utils import ASYNC_FACTORY, DEEP_JSON, body, note_spec, notes_spec, titled_spec
+from tests.specs.utils import Foreign
 
 # transaction=True for the reason test_adispatch_request gives.
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -122,3 +123,19 @@ async def test_an_undeclared_url_kwarg_propagates_from_the_executor_hop(ada: Any
 def test_a_view_with_no_spec_is_refused_at_as_view() -> None:
     with pytest.raises(ImproperlyConfigured, match="AsyncSpecView.as_view"):
         AsyncSpecView.as_view()
+
+
+async def test_a_selector_source_answers_get_and_refuses_post(ada: Any) -> None:
+    view = AsyncSpecView.as_view(spec=Foreign(notes_spec()))
+
+    response = await send(view, "GET", ada)
+    assert (response.status_code, body(response)) == (200, [{"title": "One"}])
+    assert (await send(view, "POST", ada)).status_code == 405
+
+
+async def test_a_service_source_answers_post_as_its_compiled_spec(ada: Any) -> None:
+    view = AsyncSpecView.as_view(spec=Foreign(titled_spec(None)))
+
+    response = await send(view, "POST", ada, {"title": "x"})
+
+    assert (response.status_code, response.content) == (204, b"")
