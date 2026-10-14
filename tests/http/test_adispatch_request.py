@@ -18,11 +18,11 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.functional import SimpleLazyObject
 
-from django_service_specs.authorization.grant import Grant
+from django_service_specs.dispatch.grant import Grant
 from django_service_specs.http.adispatch_request import adispatch_request
 from django_service_specs.parameters.parameters import Parameters
 from django_service_specs.specs.service_spec import ServiceSpec
-from django_service_specs.validation.unknown_arguments import UnknownArguments
+from django_service_specs.types.unknown_arguments import UnknownArguments
 from tests.dispatch.utils import (
     REFUSED_ARCHIVED,
     RENAME,

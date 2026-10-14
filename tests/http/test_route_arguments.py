@@ -10,8 +10,7 @@ import django_service_specs.http
 from django_service_specs.http.route_arguments import route_arguments
 from django_service_specs.parameters.coerce_flat import coerce_flat
 from django_service_specs.parameters.invalid_arguments import InvalidArguments
-from django_service_specs.parameters.parameter import Parameter
-from django_service_specs.parameters.parameters import Parameters
+from django_service_specs.parameters.parameters import Parameter, Parameters
 
 ROUTED = Parameters.of(Parameter("pk", "integer"), Parameter("slug", "string"))
 

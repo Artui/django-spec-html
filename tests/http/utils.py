@@ -14,9 +14,9 @@ from django_service_specs.output.output import Output
 from django_service_specs.output.presenter import Presenter
 from django_service_specs.services.additional_input_required import AdditionalInputRequired
 from django_service_specs.services.service_conflict import ServiceConflict
-from django_service_specs.specs.selector_kind import SelectorKind
 from django_service_specs.specs.selector_spec import SelectorSpec
 from django_service_specs.specs.service_spec import ServiceSpec
+from django_service_specs.types.selector_kind import SelectorKind
 from tests.dispatch.utils import OPEN, PK, Record, Titled, Titles, note_by_pk, notes_of
 
 FACTORY = RequestFactory()

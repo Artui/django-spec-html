@@ -1,12 +1,17 @@
-"""Rows for the mutation tests that write a file field; ``media`` is in ``conftest.py``."""
+"""Rows for the mutation tests that write a file field, and the savepoints a
+model write service opens; ``media`` is in ``conftest.py``.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import patch
 
 from django.core.files.base import ContentFile
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from tests.adapter_app.models import Book, Document, Photo
 
@@ -52,3 +57,16 @@ def stored_photo(*, book: Book | None = None) -> Photo:
 def stored_photo_columns(row: Photo) -> dict[str, object]:
     """The image's columns as the database holds them, rather than as the instance does."""
     return Photo.objects.values("image", "w", "h", "thumbnail").get(pk=row.pk)
+
+
+def savepoints_during(call: Callable[[], Any]) -> list[str]:
+    """The ``SAVEPOINT`` statements ``call`` issues, inside the test's own transaction.
+
+    An ``atomic`` block nested in one opens a savepoint, so a service opening a
+    transaction of its own shows here. Call an async service through
+    ``async_to_sync`` from a sync test: its ORM hops come back to this thread
+    and its connection, which the capture watches.
+    """
+    with CaptureQueriesContext(connection) as queries:
+        call()
+    return [q["sql"] for q in queries.captured_queries if "SAVEPOINT" in q["sql"].upper()]

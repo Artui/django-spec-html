@@ -25,7 +25,9 @@ SECRET_KEY = "not-a-secret-this-is-the-test-suite"
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
+    "django_service_specs",
     "tests.adapter_app",
+    "tests.commands_app",
     "tests.dispatch_app",
     "tests.relations_app",
 ]

@@ -8,9 +8,9 @@ from typing import Any
 from asgiref.sync import sync_to_async
 from django.http import HttpRequest, HttpResponse
 
-from django_service_specs.authorization.grant import Grant
 from django_service_specs.dispatch.adispatch import adispatch
 from django_service_specs.dispatch.apresent import apresent
+from django_service_specs.dispatch.grant import Grant
 from django_service_specs.http.error_response import error_response
 from django_service_specs.http.request_arguments import request_arguments
 from django_service_specs.http.request_principal import request_principal
@@ -26,7 +26,7 @@ from django_service_specs.specs.selector_spec import SelectorSpec
 from django_service_specs.specs.service_spec import ServiceSpec
 from django_service_specs.specs.spec_source import SpecSource
 from django_service_specs.types.dispatch_error import DispatchError
-from django_service_specs.validation.unknown_arguments import UnknownArguments
+from django_service_specs.types.unknown_arguments import UnknownArguments
 
 
 async def adispatch_request(

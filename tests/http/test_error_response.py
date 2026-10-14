@@ -22,8 +22,7 @@ from django_service_specs.http.error_response import error_response
 from django_service_specs.http.unsupported_media_type import UnsupportedMediaType
 from django_service_specs.parameters.check_arguments import check_arguments
 from django_service_specs.parameters.invalid_arguments import InvalidArguments
-from django_service_specs.parameters.parameter import Parameter
-from django_service_specs.parameters.parameters import Parameters
+from django_service_specs.parameters.parameters import Parameter, Parameters
 from django_service_specs.services.action_unavailable import ActionUnavailable
 from django_service_specs.services.additional_input_required import AdditionalInputRequired
 from django_service_specs.services.service_conflict import ServiceConflict

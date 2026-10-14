@@ -2,22 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
-from typing import Any, Final
+from collections.abc import Mapping
+from typing import Any
 
 from django.core.exceptions import NON_FIELD_ERRORS as FORM_NON_FIELD_ERRORS
 from django.forms import BaseForm
 
-from django_service_specs.parameters.non_field_errors import NON_FIELD_ERRORS
+from django_service_specs.parameters.utils import NON_FIELD_KEYS, refusal_messages
 from django_service_specs.relations.utils import clean_held_to_their_columns
-
-_NON_FIELD_KEYS: Final = (NON_FIELD_ERRORS, FORM_NON_FIELD_ERRORS)
-"""The keys a message about the whole input sits under: the kernel's, and Django's.
-
-Django's is here because a service re-raising a model's ``message_dict`` as a
-``ServiceValidationError`` carries its form-wide messages under ``"__all__"``.
-Each is held by its own test: test_non_field_errors_go_to_the_forms_own and
-test_djangos_own_non_field_key_is_read_the_same."""
 
 
 def add_argument_errors(form: BaseForm, detail: Mapping[Any, Any]) -> None:
@@ -74,27 +66,12 @@ def add_argument_errors(form: BaseForm, detail: Mapping[Any, Any]) -> None:
         clean_held_to_their_columns(form)
     for key, value in detail.items():
         field = key if key in form.fields else None
-        for path, message in _leaves(value, ()):
+        for path, message in refusal_messages(value):
             if field is not None:
                 _add_once(form, field, message)
                 continue
-            where = path if key in _NON_FIELD_KEYS else (str(key), *path)
+            where = path if key in NON_FIELD_KEYS else (str(key), *path)
             _add_once(form, None, f"{'.'.join(where)}: {message}" if where else message)
-
-
-def _leaves(value: Any, path: tuple[str, ...]) -> Iterator[tuple[tuple[str, ...], str]]:
-    """Every message below ``value``, each with its path from where the walk began."""
-    if isinstance(value, Mapping):
-        for key, inner in value.items():
-            yield from _leaves(inner, path if key in _NON_FIELD_KEYS else (*path, str(key)))
-    elif isinstance(value, list):
-        # A list is the tree's leaf: its messages share the path. Only a list,
-        # as ``error_response`` reads a service's detail: anything else is one
-        # message, and a lazy translation is not a ``str``.
-        for inner in value:
-            yield from _leaves(inner, path)
-    else:
-        yield path, str(value)
 
 
 def _add_once(form: BaseForm, field: str | None, message: str) -> None:

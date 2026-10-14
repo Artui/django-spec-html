@@ -14,8 +14,8 @@ from django_service_specs.http.utils import (
     answered_methods,
     success_response,
 )
-from django_service_specs.specs.selector_kind import SelectorKind
 from django_service_specs.specs.selector_spec import SelectorSpec
+from django_service_specs.types.selector_kind import SelectorKind
 from tests.dispatch_app.models import Note
 from tests.http.utils import ASYNC_FACTORY, FACTORY, body, note_spec, signed_in, titled_spec
 
