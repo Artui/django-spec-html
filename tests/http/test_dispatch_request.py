@@ -22,6 +22,7 @@ from tests.dispatch.utils import (
     REFUSED_ARCHIVED,
     RENAME,
     TENANT_SEEDS,
+    Listed,
     OwnerOnly,
     Refuse,
     Titled,
@@ -366,3 +367,16 @@ class TestSources:
         source = Foreign(asking_spec({"colour": {"type": "string"}}))
         with pytest.raises(ImproperlyConfigured, match="colour"):
             dispatch_request(source, post(ada, {"title": "x"}))
+
+
+def test_a_list_level_refusal_beside_a_row_s_is_one_400_body(ada: Any) -> None:
+    """A many call's list node holds row indices beside ``non_field_errors``,
+    and the body carries both, rows first, as the refusal tree orders them."""
+    spec = ServiceSpec(service=print, permissions=OPEN, many=True, validator=Listed(most=1))
+    payload = {"items": [{"title": 3}, {"title": "a"}, {"title": "b"}]}
+
+    response = dispatch_request(spec, post(ada, payload))
+
+    assert response.status_code == 400
+    assert list(body(response)["items"]) == ["0", "non_field_errors"]
+    assert body(response)["items"]["non_field_errors"] == ["At most 1 rows."]
