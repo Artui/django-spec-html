@@ -9,6 +9,7 @@ from django.core.exceptions import NON_FIELD_ERRORS as FORM_NON_FIELD_ERRORS
 from django.forms import BaseForm
 
 from django_service_specs.parameters.utils import NON_FIELD_ERRORS
+from django_service_specs.relations.utils import clean_held_to_their_columns
 
 _NON_FIELD_KEYS: Final = (NON_FIELD_ERRORS, FORM_NON_FIELD_ERRORS)
 """The keys a message about the whole input sits under: the kernel's, and Django's.
@@ -44,14 +45,34 @@ def add_argument_errors(form: BaseForm, detail: Mapping[Any, Any]) -> None:
     is not added again. The form validating the same data says the same thing
     the kernel does - a ``FormValidator``'s refusal *is* the form's errors, and
     the shape check spells its messages as Django's fields do - so without this
-    most refusals would show twice. Reading ``form.errors`` runs the form's
-    ``full_clean()`` first, as Django documents for ``add_error`` called from a
-    view, so the form's own errors are always the ones compared against.
+    most refusals would show twice. A form not yet validated is validated
+    first, as reading ``form.errors`` would, so the form's own errors are
+    always the ones compared against; but with the guards a
+    ``FormValidator``'s form is validated with, since the form's own
+    validation would hand the database driver a number no integer column
+    holds, which SQLite's refuses with ``OverflowError``. A model choice
+    field's key past its column's range is refused as ``invalid_choice`` and
+    a ``ModelForm``'s value past its integer column's range as ``max_value``
+    or ``min_value``, in the words a ``FormValidator`` refuses them with, so
+    the refusal of one is placed once
+    (test_a_list_s_key_past_its_column_is_refused_once,
+    test_a_model_form_s_integer_past_its_column_is_refused_once). A form
+    already validated is compared as it stands.
 
     A leaf is a message whatever its type: a string, a lazy translation (which
     is not a ``str``, and is never taken apart into characters), or a list of
     either. The form must be bound, as Django's ``add_error`` requires.
     """
+    # Django's own marker of a form not yet validated, which the stubs declare
+    # on no form, hence ``Any``. Each way is held by its own test:
+    # test_a_list_s_key_past_its_column_is_refused_once (not yet validated,
+    # so validated here with the guards) and
+    # test_the_page_form_s_own_checks_add_nothing_to_dispatch_s_refusal
+    # (``SpecFormView``'s page form, given an empty error state and never
+    # validated, which validating here would fill with its own errors).
+    bound: Any = form
+    if bound._errors is None:
+        clean_held_to_their_columns(form)
     for key, value in detail.items():
         field = key if key in form.fields else None
         for path, message in _leaves(value, ()):

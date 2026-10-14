@@ -20,7 +20,10 @@ from django_service_specs.authorization.not_permitted import NotPermitted
 from django_service_specs.authorization.principal_unavailable import PrincipalUnavailable
 from django_service_specs.http.error_response import error_response
 from django_service_specs.http.unsupported_media_type import UnsupportedMediaType
+from django_service_specs.parameters.check_arguments import check_arguments
 from django_service_specs.parameters.invalid_arguments import InvalidArguments
+from django_service_specs.parameters.parameter import Parameter
+from django_service_specs.parameters.parameters import Parameters
 from django_service_specs.services.action_unavailable import ActionUnavailable
 from django_service_specs.services.additional_input_required import AdditionalInputRequired
 from django_service_specs.services.service_conflict import ServiceConflict
@@ -210,3 +213,13 @@ def test_no_refusal_is_ever_a_401() -> None:
         UnsupportedMediaType(),
     ]
     assert 401 not in {error_response(exc).status_code for exc in refusals}
+
+
+def test_a_refusal_s_codes_never_reach_the_body() -> None:
+    # The codes are for an adapter in the same process; the body a client reads
+    # is the plain messages, byte for byte what it was before they existed.
+    params = Parameters.of(Parameter("title", "string", required=True))
+    with pytest.raises(InvalidArguments) as refused:
+        check_arguments(params, {"colour": "red"})
+    plain = {"title": ["This field is required."], "colour": ["Unknown argument."]}
+    assert error_response(refused.value).content == json.dumps(plain).encode()

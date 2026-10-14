@@ -8,6 +8,8 @@ of it.
 
 from __future__ import annotations
 
+import contextlib
+import importlib
 import json
 from typing import Any
 
@@ -18,7 +20,7 @@ from django.core.exceptions import ImproperlyConfigured, RequestDataTooBig
 from django.core.files.uploadedfile import SimpleUploadedFile, UploadedFile
 from django.http import HttpRequest
 from django.http.request import RawPostDataException
-from django.test import RequestFactory
+from django.test import RequestFactory, override_settings
 from django.test.client import encode_multipart
 
 from django_service_specs.adapters.forms.form_validator import FormValidator
@@ -29,12 +31,17 @@ from django_service_specs.parameters.check_arguments import check_arguments
 from django_service_specs.parameters.invalid_arguments import InvalidArguments
 from django_service_specs.parameters.parameter import Parameter
 from django_service_specs.parameters.parameters import Parameters
+from django_service_specs.parameters.utils import NON_FIELD_ERRORS
 from django_service_specs.selectors.shape_queryset import shape_queryset
 from django_service_specs.specs.selector_kind import SelectorKind
 from django_service_specs.specs.selector_spec import SelectorSpec
 from tests.dispatch.utils import make_user
 from tests.dispatch_app.models import Note
 from tests.http.utils import DEEP_JSON
+from tests.parameters.utils import coded
+
+# The module, which ``http``'s own ``request_arguments`` re-export shadows as an attribute.
+request_arguments_module = importlib.import_module("django_service_specs.http.request_arguments")
 
 FACTORY = RequestFactory()
 FORM = "application/x-www-form-urlencoded"
@@ -147,6 +154,11 @@ CSV = Parameters.of(
 )
 
 
+def _decimal_pks() -> Parameters:
+    """A CSV number filter's declaration, built in the test so a tree refusing it fails there."""
+    return Parameters.of(Parameter("pks", "array", items="string", format="decimal"))
+
+
 class _Ordered(django_filters.FilterSet):
     o = django_filters.OrderingFilter(fields=["title", "pk"])
 
@@ -184,6 +196,18 @@ class TestCommaSeparatedArrays:
     def test_a_form_body_splits_too(self) -> None:
         request = FACTORY.post("/", data="ids=1,2&pks=3", content_type=FORM)
         assert read(request, CSV) == {"ids": [1, 2], "pks": [3.0]}
+
+    def test_a_decimal_array_reads_a_comma_separated_value_as_its_elements_exactly(self) -> None:
+        # A decimal never holds a comma, so ``?pks=1,2`` splits as a number's
+        # does, and each part stays the string it spells, digits and all.
+        fraction = "0.1234567890123456789012345678901234567891"
+        query = f"/?pks=1,{fraction}, 3 &pks=4"
+        assert read(FACTORY.get(query), _decimal_pks()) == {"pks": ["1", fraction, "3", "4"]}
+
+    def test_blank_elements_of_a_decimal_array_are_dropped(self) -> None:
+        # No decimal is blank, so a blank element is absent, as a number's is.
+        assert read(FACTORY.get("/?pks=&pks=1"), _decimal_pks()) == {"pks": ["1"]}
+        assert read(FACTORY.get("/?pks="), _decimal_pks()) == {}
 
     def test_a_string_array_is_not_split(self) -> None:
         # A comma is part of a string; the whole value is the element.
@@ -587,6 +611,17 @@ class TestJsonBody:
         assert request.content_type == "application/json"
         assert read(request) == {}
 
+    def test_a_body_that_is_no_json_is_refused_as_drf_s_parser_refuses_it(self) -> None:
+        # DRF answers it with a ParseError, whose code is ``parse_error``; here it
+        # is one refusal of the arguments, carrying the same code.
+        request = FACTORY.post("/", data=b"{", content_type="application/json")
+        assert coded(refusal(request)) == {NON_FIELD_ERRORS: [(NOT_JSON, "parse_error")]}
+
+    def test_a_body_that_is_no_object_is_refused_as_a_serializer_refuses_it(self) -> None:
+        assert coded(refusal(post_json([1]))) == {
+            NON_FIELD_ERRORS: [("Expected an object.", "invalid")]
+        }
+
     @pytest.mark.parametrize(
         "body",
         [
@@ -683,3 +718,60 @@ class TestUrlKwargs:
         # the route by its own branch.
         with pytest.raises(ImproperlyConfigured, match="The route captures org, slug,"):
             read(request_, url_kwargs={"slug": "x", "org": "acme", "pk": "4"})
+
+
+class TestArrayLength:
+    """A flat array is bounded as a JSON one is, and its commas never build past the bound."""
+
+    TOO_MANY = "Ensure this field has no more than %s elements."
+
+    def test_a_comma_list_past_the_default_maximum_is_refused_at_its_name(self) -> None:
+        # The spelling that reaches round Django's DATA_UPLOAD_MAX_NUMBER_FIELDS:
+        # one key, any number of values.
+        query = ",".join(map(str, range(1001)))
+        assert refusal(FACTORY.get(f"/?ids={query}"), CSV) == {"ids": [self.TOO_MANY % 1000]}
+
+    def test_a_comma_list_at_the_default_maximum_is_read(self) -> None:
+        query = ",".join(map(str, range(1000)))
+        assert read(FACTORY.get(f"/?ids={query}"), CSV) == {"ids": list(range(1000))}
+
+    @override_settings(SERVICE_SPECS_MAX_ARRAY_LENGTH=3)
+    @pytest.mark.parametrize(
+        ("query", "handed_on"),
+        [
+            ("ids=1,2,3,4,5,6", ["1", "2", "3", "4,5,6"]),
+            ("ids=1&ids=2&ids=3&ids=4&ids=5", ["1", "2", "3", "4"]),
+            ("ids=1,2&ids=3,4,5&ids=6", ["1", "2", "3", "4,5"]),
+            ("ids=1,2,3", ["1", "2", "3"]),
+        ],
+        ids=["one-value", "repeated-keys", "mixed", "at-the-bound"],
+    )
+    def test_a_flat_array_is_split_no_further_than_one_past_its_maximum(
+        self, monkeypatch: pytest.MonkeyPatch, query: str, handed_on: list[str]
+    ) -> None:
+        # Invisible to every message, which is the length's either way: what is
+        # held is the list built on the way, one element past the bound and no
+        # more, so a value of a million commas is never split a million times.
+        # One past rather than at it, or a list over the bound would be cut to
+        # one that is accepted.
+        seen: list[Any] = []
+        real = request_arguments_module.coerce_flat
+
+        def spy(parameters: Parameters, raw: Any) -> dict[str, Any]:
+            seen.append(raw["ids"])
+            return real(parameters, raw)
+
+        monkeypatch.setattr(request_arguments_module, "coerce_flat", spy)
+        with contextlib.suppress(InvalidArguments):
+            read(FACTORY.get(f"/?{query}"), CSV)
+        assert seen == [handed_on]
+
+    @override_settings(SERVICE_SPECS_MAX_ARRAY_LENGTH=None)
+    def test_a_setting_of_none_splits_every_comma(self) -> None:
+        assert read(FACTORY.get("/?ids=1,2,3,4"), CSV) == {"ids": [1, 2, 3, 4]}
+
+    @override_settings(SERVICE_SPECS_MAX_ARRAY_LENGTH=3)
+    def test_a_declared_maximum_bounds_the_split_rather_than_the_default(self) -> None:
+        wide = Parameters.of(Parameter("ids", "array", items="integer", max_length=5))
+        assert read(FACTORY.get("/?ids=1,2,3,4,5"), wide) == {"ids": [1, 2, 3, 4, 5]}
+        assert refusal(FACTORY.get("/?ids=1,2,3,4,5,6"), wide) == {"ids": [self.TOO_MANY % 5]}

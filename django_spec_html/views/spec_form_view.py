@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+import copy
 import datetime
 import math
 from collections.abc import Callable, Mapping
+from contextlib import suppress
 from decimal import Decimal
 from typing import Any, Final, cast
 
 from django import forms
-from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
+from django.core.exceptions import (
+    BadRequest,
+    ImproperlyConfigured,
+    PermissionDenied,
+    ValidationError,
+)
+from django.db import models
+from django.forms.models import model_to_dict
+from django.forms.utils import ErrorDict
 from django.forms.widgets import FILE_INPUT_CONTRADICTION
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBase, HttpResponseRedirect
 from django.shortcuts import resolve_url
@@ -24,6 +34,7 @@ from django_service_specs.authorization.not_permitted import NotPermitted
 from django_service_specs.authorization.principal_unavailable import PrincipalUnavailable
 from django_service_specs.dispatch.dispatch import dispatch
 from django_service_specs.dispatch.dispatch_result import DispatchResult
+from django_service_specs.dispatch.resolve_target import resolve_target
 from django_service_specs.http.add_argument_errors import add_argument_errors
 from django_service_specs.http.utils import request_principal, route_arguments
 from django_service_specs.parameters.coerce_flat import coerce_flat
@@ -37,6 +48,7 @@ from django_service_specs.services.service_not_found import ServiceNotFound
 from django_service_specs.services.service_validation_error import ServiceValidationError
 from django_service_specs.specs.service_spec import ServiceSpec
 from django_service_specs.types.dispatch_error import DispatchError
+from django_service_specs.types.unset import UNSET
 from django_service_specs.validation.unknown_arguments import UnknownArguments
 
 _TYPED: Final = (forms.IntegerField, forms.DateField, forms.DateTimeField)
@@ -72,9 +84,24 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     ``extra_context`` merged in as Django's ``ContextMixin`` does. The spec's
     class-level permission check runs first, through
     [`authorize`][django_service_specs.authorization.authorize.authorize], so
-    a page is never offered to a principal the post would refuse. The form is
-    always unbound: showing an update's current row as its initial data is a
-    page of its own, which this view does not build.
+    a page is never offered to a principal the post would refuse.
+
+    **An update's page shows the row it updates.** Every GET then finds its
+    target as dispatch would, through
+    [`resolve_target`][django_service_specs.dispatch.resolve_target.resolve_target]
+    on the route's kwargs, coerced as a post's are: the row or set a target
+    selector resolves, or ``None`` for a create. A check refusing it - the
+    object-level check on a row, the scope check on a set or on ``None`` -
+    raises ``PermissionDenied``, as the post would be refused; a missing row
+    or a selector's ``ServiceNotFound`` raises ``Http404``; and a route value
+    the spec's parameters refuse raises Django's ``BadRequest``. The form
+    shows a row's values for its own fields: a ``ModelForm`` of the row's
+    model is built on a copy of it, as the Validator binds one, and any other
+    form takes the row's values for the enabled fields it names as its
+    ``initial``. So a file the row holds is shown, with the clear checkbox an
+    optional file's ``ClearableFileInput`` offers beside it. A create, a
+    collection target and a missing row ``allow_none`` lets through show an
+    empty form.
 
     **POST starts as GET does**: the route first, then that check, and only
     then is the form built from the post. A refused post is answered with the
@@ -84,8 +111,18 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     a malformed form, and a form whose constructor reads rows would read them
     for that principal. The
     [`Grant`][django_service_specs.authorization.grant.Grant] it returns goes
-    to dispatch, so the class-level check runs once; the object-level check
-    is still dispatch's, on the row it resolves.
+    to dispatch, so the class-level check runs once.
+
+    **Then the post finds its target, as GET does**, before the form is
+    built or read, so the form a refused post re-renders is built on the row
+    as the page's was, its held file and clear checkbox shown. The target
+    answers before the shape check: the object-level and scope checks and a
+    missing row refuse a malformed post as they would a well-formed one,
+    rather than dispatch re-rendering the page for a principal the row
+    refuses. Dispatch is handed the target and the grant ``resolve_target``
+    returns, so it looks nothing up again and asks no check twice. A route
+    value the target's reads refuse is left to dispatch, whose one refusal
+    carries it beside the form's own.
 
     **POST** binds the form to the post and reads the arguments through its
     own widgets - a checkbox is ``True`` or ``False``, a multi-select a list -
@@ -122,15 +159,18 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
       raises ``Http404``, for the host's own 403 and 404 pages.
 
     **A re-rendered form carries the refusal and nothing else**: the page says
-    what dispatch decided. The page's own form is bound to no row, so its own
-    errors are not shown: its uniqueness check would tell an update page that
-    an unchanged unique value was taken. After a shape-check refusal, then,
+    what dispatch decided. The page's own form is never validated: its
+    errors start empty and the refusal is placed on them, so nothing the
+    Validator did not decide reaches the page, and a value the Validator
+    refused because no column holds it never reaches the database through
+    the page's own checks. After a shape-check refusal, then,
     the form's further checks - a length, ``clean()``, uniqueness - answer the
     next post rather than this one.
 
     ``as_view()`` refuses, when the URLconf is imported, a view with no
-    ``ServiceSpec``, a spec whose Validator is not a ``FormValidator``, and a
-    view with no ``success_url`` that does not override ``get_success_url``.
+    ``ServiceSpec``, a spec whose Validator is not a ``FormValidator``, a
+    ``many`` spec, whose list of rows no form posts, and a view with no
+    ``success_url`` that does not override ``get_success_url``.
 
     **Sync only**, in this release. **CSRF is the host's middleware**, as for
     any Django view, and the template renders ``{% csrf_token %}``.
@@ -159,10 +199,16 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         return view
 
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-        """The page, with an unbound form, for a principal the spec's class check admits."""
+        """The page, with an unbound form showing the target row, for a principal admitted to it."""
         spec = self.served_spec()
-        _admitted(spec, request, kwargs)
-        return self.render_to_response(self.get_context_data(form=_form_class(spec)()))
+        principal, grant = _admitted(spec, request, kwargs)
+        try:
+            target, _ = _found(spec, principal, grant, kwargs, self.pool_seeds)
+        except InvalidArguments as refused:
+            # No post to place it on beside the form's: the route names a
+            # target its reads refuse, which a post answers at 400 too.
+            raise BadRequest(str(refused.detail)) from refused
+        return self.render_to_response(self.get_context_data(form=_page_form(spec, target)))
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         """Dispatch the posted form: a redirect on success, the form re-rendered on a refusal."""
@@ -174,9 +220,20 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         # malformed post with the page, every row a choice field lists
         # included. A form's constructor may query, for choices it builds, so
         # it waits too. The grant hands dispatch the check already made, so it
-        # runs once; it leaves the object-level check to dispatch.
+        # runs once.
         principal, grant = _admitted(spec, request, kwargs)
-        form = _form_class(spec)(data=request.POST, files=request.FILES)
+        # Then the target, found as the page finds it, so the form a refused
+        # post re-renders shows the row - its held file, and the clear
+        # checkbox beside it - and the object-level and scope checks and a
+        # missing row answer before the post is read. Dispatch takes the
+        # target and the grant vouching for it, so it looks nothing up again
+        # and asks no check twice. A route value the target's reads refuse is
+        # left to dispatch, whose one refusal carries it beside the form's:
+        # test_a_url_kwarg_the_shape_check_refuses_is_a_prefixed_non_field_error.
+        target: Any = UNSET
+        with suppress(InvalidArguments):
+            target, grant = _found(spec, principal, grant, kwargs, self.pool_seeds)
+        form = _page_form(spec, target, data=request.POST, files=request.FILES)
         try:
             arguments = _form_arguments(form, spec.parameters(), kwargs)
             result = dispatch(
@@ -186,11 +243,12 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
                 grant=grant,
                 pool_seeds=self.pool_seeds,
                 unknown_arguments=self.unknown_arguments,
+                target=target,
             )
         except (NotPermitted, PrincipalUnavailable) as refused:
-            # The object-level check, on the row dispatch resolved, or either
-            # raised by the operation: answered as ``error_response`` answers
-            # it, whoever refused.
+            # Either raised by the operation, the target's checks having
+            # answered before dispatch: answered as ``error_response``
+            # answers it, whoever refused.
             raise PermissionDenied(refused.message) from refused
         except ServiceNotFound as refused:
             raise Http404(refused.message) from refused
@@ -210,8 +268,9 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             # Raised by nothing in this package: a refusal of the call a later
             # release may add, answered as ``error_response`` answers one.
             return self._render_refused(form, {NON_FIELD_ERRORS: [refused.message]}, status=400)
-        if result.kind == "not_found":
-            raise Http404
+        # Never ``not_found``: the target was found before dispatch, which
+        # looks nothing up when handed it, and where the route's value was
+        # refused the shape check refuses it again before any lookup.
         return HttpResponseRedirect(self.get_success_url(result))
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
@@ -232,14 +291,21 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         """The page again, the bound form carrying ``detail`` and nothing else.
 
         The page says what dispatch decided, and nothing the page's own form
-        would add. That form is bound to no row, so its own errors are not
-        shown: its uniqueness check told an update page that an unchanged
-        unique value was taken, where the Validator's form, bound to the row,
-        passed it. Django's ``add_error`` needs the form cleaned first, so its
-        validation runs, and its errors are cleared before the refusal is
-        placed.
+        would add: its own errors are not shown, whatever its own checks
+        would find, since the Validator's form is the one that decided. So
+        the page's form is never validated: its error state is set to none
+        directly, which is what Django's ``add_error`` needs, and the refusal
+        is placed on it. Validated, it would hand a number no integer column
+        holds to the database driver, with none of the Validator's guards,
+        and SQLite's raises ``OverflowError``
+        (test_a_list_s_key_past_its_column_is_refused_on_the_page).
         """
-        form.errors.clear()
+        # Django's own two attributes, as ``full_clean()`` starts them, with
+        # the form's renderer as Django 5.0 and later pass it; ``Any``, as the
+        # stubs declare neither as assignable.
+        bound: Any = form
+        bound._errors = ErrorDict(renderer=form.renderer)
+        bound.cleaned_data = {}
         add_argument_errors(form, detail)
         return self.render_to_response(self.get_context_data(form=form), status=status)
 
@@ -261,6 +327,11 @@ def _check_configuration(cls: type[SpecFormView], initkwargs: Mapping[str, Any])
         raise ImproperlyConfigured(
             f"{label} renders the form its spec validates with, so the spec's validator "
             f"must be a FormValidator; got {type(spec.validator).__name__}."
+        )
+    if spec.many:
+        raise ImproperlyConfigured(
+            f"{label} posts one row, the form's, and a many spec takes a list of rows "
+            "under its many_argument: serve it from a view that sends the list."
         )
     redirects = initkwargs.get("get_success_url", cls.get_success_url)
     # One branch to coverage, so each condition is held by its own test:
@@ -302,6 +373,74 @@ def _admitted(
         return principal, authorize(spec, principal)
     except (NotPermitted, PrincipalUnavailable) as refused:
         raise PermissionDenied(refused.message) from refused
+
+
+def _found(
+    spec: ServiceSpec,
+    principal: Any,
+    grant: Grant,
+    url_kwargs: Mapping[str, Any],
+    pool_seeds: PoolSeeds,
+) -> tuple[Any, Grant]:
+    """The row, set or ``None`` the post acts on, and the grant vouching for it.
+
+    Found by ``resolve_target`` as dispatch would find it, and refused as
+    dispatch would refuse it, with Django's exceptions for the host's 403 and
+    404 pages. A spec with no target selector - a create - resolves ``None``,
+    which the scope check is asked about. The route's kwargs are coerced as a
+    post's are, since a route captures strings and the target's reads are
+    typed; a value they refuse raises ``InvalidArguments``, for the caller to
+    answer.
+    """
+    parameters = spec.parameters()
+    try:
+        resolved = resolve_target(
+            spec,
+            principal=principal,
+            arguments=coerce_flat(parameters, route_arguments(parameters, url_kwargs)),
+            grant=grant,
+            pool_seeds=pool_seeds,
+        )
+    except (NotPermitted, PrincipalUnavailable) as refused:
+        raise PermissionDenied(refused.message) from refused
+    except ServiceNotFound as refused:
+        raise Http404(refused.message) from refused
+    if isinstance(resolved, DispatchResult):
+        raise Http404
+    return resolved
+
+
+def _page_form(spec: ServiceSpec, target: Any, **bound: Any) -> forms.BaseForm:
+    """The page's form, bound by ``bound`` if given, showing ``target``'s values where it is a row.
+
+    A ``ModelForm`` of the row's model is built on a copy of it, as
+    ``FormValidator`` binds one, so its own ``__init__`` sees the row it
+    edits; any other form takes the row's values for the fields it names, its
+    own fields alone, as its ``initial``. A disabled field is left out: the
+    Validator declares none, and the form cleans one from its own
+    ``initial``, so the row's value is never what the post sends
+    (test_a_disabled_field_shows_its_own_initial). One branch to coverage, so
+    each condition is held by its own test:
+    test_a_plain_form_shows_the_row_s_values_for_its_own_fields (a
+    ``ModelForm``: a plain form takes no ``instance``) and
+    test_a_model_form_of_another_model_is_built_as_a_create (the row's model,
+    as the Validator binds it).
+    """
+    form_class = _form_class(spec)
+    if not isinstance(target, models.Model):
+        return form_class(**bound)
+    if issubclass(form_class, forms.BaseModelForm) and isinstance(target, form_class._meta.model):
+        # A copy, as for the Validator: a post builds this form before
+        # dispatch, on the very row it then hands dispatch as its target, so
+        # anything the form's constructor writes onto its instance - a
+        # default filled in - would reach the Validator and the service as
+        # the row's stored values
+        # (test_the_page_form_s_writes_never_reach_the_row_dispatch_is_handed).
+        return form_class(**bound, instance=copy.copy(target))
+    # ``base_fields`` is set by the metaclass, which the stubs do not declare.
+    fields: dict[str, forms.Field] = form_class.base_fields  # ty: ignore[unresolved-attribute]
+    names = [name for name, field in fields.items() if not field.disabled]
+    return form_class(**bound, initial=model_to_dict(target, fields=names))
 
 
 def _form_arguments(
@@ -371,4 +510,13 @@ def _wire(field: forms.Field, value: Any) -> Any:
         # A datetime is a date too, and each writes its own ISO form: the
         # date-time with its offset, since the field made it aware.
         return typed.isoformat()
-    return typed if math.isfinite(typed) else value
+    # Only a float can be no finite number, and asking an int, which an
+    # ``IntegerField`` reads any number of digits as, converts it to one,
+    # raising OverflowError past a float's range. One branch to coverage, so
+    # each condition is held by its own test:
+    # test_an_integer_past_a_float_s_range_reaches_the_validator (the float)
+    # and test_localized_numbers_are_read_as_the_form_reads_them (its
+    # finiteness: without it, every float is sent on as it was typed).
+    if isinstance(typed, float) and not math.isfinite(typed):
+        return value
+    return typed

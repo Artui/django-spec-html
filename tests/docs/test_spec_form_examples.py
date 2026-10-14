@@ -109,6 +109,36 @@ class TestGet:
             serve(FACTORY.post("/books/new/", data=data))
 
 
+class TestAnUpdatePage:
+    def test_the_page_shows_the_book_it_edits(self, ada: Any, author: Author) -> None:
+        book = Book.objects.create(
+            title="The Lathe of Heaven", price=Decimal("9.99"), status=Status.DRAFT, author=author
+        )
+        response = serve(FACTORY.get(f"/books/{book.pk}/edit/"), ada).render()
+        form = response.context_data["form"]
+        assert not form.is_bound
+        assert (form["title"].value(), form["price"].value(), form["author"].value()) == (
+            "The Lathe of Heaven",
+            Decimal("9.99"),
+            author.pk,
+        )
+        assert b'value="The Lathe of Heaven"' in response.content
+
+    def test_a_book_that_does_not_exist_has_no_page(self, ada: Any) -> None:
+        with pytest.raises(Http404):
+            serve(FACTORY.get("/books/404/edit/"), ada)
+
+    def test_its_post_updates_the_book(self, ada: Any, author: Author) -> None:
+        book = Book.objects.create(
+            title="The Lathe of Heaven", price=Decimal("9.99"), status=Status.DRAFT, author=author
+        )
+        data = posted(author, title="The Word for World Is Forest")
+        response = serve(FACTORY.post(f"/books/{book.pk}/edit/", data=data), ada)
+        assert (response.status_code, response.url) == (302, "/books/")
+        book.refresh_from_db()
+        assert book.title == "The Word for World Is Forest"
+
+
 class TestPost:
     def test_a_book_is_created_and_the_post_redirected(self, ada: Any, author: Author) -> None:
         # The date is in the form's input format rather than ISO, and the

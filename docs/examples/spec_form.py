@@ -10,10 +10,22 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.urls import path, reverse, reverse_lazy
 
-from django_service_specs import DispatchResult, PermissionCheck, ServiceSpec, SpecFormView
+from django_service_specs import (
+    ChangeResult,
+    DispatchResult,
+    Parameter,
+    Parameters,
+    PermissionCheck,
+    SelectorKind,
+    SelectorSpec,
+    ServiceSpec,
+    SpecFormView,
+    update_from_input,
+)
 from docs.examples.forms_adapter import book_validator
 from tests.adapter_app.models import Book
 
@@ -36,6 +48,30 @@ def add_book(*, data: dict[str, Any]) -> Book:
 # BookForm, from the forms adapter's page, is the Validator and the page's form.
 add_book_spec = ServiceSpec(service=add_book, permissions=[IsSignedIn()], validator=book_validator)
 # --8<-- [end:spec]
+
+
+# --8<-- [start:update]
+def book_by_pk(*, pk: int) -> QuerySet[Book]:
+    return Book.objects.filter(pk=pk)
+
+
+def edit_book(*, instance: Book, data: dict[str, Any]) -> ChangeResult[Book]:
+    return update_from_input(instance, data, exclude_fields=["shelves"])
+
+
+# The same form behind an update: GET finds the book the route names, and the
+# page shows its values for the form's fields.
+edit_book_spec = ServiceSpec(
+    service=edit_book,
+    permissions=[IsSignedIn()],
+    validator=book_validator,
+    instance_selector_spec=SelectorSpec(
+        kind=SelectorKind.RETRIEVE,
+        selector=book_by_pk,
+        reads=Parameters.of(Parameter("pk", "integer", required=True)),
+    ),
+)
+# --8<-- [end:update]
 
 
 def books(request: HttpRequest) -> HttpResponse:
@@ -66,6 +102,14 @@ urlpatterns = [
         ),
     ),
     path("books/add/", AddBookThenShowIt.as_view()),
+    path(
+        "books/<int:pk>/edit/",
+        SpecFormView.as_view(
+            spec=edit_book_spec,
+            template_name="spec_form.html",
+            success_url=reverse_lazy("books"),
+        ),
+    ),
     path("books/", books, name="books"),
     path("books/<int:pk>/", book, name="book"),
 ]

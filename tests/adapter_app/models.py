@@ -86,3 +86,37 @@ class Edition(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["book", "number"], name="one_edition_per_number")
         ]
+
+
+class Shelf(models.Model):
+    """A place two numbers name together: a row of a bookcase and a position along it."""
+
+    row = models.IntegerField()
+    position = models.IntegerField()
+
+    class Meta:
+        app_label = "adapter_app"
+        unique_together = [("row", "position")]
+
+
+class Placement(models.Model):
+    """A book on a shelf, related to it by both of the shelf's numbers.
+
+    A ``ForeignObject`` over two columns: a relation that compares no single
+    column with a value, so no integer range is its.
+    """
+
+    title = models.CharField(max_length=100)
+    shelf_row = models.IntegerField()
+    shelf_position = models.IntegerField()
+    shelf = models.ForeignObject(
+        Shelf,
+        on_delete=models.CASCADE,
+        from_fields=["shelf_row", "shelf_position"],
+        to_fields=["row", "position"],
+        related_name="placements",
+    )
+
+    class Meta:
+        app_label = "adapter_app"
+        ordering = ("pk",)

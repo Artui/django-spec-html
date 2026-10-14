@@ -91,16 +91,23 @@ reads them, by method and body:
 
 **A flat source is read by the declaration.** An `array` parameter takes every
 value its key was sent with (`?ids=1&ids=2`), and anything else takes the last.
-An array of numbers, integers or booleans also reads a value holding commas as
-its elements, `?ids=1,2` as `[1, 2]` with the space around each part trimmed:
-a comma cannot be part of such a value, and it is the spelling a django-filter
-CSV filter advertises. Repeated keys and commas may mix, and an empty part
-(`?ids=1,,2`) is refused at its index as any malformed element is. An array
+An array of numbers, integers, booleans or decimal strings also reads a value
+holding commas as its elements, `?ids=1,2` as `[1, 2]` with the space around
+each part trimmed: a comma cannot be part of such a value, and it is the
+spelling a django-filter CSV filter advertises. A decimal element stays the
+string it spells, so `?pks=1,2` is `["1", "2"]`, every digit kept. Repeated keys and commas may mix, and an empty part
+(`?ids=1,,2`) is refused at its index as any malformed element is. A list
+longer than the array takes - its `max_length`, or 1000 by the
+`SERVICE_SPECS_MAX_ARRAY_LENGTH` setting - is refused whole at its name, a 400
+rather than the 500 a database answers past its variable limit, and is never
+split further than one element past it: see
+[how long a list may be](arguments.md#how-long-a-list-may-be). An array
 of strings is split the same way when it declares choices and none of them
 holds a comma, as a django-filter `OrderingFilter`'s do: every element must be
 a choice, so `?o=title,-pk` can only be `["title", "-pk"]`. An array of
-strings with no choices, or with a choice holding a comma, and an array of
-decimals or dates, is never split, since a comma can be part of a string.
+strings with no choices, or with a choice holding a comma, is never split,
+since a comma can be part of a string, and an array declaring no `items` is
+not either.
 A blank value is absent unless `""` is one the parameter can take: a plain
 string can, and a number, a boolean, a date, a decimal, or a string whose
 `choices` leave the blank out cannot. A flat wire has no other spelling of
@@ -260,9 +267,39 @@ and `spec` beside it: the names Django's `FormView` uses, with
 `extra_context` merged in as Django's `ContextMixin` does. The spec's
 class-level permission check runs first, so the page is never offered to a
 principal the post would refuse: an anonymous visitor above gets Django's own
-`PermissionDenied`, which the host's 403 page answers. The form is always
-unbound; showing an update's current row as its initial data is a page of its
-own, which this view does not build.
+`PermissionDenied`, which the host's 403 page answers.
+
+**An update's page shows the row it updates.** Every GET then finds its
+target as dispatch would, through
+[`resolve_target`][django_service_specs.dispatch.resolve_target.resolve_target]
+on the route's kwargs, coerced as a post's are: the row or set a target
+selector resolves, or `None` for a create.
+
+- A check refusing it - the object-level check on a row, the scope check on a
+  set or on `None` - raises `PermissionDenied`, as the post would be refused;
+  a missing row, or a selector's `ServiceNotFound`, is `Http404`; and a route
+  value the spec's parameters refuse is Django's `BadRequest`, which the
+  host's 400 page answers.
+- The form stays unbound, and shows the row's values for its own fields. A
+  `ModelForm` of the row's model is built on a copy of the row, as the
+  [`FormValidator`][django_service_specs.adapters.forms.form_validator.FormValidator]
+  binds it, so its own `__init__` sees the row it edits. Any other form takes
+  the row's values for the fields it names as its `initial`, and a field no
+  model field matches keeps its own, as does a disabled one, which the post
+  cleans from that initial rather than reading.
+- So a file the row holds is shown, linked, with the
+  [clear checkbox](forms.md#clearing-a-file) an optional file's
+  `ClearableFileInput` offers beside it.
+- A create, a collection target and a missing row the instance selector's
+  `allow_none` lets through show an empty form.
+
+```python
+--8<--
+docs/examples/http_forms.py:update
+--8<--
+```
+
+The URLconf above routes it as `books/<int:pk>/edit/`.
 
 **POST starts as GET does**: the route first, then the same check, and only
 then is the form built from the post. A refused post is answered with the
@@ -270,8 +307,20 @@ page again, and dispatch's shape check comes before its own permission check,
 so without it a principal the spec refuses would be shown the page - every
 row a choice field lists, and `extra_context` - by posting a malformed form,
 and a form whose constructor reads rows would read them for that principal.
-The `Grant` the check returns goes to dispatch, so it runs once; the
-object-level check is still dispatch's.
+The `Grant` the check returns goes to dispatch, so it runs once.
+
+**Then the post finds its target, as the page does**, before the form is
+built or read. So the form a refused post re-renders is built on the row as
+the page's was, and shows its held file and the clear checkbox beside it. And
+the target answers **before the shape check**: a principal the object-level or
+scope check refuses is `PermissionDenied`, and a missing row `Http404`, even
+for a post that is malformed, where dispatch's own order would refuse the
+malformed post first and re-render the page for them. Dispatch is handed the
+target and the grant `resolve_target` returns, so it looks nothing up again and
+asks no check twice. One case is left to dispatch: a route value the target's
+reads refuse, which comes back in dispatch's one refusal beside the form's
+own, as a non-field error. A create resolves `None` and a collection target
+its set, each handed on the same way.
 
 **POST** then binds the form to the post and reads the arguments **through
 the form's own widgets**, which is how Django reads a form:
@@ -325,8 +374,10 @@ The first two rows place the refusal on the form, and a service's string or
 list detail is about the whole form. Every other re-rendered refusal is its
 message, among the form's non-field errors. **The re-rendered form carries
 the refusal and nothing else**, so the page says what dispatch decided. The
-page's own form is bound to no row, so its own errors would tell an update
-page that an unchanged unique value was taken. So after a shape-check
+page's own form is never validated: its errors start empty and the refusal is
+placed on it, so nothing the Validator did not decide reaches it, and a value
+the Validator refused because no column holds it - a key past 64 bits - never
+reaches the database through the page's own checks. So after a shape-check
 refusal - a required field left blank, a date that does not parse - the
 form's further checks, such as a length, `clean()` or uniqueness, answer the
 next post rather than this one. The statuses are
@@ -335,14 +386,15 @@ or Turbo, which will not render a failed post answered 200 - reads it the
 same way it reads the JSON views.
 
 `as_view()` refuses, when the URLconf is imported, a view with no
-`ServiceSpec`, a spec whose Validator is not a `FormValidator`, and a view
-with neither a `success_url` nor its own `get_success_url`. The view is **sync
+`ServiceSpec`, a spec whose Validator is not a `FormValidator`, a `many`
+spec, whose list of rows no form posts, and a view with neither a
+`success_url` nor its own `get_success_url`. The view is **sync
 only** in this release.
 
 ### A refusal, placed on the form
 
 [`add_argument_errors`][django_service_specs.http.add_argument_errors.add_argument_errors]
-is how the view places a refusal, on a form whose own errors it has cleared,
+is how the view places a refusal, on a form whose errors it has started empty,
 and a hand-written view with its own bound form can call it the same way. It
 uses Django's public `form.add_error`, beside whatever errors the form carries:
 
@@ -360,3 +412,12 @@ uses Django's public `form.add_error`, beside whatever errors the form carries:
   says - a `FormValidator`'s refusal is the form's own errors, and the shape
   check spells its messages as Django's fields do - so without this most
   refusals would show twice.
+- **A form not yet validated is validated first**, as reading `form.errors`
+  would, so its own errors are the ones compared against, but with the guards
+  a `FormValidator`'s form is validated with. Its own validation would hand
+  the database driver a number no integer column holds - a model choice
+  field's key, a `ModelForm`'s integer - which SQLite's refuses with
+  `OverflowError`. Such a key is refused as `invalid_choice` and such an
+  integer as `max_value` or `min_value`, in the words a `FormValidator`
+  refuses them with, so the refusal of one is placed once. A form already
+  validated is compared as it stands.

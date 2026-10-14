@@ -94,6 +94,24 @@ class TestSuccess:
         assert refused.status_code == 400
         assert body(refused) == {"pks": {"1": ["Enter a number."], "2": ["Enter a number."]}}
 
+    def test_a_csv_filter_refuses_a_list_past_the_default_maximum_as_the_client_s_mistake(
+        self, ada: Any
+    ) -> None:
+        # One key and a comma per value is the spelling that passes Django's
+        # DATA_UPLOAD_MAX_NUMBER_FIELDS; past the database's variable limit an
+        # ``in`` lookup answered a 500. A 400 at the filter's name instead.
+        spec = notes_spec(filter_set=NoteFilters)
+        at_the_bound = ",".join(map(str, range(1, 1001)))
+        past_it = f"{at_the_bound},1001"
+
+        assert (
+            dispatch_request(spec, signed_in(FACTORY.get(f"/?pks={at_the_bound}"), ada)).status_code
+            == 200
+        )
+        refused = dispatch_request(spec, signed_in(FACTORY.get(f"/?pks={past_it}"), ada))
+        assert refused.status_code == 400
+        assert body(refused) == {"pks": ["Ensure this field has no more than 1000 elements."]}
+
     def test_each_presented_row_carries_its_affordances(self, ada: Any) -> None:
         Note.objects.create(owner=ada, title="One")
         Note.objects.create(owner=ada, title="Two", archived=True)

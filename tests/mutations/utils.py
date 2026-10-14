@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from unittest.mock import patch
+
 from django.core.files.base import ContentFile
 
 from tests.adapter_app.models import Book, Document, Photo
@@ -21,6 +25,18 @@ def stored_document(*, attachment: bool = True) -> Document:
     row.scan.save("scan.txt", ContentFile(b"scan"), save=False)
     row.save()
     return row
+
+
+@contextmanager
+def attachment_at_the_root() -> Iterator[None]:
+    """``attachment`` stored with no ``upload_to``, so an upload's name is the name a row holds.
+
+    An upload's name is only ever its base name, so under the field's own
+    ``upload_to`` it can never match a held file's; at the storage root, a
+    re-upload of ``notes.txt`` does.
+    """
+    with patch.object(Document._meta.get_field("attachment"), "upload_to", ""):
+        yield
 
 
 def stored_name(row: Document, field: str = "attachment") -> str:

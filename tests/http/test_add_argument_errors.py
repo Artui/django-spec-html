@@ -1,19 +1,25 @@
 """``add_argument_errors``: a refusal tree placed on a bound form, beside its own errors, once.
 
 Every form here is bound and never validated before the call, as a view hands
-one over: the form's own errors are whatever its ``full_clean()`` finds when
-``form.errors`` is first read, which is what the placement reads to know what
-the form already says.
+one over: the form's own errors are whatever its validation finds when the
+placement validates it, with the guards a ``FormValidator``'s form is
+validated with, which is what the placement reads to know what the form
+already says.
 """
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
+import pytest
 from django import forms
+from django.contrib.auth import get_user_model
+from django.http import QueryDict
 from django.utils.translation import gettext_lazy
 
 from django_service_specs.http.add_argument_errors import add_argument_errors
+from tests.adapter_app.models import Author, Book, Edition
 
 REQUIRED = "This field is required."
 CLOSED = "Entries are closed."
@@ -121,3 +127,49 @@ class TestMessages:
         form = bound(title="Hi")
         add_argument_errors(form, {"non_field_errors": gettext_lazy("Closed today.")})
         assert form.non_field_errors() == ["Closed today."]
+
+
+class AssigneesForm(forms.Form):
+    """A form choosing several rows, which Django matches with one ``in`` lookup."""
+
+    assignees = forms.ModelMultipleChoiceField(queryset=get_user_model().objects.all())
+
+
+class EditionForm(forms.ModelForm):
+    """A row whose integer column a constraint holds unique, so validating it queries."""
+
+    class Meta:
+        model = Edition
+        fields = ["book", "number"]
+
+
+@pytest.mark.django_db
+class TestAValuePastItsColumn:
+    """A form whose own validation would hand the driver a number no column holds.
+
+    The form's own errors are found with the guards ``FormValidator`` cleans
+    its form with, so the value is refused in the field's words, which the
+    kernel's refusal of it repeats, rather than raising ``OverflowError``.
+    """
+
+    PAST_KEY = f"Select a valid choice. {2**63} is not one of the available choices."
+
+    @pytest.mark.parametrize("prefix", [None, "assign"], ids=["unprefixed", "prefixed"])
+    def test_a_list_s_key_past_its_column_is_refused_once(self, prefix: str | None) -> None:
+        # Bound as a view binds ``request.POST``: a ``QueryDict``, whose item
+        # is only the last of a key's values, and here that one is in range.
+        name = "assignees" if prefix is None else f"{prefix}-assignees"
+        data = QueryDict(f"{name}={2**63}&{name}=1")
+        form = AssigneesForm(data=data, prefix=prefix)
+        add_argument_errors(form, {"assignees": [self.PAST_KEY]})
+        assert errors(form) == {"assignees": [self.PAST_KEY]}
+
+    @pytest.mark.usefixtures("unstated_ranges")
+    def test_a_model_form_s_integer_past_its_column_is_refused_once(self) -> None:
+        book = Book.objects.create(
+            author=Author.objects.create(name="Ada"), title="Notes", price=Decimal("1.00")
+        )
+        past = "Ensure this value is less than or equal to %s." % (2**63 - 1)
+        form = EditionForm(data={"book": book.pk, "number": 2**63})
+        add_argument_errors(form, {"number": [past]})
+        assert errors(form) == {"number": [past]}
