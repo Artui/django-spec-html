@@ -6,8 +6,8 @@ from typing import Any
 
 from django.http import HttpRequest
 
+from django_service_specs.authorization.is_deactivated import is_deactivated
 from django_service_specs.authorization.principal_unavailable import PrincipalUnavailable
-from django_service_specs.authorization.utils import is_deactivated
 
 
 def request_principal(request: HttpRequest) -> Any:

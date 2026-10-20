@@ -16,13 +16,11 @@ from django_service_specs.http.route_arguments import route_arguments
 from django_service_specs.http.unsupported_media_type import UnsupportedMediaType
 from django_service_specs.parameters.coded_message import CodedMessage
 from django_service_specs.parameters.coerce_flat import coerce_flat
+from django_service_specs.parameters.expected_type_refusal import expected_type_refusal
 from django_service_specs.parameters.invalid_arguments import InvalidArguments
+from django_service_specs.parameters.max_length_in_force import max_length_in_force
 from django_service_specs.parameters.non_field_errors import NON_FIELD_ERRORS
 from django_service_specs.parameters.parameters import Parameter, Parameters
-from django_service_specs.parameters.utils import (
-    expected_type,
-    max_length_in_force,
-)
 
 _CSRF_FIELD = "csrfmiddlewaretoken"
 """The field ``{% csrf_token %}`` renders into a form: Django's, and never an argument."""
@@ -343,7 +341,7 @@ def _json_object(request: HttpRequest) -> dict[str, Any]:
             }
         ) from None
     if not isinstance(decoded, dict):
-        raise InvalidArguments({NON_FIELD_ERRORS: [expected_type("object")]})
+        raise InvalidArguments({NON_FIELD_ERRORS: [expected_type_refusal("object")]})
     return decoded
 
 
