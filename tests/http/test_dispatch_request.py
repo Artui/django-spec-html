@@ -6,6 +6,7 @@ import dataclasses
 import json
 from typing import Any
 
+import django_filters
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ImproperlyConfigured
@@ -18,7 +19,6 @@ from django_service_specs import (
 )
 
 from django_spec_html.http.dispatch_request import dispatch_request
-from tests.adapters.filters.utils import NoteFilters
 from tests.dispatch.utils import (
     OPEN,
     REFUSED_ARCHIVED,
@@ -33,7 +33,9 @@ from tests.dispatch.utils import (
 from tests.dispatch_app.models import Note
 from tests.http.utils import (
     FACTORY,
+    SPEC_OR_SOURCE,
     Conflicting,
+    Foreign,
     Seen,
     asking_spec,
     body,
@@ -42,11 +44,28 @@ from tests.http.utils import (
     signed_in,
     titled_spec,
 )
-from tests.specs.utils import Foreign
 
 pytestmark = pytest.mark.django_db
 
 UNAVAILABLE = {"detail": "The acting principal is unavailable."}
+
+
+class NumberInFilter(django_filters.BaseInFilter, django_filters.NumberFilter):
+    """``?pks=1,2``: a CSV filter takes its element type from its second base."""
+
+
+class NumberCsvRangeFilter(django_filters.BaseRangeFilter, django_filters.NumberFilter):
+    """``?pk_between=1,5``: two values in one argument, unlike ``RangeFilter``."""
+
+
+class NoteFilters(django_filters.FilterSet):
+    """The two comma-separated spellings, as real django-filter classes rather than stand-ins.
+
+    The reading is checked against what django-filter itself reads.
+    """
+
+    pks = NumberInFilter(field_name="pk", lookup_expr="in")
+    pk_between = NumberCsvRangeFilter(field_name="pk", lookup_expr="range")
 
 
 @dataclasses.dataclass
@@ -145,10 +164,12 @@ class TestSuccess:
         response = dispatch_request(titled_spec({"id": 7}), post(ada, {"title": " Final "}))
         assert (response.status_code, body(response)) == (200, {"id": 7})
 
-    def test_a_service_with_nothing_to_present_is_204(self, ada: Any) -> None:
-        response = dispatch_request(titled_spec(None), post(ada, {"title": "Final"}))
-        assert response.status_code == 204
-        assert response.content == b""
+    @SPEC_OR_SOURCE
+    def test_a_service_with_nothing_to_present_is_204(self, ada: Any, served: Any) -> None:
+        # Read off a source itself, a service would not be one and would
+        # answer ``null`` at 200.
+        response = dispatch_request(served(titled_spec(None)), post(ada, {"title": "Final"}))
+        assert (response.status_code, response.content) == (204, b"")
 
     def test_a_selector_that_allows_none_answers_null_at_200(self, ada: Any) -> None:
         # Holds ``isinstance(spec, ServiceSpec)`` in the 204 rule: a read that
@@ -328,19 +349,24 @@ class TestPassedThrough:
 class TestAskedInput:
     # The schema a service asks under is checked before it is written to the
     # body: a schema the route could not hear answered is the raiser's error.
-    def test_a_schema_naming_a_declared_key_is_written_as_the_422_body(self, ada: Any) -> None:
+    @SPEC_OR_SOURCE
+    def test_a_schema_naming_a_declared_key_is_written_as_the_422_body(
+        self, ada: Any, served: Any
+    ) -> None:
         schema = {"title": {"type": "string"}}
-        response = dispatch_request(asking_spec(schema), post(ada, {"title": "x"}))
+        response = dispatch_request(served(asking_spec(schema)), post(ada, {"title": "x"}))
         assert (response.status_code, body(response)) == (
             422,
             {"detail": "Say which.", "schema": schema},
         )
 
+    @SPEC_OR_SOURCE
     def test_a_schema_naming_an_undeclared_key_is_the_services_error_not_a_422(
-        self, ada: Any
+        self, ada: Any, served: Any
     ) -> None:
+        asking = served(asking_spec({"colour": {"type": "string"}}))
         with pytest.raises(ImproperlyConfigured, match="colour"):
-            dispatch_request(asking_spec({"colour": {"type": "string"}}), post(ada, {"title": "x"}))
+            dispatch_request(asking, post(ada, {"title": "x"}))
 
 
 class TestSources:
@@ -350,25 +376,6 @@ class TestSources:
         Note.objects.create(owner=ada, title="One")
         response = dispatch_request(Foreign(notes_spec()), signed_in(FACTORY.get("/"), ada))
         assert (response.status_code, body(response)) == (200, [{"title": "One"}])
-
-    def test_a_service_source_with_nothing_to_present_is_204(self, ada: Any) -> None:
-        # Read off the source itself, a service would not be one and would
-        # answer ``null`` at 200.
-        response = dispatch_request(Foreign(titled_spec(None)), post(ada, {"title": "Final"}))
-        assert (response.status_code, response.content) == (204, b"")
-
-    def test_a_source_s_asked_schema_is_written_as_the_422_body(self, ada: Any) -> None:
-        schema = {"title": {"type": "string"}}
-        response = dispatch_request(Foreign(asking_spec(schema)), post(ada, {"title": "x"}))
-        assert (response.status_code, body(response)) == (
-            422,
-            {"detail": "Say which.", "schema": schema},
-        )
-
-    def test_a_source_s_undeclared_asked_key_is_the_services_error(self, ada: Any) -> None:
-        source = Foreign(asking_spec({"colour": {"type": "string"}}))
-        with pytest.raises(ImproperlyConfigured, match="colour"):
-            dispatch_request(source, post(ada, {"title": "x"}))
 
 
 def test_a_list_level_refusal_beside_a_row_s_is_one_400_body(ada: Any) -> None:

@@ -17,13 +17,13 @@ from tests.dispatch_app.models import Note
 from tests.http.utils import (
     DEEP_JSON,
     FACTORY,
+    Foreign,
     body,
     note_spec,
     notes_spec,
     signed_in,
     titled_spec,
 )
-from tests.specs.utils import Foreign
 
 pytestmark = pytest.mark.django_db
 

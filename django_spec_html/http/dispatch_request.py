@@ -74,8 +74,6 @@ def dispatch_request(
     **CSRF is the host's middleware**, as for any Django view: nothing here
     exempts a view, and ``csrf_exempt`` is one line for a host that wants it.
     """
-    # Compiled once, before anything is read, so the arguments, the answer's
-    # status and the asked-input check all read the one compiled spec.
     spec = kernel_spec(spec)
     try:
         # The principal first, as ``adispatch`` resolves a ``principal_id``

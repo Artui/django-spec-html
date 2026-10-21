@@ -1,1 +1,1 @@
-"""Runnable examples the documentation includes, each run by ``tests/docs/test_examples.py``."""
+"""Runnable examples the documentation includes, each run by its own module in ``tests/docs/``."""

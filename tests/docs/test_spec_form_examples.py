@@ -26,6 +26,8 @@ from django.middleware.csrf import CsrfViewMiddleware
 from django.test import RequestFactory
 from django.urls import get_resolver
 from django_service_specs import (
+    ActionUnavailable,
+    AdditionalInputRequired,
     DispatchError,
     FormValidator,
     InvalidArguments,
@@ -39,7 +41,7 @@ from django_service_specs import (
     Unrestricted,
 )
 
-from django_spec_html import SpecFormView
+from django_spec_html import SpecFormView, UnsupportedMediaType
 from tests.adapter_app.models import Author, Book, Status
 
 pytestmark = pytest.mark.django_db
@@ -234,7 +236,10 @@ def test_the_pages_outcome_table_is_the_one_shipped(ada: Any) -> None:
         PrincipalUnavailable(),
         ServiceNotFound(),
         ServiceConflict(),
+        ActionUnavailable(code="x"),
         ServiceError(),
+        AdditionalInputRequired("x", schema={"type": "object"}),
+        UnsupportedMediaType(),
         DispatchError(),
     ]
     assert _outcome_table() == {type(exc).__name__: _answered(exc, ada) for exc in examples}

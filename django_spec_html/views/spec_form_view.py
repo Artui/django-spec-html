@@ -39,7 +39,6 @@ from django_service_specs import (
     Parameters,
     PoolSeeds,
     PrincipalUnavailable,
-    ServiceConflict,
     ServiceError,
     ServiceNotFound,
     ServiceSpec,
@@ -54,6 +53,7 @@ from django_service_specs import (
 from django_spec_html.http.add_argument_errors import add_argument_errors
 from django_spec_html.http.request_principal import request_principal
 from django_spec_html.http.route_arguments import route_arguments
+from django_spec_html.http.utils import field_map, refusal_status
 
 _TYPED: Final = (forms.IntegerField, forms.DateField, forms.DateTimeField)
 """The fields whose input formats are wider than the wire form the shape check reads.
@@ -154,8 +154,9 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
       [`add_argument_errors`][django_spec_html.http.add_argument_errors.add_argument_errors].
       A service's string or list detail is about the whole form.
     - **Any other refusal** re-renders it with the message as a non-field
-      error: ``ServiceConflict`` at 409, any other ``ServiceError`` at 422, any
-      other ``DispatchError`` at 400. The statuses are ``error_response``'s, so
+      error: ``ServiceConflict`` at 409, any other ``ServiceError`` at 422,
+      ``UnsupportedMediaType`` at 415, any other ``DispatchError`` at 400. The
+      statuses are ``error_response``'s, read from the one map, so
       a client reading a refused post - htmx, or Turbo, which will not render
       a failed post answered 200 - reads it the same way.
     - ``NotPermitted`` and ``PrincipalUnavailable`` raise Django's
@@ -249,29 +250,16 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
                 unknown_arguments=self.unknown_arguments,
                 target=target,
             )
-        except (NotPermitted, PrincipalUnavailable) as refused:
-            # Either raised by the operation, the target's checks having
-            # answered before dispatch: answered as ``error_response``
-            # answers it, whoever refused.
-            raise PermissionDenied(refused.message) from refused
-        except ServiceNotFound as refused:
-            raise Http404(refused.message) from refused
-        except InvalidArguments as refused:
-            return self._render_refused(form, refused.detail, status=400)
-        except ServiceValidationError as refused:
-            detail = refused.detail
-            # Anything but a mapping is about the whole form: a string, a list,
-            # or a lazy string, which ``add_argument_errors`` reads as one message.
-            tree = detail if isinstance(detail, Mapping) else {NON_FIELD_ERRORS: detail}
-            return self._render_refused(form, tree, status=400)
-        except ServiceConflict as refused:
-            return self._render_refused(form, {NON_FIELD_ERRORS: [refused.message]}, status=409)
-        except ServiceError as refused:
-            return self._render_refused(form, {NON_FIELD_ERRORS: [refused.message]}, status=422)
-        except DispatchError as refused:
-            # Raised by nothing in this package: a refusal of the call a later
-            # release may add, answered as ``error_response`` answers one.
-            return self._render_refused(form, {NON_FIELD_ERRORS: [refused.message]}, status=400)
+        except (DispatchError, ServiceError) as refused:
+            # At the status ``error_response`` answers it with, whoever
+            # refused: a denial raised by the operation, the target's checks
+            # having answered before dispatch, is the host's 403 or 404 page.
+            # Both statuses are held by
+            # test_the_pages_outcome_table_is_the_one_shipped.
+            status = refusal_status(refused)
+            if status in (403, 404):
+                raise _denial(refused) from refused
+            return self._render_refused(form, _refusal_tree(refused), status=status)
         # Never ``not_found``: the target was found before dispatch, which
         # looks nothing up when handed it, and where the route's value was
         # refused the shape check refuses it again before any lookup.
@@ -376,7 +364,7 @@ def _admitted(
         principal = request_principal(request)
         return principal, authorize(spec, principal)
     except (NotPermitted, PrincipalUnavailable) as refused:
-        raise PermissionDenied(refused.message) from refused
+        raise _denial(refused) from refused
 
 
 def _found(
@@ -405,13 +393,28 @@ def _found(
             grant=grant,
             pool_seeds=pool_seeds,
         )
-    except (NotPermitted, PrincipalUnavailable) as refused:
-        raise PermissionDenied(refused.message) from refused
-    except ServiceNotFound as refused:
-        raise Http404(refused.message) from refused
+    except (NotPermitted, PrincipalUnavailable, ServiceNotFound) as refused:
+        raise _denial(refused) from refused
     if isinstance(resolved, DispatchResult):
         raise Http404
     return resolved
+
+
+def _denial(refused: DispatchError | ServiceError) -> PermissionDenied | Http404:
+    """A refusal answered 403 or 404 as Django's own exception, for the host's 403 and 404 pages."""
+    if refusal_status(refused) == 403:
+        return PermissionDenied(refused.message)
+    return Http404(refused.message)
+
+
+def _refusal_tree(refused: DispatchError | ServiceError) -> Mapping[Any, Any]:
+    """The refusal a re-rendered form carries: an argument refusal in place, any other as its message."""
+    if isinstance(refused, InvalidArguments):
+        return refused.detail
+    if isinstance(refused, ServiceValidationError):
+        # A string, a list or a lazy string is about the whole form.
+        return field_map(refused.detail)
+    return {NON_FIELD_ERRORS: [refused.message]}
 
 
 def _page_form(spec: ServiceSpec, target: Any, **bound: Any) -> forms.BaseForm:

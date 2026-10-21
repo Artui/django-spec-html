@@ -1,4 +1,4 @@
-"""What the HTTP entry points share: the answer, and the view's half.
+"""What the HTTP entry points share: the answer, and the view's half; and the status map the page shares.
 
 ``dispatch_request`` and ``adispatch_request`` differ only in how they reach
 the kernel, so everything either does to a result after dispatch is written
@@ -11,11 +11,15 @@ does.
 
 ``SpecView`` and ``AsyncSpecView`` likewise differ only in their handlers, so
 everything else about them is ``SpecViewBase``.
+
+``REFUSAL_STATUSES`` is the one map from a refusal to its status, read by
+``error_response`` and by ``SpecFormView``, so a refused post answers at the
+status a JSON client reads for the same refusal.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Final, cast
 
 from django.core.exceptions import ImproperlyConfigured
@@ -25,15 +29,27 @@ from django.utils.translation import gettext
 from django.views import View
 from django_service_specs import (
     DEFAULT_POOL_SEEDS,
+    NON_FIELD_ERRORS,
+    ActionUnavailable,
     AdditionalInputRequired,
+    DispatchError,
+    InvalidArguments,
+    NotPermitted,
     PoolSeeds,
+    PrincipalUnavailable,
     SelectorSpec,
+    ServiceConflict,
+    ServiceError,
+    ServiceNotFound,
     ServiceSpec,
+    ServiceValidationError,
     SpecSource,
     UnknownArguments,
     check_requested_input,
     kernel_spec,
 )
+
+from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 
 ANSWERABLE: Final = ("get", "head", "post", "put", "patch", "delete")
 """The methods a spec view may be dispatched on, in the order ``Allow`` lists them.
@@ -41,6 +57,56 @@ ANSWERABLE: Final = ("get", "head", "post", "put", "patch", "delete")
 OPTIONS is not one: Django's ``View`` answers it from the methods served, and a
 spec has nothing to add to that answer. TRACE is not one either, since
 nothing about an operation is a loop-back of the request."""
+
+
+REFUSAL_STATUSES: Final[tuple[tuple[type[DispatchError] | type[ServiceError], int], ...]] = (
+    (InvalidArguments, 400),
+    (NotPermitted, 403),
+    (PrincipalUnavailable, 403),
+    (UnsupportedMediaType, 415),
+    (DispatchError, 400),
+    (ServiceValidationError, 400),
+    (ServiceNotFound, 404),
+    (ActionUnavailable, 409),
+    (ServiceConflict, 409),
+    (AdditionalInputRequired, 422),
+    (ServiceError, 422),
+)
+"""Every refusal this package answers, and its status: read top to bottom, first match wins.
+
+A subclass is listed above its base, or the base's row would answer for it.
+Every refusal has a row naming it, even where its status is its base's, so
+the map is the whole truth a check reading it needs: the kernel's
+``unanswered_refusals`` reads this table, and a row it reports nothing about
+is held by ``test_every_refusal_has_a_row_of_its_own``.
+
+``UnsupportedMediaType`` is this package's refusal, which the kernel's check
+does not ask about, so ``test_unsupported_media_type_is_415`` holds its row.
+
+Each row's status is held twice over, by the two tables the docs publish:
+``test_the_pages_status_table_is_the_one_shipped`` for the JSON views and
+``test_the_pages_outcome_table_is_the_one_shipped`` for the page, beside the
+row's own tests in ``test_error_response`` and ``test_spec_form_view``.
+
+The dispatch rows sit above the service rows, so a refusal deriving from one
+of each answers at its dispatch row's status, on both halves alike."""
+
+
+def refusal_status(refused: DispatchError | ServiceError) -> int:
+    """The status ``REFUSAL_STATUSES`` answers ``refused`` with."""
+    return next(status for kind, status in REFUSAL_STATUSES if isinstance(refused, kind))
+
+
+def field_map(detail: Any) -> Mapping[Any, Any]:
+    """A ``ServiceValidationError``'s detail as a field map, the shape every 400 body is."""
+    if isinstance(detail, Mapping):
+        return detail
+    if isinstance(detail, list):
+        return {NON_FIELD_ERRORS: list(detail)}
+    # Anything else is one message: a string, or a lazy one. A lazy string is
+    # not a ``str``, so a ladder asking "is it a string?" and reading the rest
+    # as a sequence would take it apart into characters.
+    return {NON_FIELD_ERRORS: [detail]}
 
 
 def check_asked_input(spec: ServiceSpec | SelectorSpec | SpecSource, refused: Exception) -> None:

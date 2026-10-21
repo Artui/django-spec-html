@@ -36,11 +36,11 @@ from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 
 
 class Postponed(ServiceError):
-    """A service's own subclass, which the ladder has never heard of."""
+    """A service's own subclass, which the status map has never heard of."""
 
 
 class Throttled(DispatchError):
-    """A dispatch refusal the ladder has never heard of, as a later release might add."""
+    """A dispatch refusal the status map has never heard of, as a later release might add."""
 
     default_message: ClassVar[str] = "Slow down."
 
@@ -68,7 +68,7 @@ def answered(exc: DispatchError | ServiceError) -> tuple[int, Any]:
     ids=lambda value: type(value).__name__ if isinstance(value, Exception) else str(value),
 )
 def test_a_message_refusal_is_its_status_and_a_detail(exc: Any, status: int) -> None:
-    # Each row holds one entry of the ladder: ServiceNotFound and
+    # Each row holds one entry of the status map: ServiceNotFound and
     # ServiceConflict are ServiceErrors too, so answering either 422 means the
     # base matched before the subclass; and an unknown DispatchError is 400
     # because it is still a refusal of the call, never a service's verdict.
@@ -172,7 +172,7 @@ class TestServiceValidationError:
         )
 
     def test_a_lazy_string_is_one_message_not_its_characters(self) -> None:
-        # A lazy translation is not a ``str``, so a ladder that asks "is it a
+        # A lazy translation is not a ``str``, so a reading that asks "is it a
         # string?" before "is it a list?" iterates it into characters.
         detail: Any = gettext_lazy("This field is required.")
         with translation.override("de"):
@@ -182,7 +182,7 @@ class TestServiceValidationError:
             )
 
     def test_it_is_answered_before_its_base(self) -> None:
-        # Its base is 422; a ladder matching ServiceError first would answer
+        # Its base is 422; a map matching ServiceError first would answer
         # this one 422 with a ``detail`` and lose the field map.
         status, body = answered(ServiceValidationError({"title": ["Too dull."]}))
         assert status == 400

@@ -148,8 +148,9 @@ created. A refusal:
 | Refusal | The form view answers |
 | --- | --- |
 | `InvalidArguments`, `ServiceValidationError` | 400, the form re-rendered |
-| `ServiceConflict` | 409, the form re-rendered |
-| `ServiceError` | 422, the form re-rendered |
+| `ActionUnavailable`, `ServiceConflict` | 409, the form re-rendered |
+| `AdditionalInputRequired`, `ServiceError` | 422, the form re-rendered |
+| `UnsupportedMediaType` | 415, the form re-rendered |
 | `DispatchError` | 400, the form re-rendered |
 | `NotPermitted`, `PrincipalUnavailable` | `PermissionDenied` |
 | `ServiceNotFound`, a not-found result | `Http404` |

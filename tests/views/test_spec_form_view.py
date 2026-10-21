@@ -19,12 +19,15 @@ import pytest
 from django import forms
 from django.contrib.auth import get_user_model
 from django.core.exceptions import BadRequest, ImproperlyConfigured, PermissionDenied
+from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import Http404, HttpResponse
 from django.urls import path, reverse_lazy
 from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy
 from django_service_specs import (
+    ActionUnavailable,
+    AdditionalInputRequired,
     DispatchError,
     DispatchResult,
     FormValidator,
@@ -40,6 +43,7 @@ from django_service_specs import (
     ValidationContext,
 )
 
+from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 from django_spec_html.views.spec_form_view import SpecFormView
 from tests.adapter_app.models import Author as BookAuthor
 from tests.adapter_app.models import Book, Document, Edition
@@ -56,11 +60,24 @@ from tests.dispatch.utils import (
 )
 from tests.dispatch_app.models import Note
 from tests.http.utils import FACTORY, note_spec, signed_in
-from tests.mutations.utils import STORED, stored_document
 
 pytestmark = pytest.mark.django_db
 
 urlpatterns = [path("done/", lambda request: HttpResponse(), name="done")]
+
+# Where ``stored_document`` puts its optional file, under the field's ``upload_to``.
+STORED = "documents/notes.txt"
+
+
+def stored_document(*, attachment: bool = True) -> Document:
+    """A saved row holding its required file and, unless told not to, its optional one."""
+    row = Document(title="Notes")
+    if attachment:
+        row.attachment.save("notes.txt", ContentFile(b"notes"), save=False)
+    row.scan.save("scan.txt", ContentFile(b"scan"), save=False)
+    row.save()
+    return row
+
 
 TEMPLATE = "spec_form.html"
 REQUIRED = "This field is required."
@@ -169,6 +186,14 @@ class NoCreating(PermissionCheck):
         return scope is not None
 
 
+class Deactivating(PermissionCheck):
+    """Admits the principal at class level, then deactivates it, as a concurrent request might."""
+
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        principal.is_active = False
+        return True
+
+
 class DisabledTitleForm(forms.Form):
     """A plain form whose ``title`` is shown and never read."""
 
@@ -176,7 +201,7 @@ class DisabledTitleForm(forms.Form):
 
 
 class Throttled(DispatchError):
-    """A dispatch refusal no row of the ladder names, as a later release might add."""
+    """A dispatch refusal no row of the status map names, as a later release might add."""
 
 
 class UserForm(forms.ModelForm):
@@ -473,6 +498,14 @@ class TestAnUpdatePage:
         with pytest.raises(PermissionDenied, match=r"^Nothing may be created here\.$"):
             post(form_view(spec), ada, {"title": "Hi"})
 
+    def test_a_principal_deactivated_once_admitted_is_refused_at_the_row(self, ada: Any) -> None:
+        # The target's lookup refuses a deactivated principal on its own, so
+        # one admitted at class level and deactivated before the row is found
+        # is the host's 403, not an unhandled refusal.
+        note = Note.objects.create(owner=ada, title="Ada's")
+        with pytest.raises(PermissionDenied, match=r"^The acting principal is unavailable\.$"):
+            get(form_view(row_spec(permissions=[Deactivating()])), ada, pk=note.pk)
+
     def test_a_missing_row_is_http404(self, ada: Any) -> None:
         with pytest.raises(Http404):
             get(form_view(row_spec()), ada, pk=404)
@@ -612,15 +645,13 @@ class TestSuccess:
         assert (response.status_code, response.url) == (302, "/done/")
         assert received(spec)["title"] == "Hi"
 
-    def test_a_lazy_success_url_is_resolved(self, ada: Any) -> None:
-        view = form_view(entry_spec(), success_url=reverse_lazy("done"))
+    # ``resolve_url`` reads either as ``redirect()`` does.
+    @pytest.mark.parametrize(
+        "success_url", [reverse_lazy("done"), "done"], ids=["lazy", "url-name"]
+    )
+    def test_a_success_url_is_resolved(self, ada: Any, success_url: Any) -> None:
+        view = form_view(entry_spec(), success_url=success_url)
         assert post(view, ada, {"title": "Hi"}).url == "/done/"
-
-    def test_a_url_name_is_resolved(self, ada: Any) -> None:
-        # ``resolve_url`` reads it as ``redirect()`` does.
-        assert post(form_view(entry_spec(), success_url="done"), ada, {"title": "Hi"}).url == (
-            "/done/"
-        )
 
     def test_an_overridden_get_success_url_reads_the_result(self, ada: Any) -> None:
         class ToTheEntry(SpecFormView):
@@ -913,10 +944,25 @@ class TestRefusals:
         ("exc", "status"),
         [
             (ServiceConflict("Moved while you were editing."), 409),
+            (ActionUnavailable("Moved while you were editing.", code="moved"), 409),
             (ServiceError("Moved while you were editing."), 422),
+            (
+                AdditionalInputRequired("Moved while you were editing.", schema={"type": "object"}),
+                422,
+            ),
             (Throttled("Moved while you were editing."), 400),
+            # Raised by an operation, since the page reads no body itself:
+            # answered as the JSON views answer it.
+            (UnsupportedMediaType("Moved while you were editing."), 415),
         ],
-        ids=["conflict", "service-error", "dispatch-error"],
+        ids=[
+            "conflict",
+            "action-unavailable",
+            "service-error",
+            "additional-input-required",
+            "dispatch-error",
+            "unsupported-media-type",
+        ],
     )
     def test_a_message_refusal_is_a_non_field_error_at_its_status(
         self, ada: Any, exc: Exception, status: int
@@ -1075,18 +1121,16 @@ class TestServing:
 
 
 class TestConfiguration:
-    def test_a_view_with_no_spec_is_refused(self) -> None:
+    @pytest.mark.parametrize(
+        ("given", "named"),
+        [({}, "NoneType"), ({"spec": note_spec()}, "SelectorSpec")],
+        ids=["no-spec", "selector-spec"],
+    )
+    def test_a_view_with_no_service_spec_is_refused(self, given: Any, named: str) -> None:
         with pytest.raises(ImproperlyConfigured) as refused_:
-            SpecFormView.as_view(success_url="/done/")
+            SpecFormView.as_view(**given, success_url="/done/")
         assert str(refused_.value) == (
-            "SpecFormView.as_view() needs a ServiceSpec, the write a form posts; got NoneType."
-        )
-
-    def test_a_selector_spec_is_refused(self) -> None:
-        with pytest.raises(ImproperlyConfigured) as refused_:
-            SpecFormView.as_view(spec=note_spec(), success_url="/done/")
-        assert str(refused_.value) == (
-            "SpecFormView.as_view() needs a ServiceSpec, the write a form posts; got SelectorSpec."
+            f"SpecFormView.as_view() needs a ServiceSpec, the write a form posts; got {named}."
         )
 
     @pytest.mark.parametrize(
