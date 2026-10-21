@@ -7,12 +7,15 @@ from typing import Any
 
 import pytest
 from asgiref.sync import sync_to_async
-from django_service_specs import SelectorKind, SelectorSpec
+from django_service_specs import REFUSALS, SelectorKind, SelectorSpec, unanswered_refusals
 
 from django_spec_html.http.adispatch_request import adispatch_request
 from django_spec_html.http.dispatch_request import dispatch_request
+from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 from django_spec_html.http.utils import (
+    REFUSAL_STATUSES,
     answered_methods,
+    refusal_status,
     success_response,
 )
 from tests.dispatch_app.models import Note
@@ -95,3 +98,23 @@ async def test_both_entry_points_answer_through_success_response() -> None:
     for response in (synced, awaited):
         assert (response.status_code, response.content) == (201, b"")
         assert "Content-Type" not in response
+
+
+def test_the_status_map_answers_every_kernel_refusal() -> None:
+    # Its gaps, a base the map never answers bare, and a row a base above it
+    # shadows: each would leave a refusal answered by the wrong row, or none.
+    assert unanswered_refusals(REFUSAL_STATUSES) == ()
+
+
+def test_every_refusal_has_a_row_of_its_own() -> None:
+    # Three rows share their base's status - InvalidArguments, ActionUnavailable
+    # and AdditionalInputRequired - so no status tells their row was deleted,
+    # and the kernel's check, satisfied by the base, reports nothing either.
+    rows = [kind for kind, _ in REFUSAL_STATUSES]
+    assert sorted(rows, key=str) == sorted({*REFUSALS, UnsupportedMediaType}, key=str)
+
+
+def test_unsupported_media_type_is_415() -> None:
+    # This package's own refusal, which the kernel's check does not ask about:
+    # without its row the DispatchError row would answer it 400.
+    assert refusal_status(UnsupportedMediaType()) == 415

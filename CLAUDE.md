@@ -72,7 +72,7 @@ Non-negotiable. They keep the package navigable, and they are the kernel's.
 | Subpackage | Holds |
 | --- | --- |
 | `views/` | `SpecFormView`, a spec served as the page its form is, and the private readers it alone uses (the form's widgets, the target, the refused render) |
-| `http/` | the JSON views (`SpecView`, `AsyncSpecView`, `dispatch_request`, `adispatch_request`), `error_response`, and the request readers both halves use: `request_arguments`, `route_arguments`, `request_principal`, `add_argument_errors`; `UnsupportedMediaType`, beside its raiser; `utils.py` for `SpecViewBase` and the helpers the entry points share |
+| `http/` | the JSON views (`SpecView`, `AsyncSpecView`, `dispatch_request`, `adispatch_request`), `error_response`, and the request readers both halves use: `request_arguments`, `route_arguments`, `request_principal`, `add_argument_errors`; `UnsupportedMediaType`, beside its raiser; `utils.py` for `SpecViewBase`, the helpers the entry points share, and `REFUSAL_STATUSES`, the status map the page reads too |
 
 `views/` imports `http/`, never the reverse. The root re-exports both
 subpackages' `__all__` and `__version__`, and `tests/test_init.py` holds that.
@@ -128,9 +128,11 @@ Each of these reads as an oversight and is not.
   share. The docs examples declare their own specs and form
   rather than importing the kernel's examples, so the pages show what they
   serve.
-- **The page and the JSON views answer refusals through two ladders**: the
-  page's `except` chain and `error_response`'s table, at the same statuses.
-  Each is held by a docs test reading its page's table
+- **The page and the JSON views read one status map**, `REFUSAL_STATUSES` in
+  `http/utils.py`, with a row for every refusal even where its status is its
+  base's, so the kernel's `unanswered_refusals` reads the whole truth.
+  `error_response` and the page choose only the body by kind. Each half is
+  held by a docs test reading its page's table
   (`tests/docs/test_spec_form_examples.py`, `tests/docs/test_http_examples.py`).
 - **`SpecFormView.spec` takes a `ServiceSpec` only**, where the JSON views take
   a `SpecSource` too. That is the page as it shipped, not an omission to

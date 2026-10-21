@@ -7,42 +7,22 @@ from typing import Any
 
 from django.http import JsonResponse
 from django_service_specs import (
-    NON_FIELD_ERRORS,
     ActionUnavailable,
     AdditionalInputRequired,
     DispatchError,
     InvalidArguments,
-    NotPermitted,
-    PrincipalUnavailable,
-    ServiceConflict,
     ServiceError,
-    ServiceNotFound,
     ServiceValidationError,
 )
 
-from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
-
-_STATUSES: tuple[tuple[type[Exception], int], ...] = (
-    (NotPermitted, 403),
-    (PrincipalUnavailable, 403),
-    (ServiceNotFound, 404),
-    (ServiceConflict, 409),
-    (ServiceError, 422),
-    (UnsupportedMediaType, 415),
-    (DispatchError, 400),
-)
-"""Each message-carrying refusal's status, read top to bottom, first match wins.
-
-A subclass is listed above its base, or the base's row would answer for it:
-``ServiceNotFound`` and ``ServiceConflict`` are ``ServiceError``s too. Coverage
-sees one loop, not seven rows, so each row is held by its own case of
-``test_a_message_refusal_is_its_status_and_a_detail``."""
+from django_spec_html.http.utils import field_map, refusal_status
 
 
 def error_response(exc: DispatchError | ServiceError) -> JsonResponse:
     """``exc`` as JSON, at the status djangorestframework-services answers it with.
 
-    One ladder for both families, at djangorestframework-services' statuses.
+    One map for both families, at djangorestframework-services' statuses, and
+    the one the page reads too.
     Two bodies differ from its answer. A service's string or list detail, which
     DRF answers as a bare list and this as a field map under
     ``non_field_errors``, so every 400 here has one shape. And an
@@ -92,22 +72,20 @@ def error_response(exc: DispatchError | ServiceError) -> JsonResponse:
     subclass a later release adds - is still a refusal of the call rather than
     the operation's own verdict, so it answers 400 rather than 422.
     """
+    status = refusal_status(exc)
     if isinstance(exc, InvalidArguments):
-        return JsonResponse(exc.detail, status=400)
+        return JsonResponse(exc.detail, status=status)
     if isinstance(exc, ServiceValidationError):
-        return JsonResponse(_field_map(exc.detail), status=400)
-    # Both above the ladder, whose ServiceConflict and ServiceError rows would
-    # otherwise answer them with the detail alone.
+        return JsonResponse(field_map(exc.detail), status=status)
     if isinstance(exc, ActionUnavailable):
-        return JsonResponse({"detail": exc.message, "code": exc.code}, status=409)
+        return JsonResponse({"detail": exc.message, "code": exc.code}, status=status)
     # Two conjuncts, each held in tests/http/test_error_response.py:
     # ``test_without_a_schema_the_body_is_the_plain_detail`` fails without the
     # second (a missing schema would be written as null), and the ``Postponed``
     # row of ``test_a_message_refusal_is_its_status_and_a_detail`` without the
     # first (a plain service error has no schema to read).
     if isinstance(exc, AdditionalInputRequired) and exc.schema is not None:
-        return JsonResponse({"detail": exc.message, "schema": _plain(exc.schema)}, status=422)
-    status = next(status for kind, status in _STATUSES if isinstance(exc, kind))
+        return JsonResponse({"detail": exc.message, "schema": _plain(exc.schema)}, status=status)
     return JsonResponse({"detail": exc.message}, status=status)
 
 
@@ -124,15 +102,3 @@ def _plain(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_plain(item) for item in value]
     return value
-
-
-def _field_map(detail: Any) -> Mapping[Any, Any]:
-    """A service's detail as the field map every 400 body is."""
-    if isinstance(detail, Mapping):
-        return detail
-    if isinstance(detail, list):
-        return {NON_FIELD_ERRORS: list(detail)}
-    # Anything else is one message: a string, or a lazy one. A lazy string is
-    # not a ``str``, so a ladder asking "is it a string?" and reading the rest
-    # as a sequence would take it apart into characters.
-    return {NON_FIELD_ERRORS: [detail]}

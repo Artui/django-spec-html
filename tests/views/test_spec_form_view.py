@@ -26,6 +26,8 @@ from django.urls import path, reverse_lazy
 from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy
 from django_service_specs import (
+    ActionUnavailable,
+    AdditionalInputRequired,
     DispatchError,
     DispatchResult,
     FormValidator,
@@ -41,6 +43,7 @@ from django_service_specs import (
     ValidationContext,
 )
 
+from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 from django_spec_html.views.spec_form_view import SpecFormView
 from tests.adapter_app.models import Author as BookAuthor
 from tests.adapter_app.models import Book, Document, Edition
@@ -925,10 +928,25 @@ class TestRefusals:
         ("exc", "status"),
         [
             (ServiceConflict("Moved while you were editing."), 409),
+            (ActionUnavailable("Moved while you were editing.", code="moved"), 409),
             (ServiceError("Moved while you were editing."), 422),
+            (
+                AdditionalInputRequired("Moved while you were editing.", schema={"type": "object"}),
+                422,
+            ),
             (Throttled("Moved while you were editing."), 400),
+            # Raised by an operation, since the page reads no body itself:
+            # answered as the JSON views answer it.
+            (UnsupportedMediaType("Moved while you were editing."), 415),
         ],
-        ids=["conflict", "service-error", "dispatch-error"],
+        ids=[
+            "conflict",
+            "action-unavailable",
+            "service-error",
+            "additional-input-required",
+            "dispatch-error",
+            "unsupported-media-type",
+        ],
     )
     def test_a_message_refusal_is_a_non_field_error_at_its_status(
         self, ada: Any, exc: Exception, status: int

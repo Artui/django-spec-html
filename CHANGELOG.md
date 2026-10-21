@@ -32,4 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `django-service-specs>=0.10.0`, the first kernel release with every
   name these views read at its root.
 
+### Changed
+- **`SpecFormView` answers an `UnsupportedMediaType` an operation raises at
+  415**, re-rendering the form, where the kernel's page answered it 400. The
+  page and the JSON views now read one map from each refusal to its status,
+  so a refused post answers at the status a JSON client reads for the same
+  refusal.
+
 [Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.0.0...HEAD
