@@ -11,16 +11,19 @@ from django.http import HttpRequest, QueryDict
 from django.http.multipartparser import MultiPartParser
 from django.utils.datastructures import MultiValueDict
 from django.utils.translation import gettext
+from django_service_specs import (
+    NON_FIELD_ERRORS,
+    CodedMessage,
+    InvalidArguments,
+    Parameter,
+    Parameters,
+    coerce_flat,
+    expected_type_refusal,
+    max_length_in_force,
+)
 
-from django_service_specs.http.route_arguments import route_arguments
-from django_service_specs.http.unsupported_media_type import UnsupportedMediaType
-from django_service_specs.parameters.coded_message import CodedMessage
-from django_service_specs.parameters.coerce_flat import coerce_flat
-from django_service_specs.parameters.expected_type_refusal import expected_type_refusal
-from django_service_specs.parameters.invalid_arguments import InvalidArguments
-from django_service_specs.parameters.max_length_in_force import max_length_in_force
-from django_service_specs.parameters.non_field_errors import NON_FIELD_ERRORS
-from django_service_specs.parameters.parameters import Parameter, Parameters
+from django_spec_html.http.route_arguments import route_arguments
+from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 
 _CSRF_FIELD = "csrfmiddlewaretoken"
 """The field ``{% csrf_token %}`` renders into a form: Django's, and never an argument."""
@@ -54,7 +57,7 @@ def request_arguments(
       one into ``request.POST`` for POST alone, so a PUT, PATCH or DELETE
       body is parsed here the same way rather than arriving empty. Any other
       body is refused as
-      [`UnsupportedMediaType`][django_service_specs.http.unsupported_media_type.UnsupportedMediaType]
+      [`UnsupportedMediaType`][django_spec_html.http.unsupported_media_type.UnsupportedMediaType]
       rather than read as none, since an operation whose parameters are all
       optional would then run with nothing; a request with no body carries no
       arguments, whatever its ``Content-Type`` says.
@@ -115,7 +118,7 @@ def request_arguments(
         UnsupportedMediaType: a body that is neither JSON nor a form.
         ImproperlyConfigured: a URL kwarg ``parameters`` does not declare,
             which is the host's route rather than the client's request; see
-            [`route_arguments`][django_service_specs.http.route_arguments.route_arguments].
+            [`route_arguments`][django_spec_html.http.route_arguments.route_arguments].
     """
     route = route_arguments(parameters, url_kwargs)
     if request.method in ("GET", "HEAD"):

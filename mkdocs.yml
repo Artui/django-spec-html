@@ -93,4 +93,6 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Pages: pages.md
+  - JSON views: http.md
   - API reference: reference.md

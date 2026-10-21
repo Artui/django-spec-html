@@ -23,7 +23,6 @@ from django.core.exceptions import ImproperlyConfigured
 from django.middleware.csrf import CsrfViewMiddleware
 from django.test import AsyncRequestFactory, RequestFactory
 from django.urls import get_resolver
-
 from django_service_specs import (
     ActionUnavailable,
     AdditionalInputRequired,
@@ -35,9 +34,9 @@ from django_service_specs import (
     ServiceError,
     ServiceNotFound,
     ServiceValidationError,
-    UnsupportedMediaType,
-    error_response,
 )
+
+from django_spec_html import UnsupportedMediaType, error_response
 from docs.examples import http
 from tests.dispatch_app.models import Note
 

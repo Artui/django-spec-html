@@ -9,9 +9,9 @@ import pytest
 from django.core.exceptions import ImproperlyConfigured
 from django.middleware.csrf import CsrfViewMiddleware
 from django.views.decorators.csrf import csrf_exempt
+from django_service_specs import UnknownArguments
 
-from django_service_specs.http.spec_view import SpecView
-from django_service_specs.types.unknown_arguments import UnknownArguments
+from django_spec_html.http.spec_view import SpecView
 from tests.dispatch.utils import TENANT_SEEDS, make_user
 from tests.dispatch_app.models import Note
 from tests.http.utils import (

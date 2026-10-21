@@ -1,6 +1,6 @@
 """Serving a form: a spec validated by a Django form, as the page a person fills in.
 
-``tests/docs/test_http_forms_examples.py`` resolves these routes with Django's
+``tests/docs/test_spec_form_examples.py`` resolves these routes with Django's
 own resolver and posts to each as a browser would - the CSRF token and the
 submit button included - so the page cannot describe a reading, a redirect or
 a refusal the view does not make.
@@ -10,24 +10,48 @@ from __future__ import annotations
 
 from typing import Any
 
+from django import forms
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.urls import path, reverse, reverse_lazy
-
 from django_service_specs import (
     ChangeResult,
     DispatchResult,
+    FormValidator,
     Parameter,
     Parameters,
     PermissionCheck,
     SelectorKind,
     SelectorSpec,
     ServiceSpec,
-    SpecFormView,
     update_from_input,
 )
-from docs.examples.forms_adapter import book_validator
-from tests.adapter_app.models import Book
+
+from django_spec_html import SpecFormView
+from tests.adapter_app.models import Author, Book, Status
+
+
+# --8<-- [start:form]
+class BookForm(forms.Form):
+    title = forms.CharField(max_length=100, help_text="As printed on the cover.")
+    price = forms.DecimalField(max_digits=6, decimal_places=2)
+    status = forms.ChoiceField(choices=Status.choices)
+    published_on = forms.DateField(required=False)
+    author = forms.ModelChoiceField(queryset=Author.objects.all())
+    shelves = forms.MultipleChoiceField(
+        choices=[("fiction", "Fiction"), ("poetry", "Poetry")], required=False
+    )
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        if cleaned.get("status") == Status.PUBLISHED and not cleaned.get("published_on"):
+            raise forms.ValidationError("A published book needs its publication date.")
+        return cleaned
+
+
+# The form is read here, once: a field with no JSON type fails on this line.
+book_validator = FormValidator(BookForm)
+# --8<-- [end:form]
 
 
 # --8<-- [start:spec]

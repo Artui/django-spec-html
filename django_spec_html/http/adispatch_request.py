@@ -7,26 +7,29 @@ from typing import Any
 
 from asgiref.sync import sync_to_async
 from django.http import HttpRequest, HttpResponse
+from django_service_specs import (
+    DEFAULT_POOL_SEEDS,
+    DispatchError,
+    Grant,
+    PoolSeeds,
+    SelectorSpec,
+    ServiceError,
+    ServiceSpec,
+    SpecSource,
+    UnknownArguments,
+    adispatch,
+    apresent,
+    kernel_spec,
+)
 
-from django_service_specs.dispatch.adispatch import adispatch
-from django_service_specs.dispatch.apresent import apresent
-from django_service_specs.dispatch.grant import Grant
-from django_service_specs.http.error_response import error_response
-from django_service_specs.http.request_arguments import request_arguments
-from django_service_specs.http.request_principal import request_principal
-from django_service_specs.http.utils import (
+from django_spec_html.http.error_response import error_response
+from django_spec_html.http.request_arguments import request_arguments
+from django_spec_html.http.request_principal import request_principal
+from django_spec_html.http.utils import (
     check_asked_input,
     not_found_response,
     success_response,
 )
-from django_service_specs.pool.pool_seeds import DEFAULT_POOL_SEEDS, PoolSeeds
-from django_service_specs.services.service_error import ServiceError
-from django_service_specs.specs.kernel_spec import kernel_spec
-from django_service_specs.specs.selector_spec import SelectorSpec
-from django_service_specs.specs.service_spec import ServiceSpec
-from django_service_specs.specs.spec_source import SpecSource
-from django_service_specs.types.dispatch_error import DispatchError
-from django_service_specs.types.unknown_arguments import UnknownArguments
 
 
 async def adispatch_request(
@@ -39,7 +42,7 @@ async def adispatch_request(
     pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS,
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT,
 ) -> HttpResponse:
-    """[`dispatch_request`][django_service_specs.http.dispatch_request.dispatch_request], from async code.
+    """[`dispatch_request`][django_spec_html.http.dispatch_request.dispatch_request], from async code.
 
     The same principal, arguments, statuses and refusals, reached through
     [`adispatch`][django_service_specs.dispatch.adispatch.adispatch] and

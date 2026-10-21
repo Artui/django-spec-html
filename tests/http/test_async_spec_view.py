@@ -10,9 +10,9 @@ from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.functional import SimpleLazyObject
+from django_service_specs import UnknownArguments
 
-from django_service_specs.http.async_spec_view import AsyncSpecView
-from django_service_specs.types.unknown_arguments import UnknownArguments
+from django_spec_html.http.async_spec_view import AsyncSpecView
 from tests.dispatch.utils import TENANT_SEEDS, make_user
 from tests.dispatch_app.models import Note
 from tests.http.utils import ASYNC_FACTORY, DEEP_JSON, body, note_spec, notes_spec, titled_spec

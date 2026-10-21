@@ -1,6 +1,6 @@
-"""The HTTP page's forms example, posted to as a browser posts.
+"""The page example, posted to as a browser posts.
 
-``docs/http.md`` includes its spec and URLconf from ``docs/examples/http_forms.py``
+``docs/pages.md`` includes its spec and URLconf from ``docs/examples/spec_form.py``
 and its template from the suite's own. Each test resolves a path against that
 URLconf, as Django's handler would, and posts what the rendered page sends -
 the CSRF token and the named submit button included - so the page cannot
@@ -25,7 +25,6 @@ from django.http import Http404
 from django.middleware.csrf import CsrfViewMiddleware
 from django.test import RequestFactory
 from django.urls import get_resolver
-
 from django_service_specs import (
     DispatchError,
     FormValidator,
@@ -37,15 +36,16 @@ from django_service_specs import (
     ServiceNotFound,
     ServiceSpec,
     ServiceValidationError,
-    SpecFormView,
     Unrestricted,
 )
+
+from django_spec_html import SpecFormView
 from tests.adapter_app.models import Author, Book, Status
 
 pytestmark = pytest.mark.django_db
 
 ROOT = Path(__file__).resolve().parents[2]
-URLCONF = "docs.examples.http_forms"
+URLCONF = "docs.examples.spec_form"
 RESOLVER = get_resolver(URLCONF)
 FACTORY = RequestFactory()
 NEEDS_A_DATE = "A published book needs its publication date."
@@ -189,8 +189,8 @@ class Anything(forms.Form):
 
 
 def _outcome_table() -> dict[str, str]:
-    """The Forms section's table, as ``{class name: answer}``."""
-    page = (ROOT / "docs" / "http.md").read_text()
+    """The page's outcome table, as ``{class name: answer}``."""
+    page = (ROOT / "docs" / "pages.md").read_text()
     table = page[page.index("| Refusal | The form view answers |") :]
     answers: dict[str, str] = {}
     for line in table.splitlines()[2:]:

@@ -6,19 +6,21 @@ from collections.abc import Mapping
 from typing import Any
 
 from django.http import JsonResponse
+from django_service_specs import (
+    NON_FIELD_ERRORS,
+    ActionUnavailable,
+    AdditionalInputRequired,
+    DispatchError,
+    InvalidArguments,
+    NotPermitted,
+    PrincipalUnavailable,
+    ServiceConflict,
+    ServiceError,
+    ServiceNotFound,
+    ServiceValidationError,
+)
 
-from django_service_specs.authorization.not_permitted import NotPermitted
-from django_service_specs.authorization.principal_unavailable import PrincipalUnavailable
-from django_service_specs.http.unsupported_media_type import UnsupportedMediaType
-from django_service_specs.parameters.invalid_arguments import InvalidArguments
-from django_service_specs.parameters.non_field_errors import NON_FIELD_ERRORS
-from django_service_specs.services.action_unavailable import ActionUnavailable
-from django_service_specs.services.additional_input_required import AdditionalInputRequired
-from django_service_specs.services.service_conflict import ServiceConflict
-from django_service_specs.services.service_error import ServiceError
-from django_service_specs.services.service_not_found import ServiceNotFound
-from django_service_specs.services.service_validation_error import ServiceValidationError
-from django_service_specs.types.dispatch_error import DispatchError
+from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 
 _STATUSES: tuple[tuple[type[Exception], int], ...] = (
     (NotPermitted, 403),

@@ -6,8 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from django.core.exceptions import ImproperlyConfigured
-
-from django_service_specs.parameters.parameters import Parameters
+from django_service_specs import Parameters
 
 
 def route_arguments(parameters: Parameters, url_kwargs: Mapping[str, Any] | None) -> dict[str, Any]:

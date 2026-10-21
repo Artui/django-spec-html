@@ -1,4 +1,4 @@
-"""Serving operations from Django views: a function view, the class form, and their URLconf.
+"""Serving operations from Django views: two specs, a function view, the class form, and their URLconf.
 
 ``tests/docs/test_http_examples.py`` resolves these routes with Django's own
 resolver and sends each a request, so the page cannot describe a route, a
@@ -8,22 +8,92 @@ method or an answer the package does not have.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
+from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
-
 from django_service_specs import (
+    DataclassPresenter,
+    DataclassValidator,
+    Parameter,
+    Parameters,
+    PermissionCheck,
+    SelectorKind,
+    SelectorSpec,
+    ServiceSpec,
+    coerce_flat,
+)
+
+from django_spec_html import (
     AsyncSpecView,
     SpecView,
     adispatch_request,
-    coerce_flat,
     dispatch_request,
     route_arguments,
 )
-from docs.examples.declaring import list_notes_spec
-from docs.examples.quickstart import rename_note_spec
+from tests.dispatch_app.models import Note  # a title, and an owner who is a user
+
+
+# --8<-- [start:specs]
+@dataclass
+class Rename:  # what the write takes
+    title: str
+
+
+@dataclass
+class NoteOut:  # what both answer, per note
+    id: int
+    title: str
+
+
+class IsSignedIn(PermissionCheck):
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        return principal.is_authenticated
+
+
+class IsOwner(IsSignedIn):
+    message = "Only the note's owner may rename it."
+
+    def has_object_permission(self, principal: Any, spec: Any, target: Any) -> bool:
+        return target.owner_id == principal.pk
+
+
+def notes_of(*, user: Any, search: str = "", ordering: str = "title") -> QuerySet[Note]:
+    return Note.objects.filter(owner=user, title__icontains=search).order_by(ordering)
+
+
+def rename(*, instance: Note, title: str) -> Note:
+    instance.title = title
+    instance.save(update_fields=["title"])
+    return instance
+
+
+list_notes_spec = SelectorSpec(
+    kind=SelectorKind.LIST,
+    selector=notes_of,
+    permissions=[IsSignedIn()],
+    reads=Parameters.of(
+        Parameter("search", "string", help="Part of the title, in any case."),
+        Parameter("ordering", "string", choices=["title", "-title"], default="title"),
+    ),
+    presenter=DataclassPresenter(NoteOut),
+)
+
+rename_note_spec = ServiceSpec(
+    service=rename,
+    permissions=[IsOwner()],
+    validator=DataclassValidator(Rename),
+    instance_selector_spec=SelectorSpec(
+        kind=SelectorKind.RETRIEVE,
+        selector=lambda *, pk: Note.objects.filter(pk=pk),  # the row, or none
+        reads=Parameters.of(Parameter("pk", "integer", required=True)),
+    ),
+    presenter=DataclassPresenter(NoteOut),
+)
+# --8<-- [end:specs]
 
 
 # --8<-- [start:function_view]

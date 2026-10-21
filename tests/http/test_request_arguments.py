@@ -22,25 +22,28 @@ from django.http import HttpRequest
 from django.http.request import RawPostDataException
 from django.test import RequestFactory, override_settings
 from django.test.client import encode_multipart
+from django_service_specs import (
+    NON_FIELD_ERRORS,
+    FormValidator,
+    InvalidArguments,
+    Parameter,
+    Parameters,
+    SelectorKind,
+    SelectorSpec,
+    check_arguments,
+    filter_set_parameters,
+    shape_queryset,
+)
 
-from django_service_specs.adapters.filters.filter_set_parameters import filter_set_parameters
-from django_service_specs.adapters.forms.form_validator import FormValidator
-from django_service_specs.http.request_arguments import request_arguments
-from django_service_specs.http.unsupported_media_type import UnsupportedMediaType
-from django_service_specs.parameters.check_arguments import check_arguments
-from django_service_specs.parameters.invalid_arguments import InvalidArguments
-from django_service_specs.parameters.non_field_errors import NON_FIELD_ERRORS
-from django_service_specs.parameters.parameters import Parameter, Parameters
-from django_service_specs.selectors.shape_queryset import shape_queryset
-from django_service_specs.specs.selector_spec import SelectorSpec
-from django_service_specs.types.selector_kind import SelectorKind
+from django_spec_html.http.request_arguments import request_arguments
+from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 from tests.dispatch.utils import make_user
 from tests.dispatch_app.models import Note
 from tests.http.utils import DEEP_JSON
 from tests.parameters.utils import coded
 
 # The module, which ``http``'s own ``request_arguments`` re-export shadows as an attribute.
-request_arguments_module = importlib.import_module("django_service_specs.http.request_arguments")
+request_arguments_module = importlib.import_module("django_spec_html.http.request_arguments")
 
 FACTORY = RequestFactory()
 FORM = "application/x-www-form-urlencoded"

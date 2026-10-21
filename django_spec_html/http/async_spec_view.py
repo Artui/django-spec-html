@@ -6,15 +6,15 @@ from typing import Any
 
 from django.http import HttpRequest, HttpResponse
 
-from django_service_specs.http.adispatch_request import adispatch_request
-from django_service_specs.http.utils import SpecViewBase
+from django_spec_html.http.adispatch_request import adispatch_request
+from django_spec_html.http.utils import SpecViewBase
 
 
 class AsyncSpecView(SpecViewBase):
-    """[`SpecView`][django_service_specs.http.spec_view.SpecView], with every handler async.
+    """[`SpecView`][django_spec_html.http.spec_view.SpecView], with every handler async.
 
     The same attributes, methods, checks and answers, through
-    [`adispatch_request`][django_service_specs.http.adispatch_request.adispatch_request].
+    [`adispatch_request`][django_spec_html.http.adispatch_request.adispatch_request].
     Django serves a class-based view async only when every handler it defines
     is ``async def``, and refuses a class that mixes the two, so every method
     a spec may be served on is async here, not only the ones it answers by

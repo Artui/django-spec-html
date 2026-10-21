@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 from django.contrib.auth.models import AnonymousUser
+from django_service_specs import PrincipalUnavailable
 
-import django_service_specs
-import django_service_specs.http
-from django_service_specs.authorization.principal_unavailable import PrincipalUnavailable
-from django_service_specs.http.request_principal import request_principal
+import django_spec_html
+import django_spec_html.http
+from django_spec_html.http.request_principal import request_principal
 from tests.http.utils import FACTORY, signed_in
 
 
@@ -42,5 +42,5 @@ def test_a_deactivated_principal_is_refused() -> None:
 def test_it_is_public_from_the_subpackage_and_the_root() -> None:
     # A host writing its own view reads the principal as the entry points do,
     # so the rule a deactivated account is refused by is the same on both.
-    assert "request_principal" in django_service_specs.http.__all__
-    assert "request_principal" in django_service_specs.__all__
+    assert "request_principal" in django_spec_html.http.__all__
+    assert "request_principal" in django_spec_html.__all__
