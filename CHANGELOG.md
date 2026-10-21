@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-10-21
+
 ### Added
 - **`django-spec-html`: a `django-service-specs` spec served over plain Django,
   as a page and as JSON, the kernel's two HTTP halves moved out.** The JSON
@@ -20,7 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AsyncSpecView`, `dispatch_request` and `adispatch_request` serve a spec as
   JSON, and `error_response`, `request_arguments`, `route_arguments`,
   `request_principal`, `add_argument_errors` and `UnsupportedMediaType` come
-  with them. The behaviour is unchanged; the import paths are this package's,
+  with them. The behaviour is unchanged but for the one change below; the
+  import paths are this package's,
   `django_spec_html` at the root, with `django_spec_html.http` and
   `django_spec_html.views` where each name is defined. `UnsupportedMediaType`
   is this package's own refusal, answered 415 by its own `error_response`,
@@ -39,4 +42,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.0.0...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Artui/django-spec-html/compare/v0.0.0...v0.1.0
