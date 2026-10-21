@@ -1,26 +1,35 @@
 # Serving over HTTP
 
-`django_service_specs.http` serves an operation from a Django view with
-nothing between the request and [`dispatch`](dispatching.md): no API
+`django_spec_html.http` serves an operation from a Django view with
+nothing between the request and [`dispatch`](https://artui.github.io/django-service-specs/dispatching/): no API
 framework, no serializer, no router. A view reads the principal and the
 arguments off the request, dispatches, and answers the result or the refusal
 as JSON.
 
 ```python
-from django_service_specs import AsyncSpecView, SpecView, adispatch_request, dispatch_request
+from django_spec_html import AsyncSpecView, SpecView, adispatch_request, dispatch_request
 ```
 
 It is the plumbing, not the pages: a view here answers JSON to a script, a
 `fetch()` or an htmx request. A page a person reads, such as a spec's own form
-rendered and re-rendered with its refusal, is a host's own view. The pieces
+rendered and re-rendered with its refusal, is a [page view](pages.md). The pieces
 the entry points are built from are public so that such a view reads a request
 by the same rules: [`request_principal`](#the-principal),
 [`route_arguments`](#the-route-on-its-own) and
 [`add_argument_errors`](#a-refusal-placed-on-a-form).
 
+The examples on this page serve two specs, a list of the principal's notes
+and a rename of one, declared as any spec is:
+
+```python
+--8<--
+docs/examples/http.py:specs
+--8<--
+```
+
 ## A function view
 
-[`dispatch_request`][django_service_specs.http.dispatch_request.dispatch_request]
+[`dispatch_request`][django_spec_html.http.dispatch_request.dispatch_request]
 is the whole of what a hand-written view calls:
 
 ```python
@@ -48,14 +57,14 @@ It reads the principal and the arguments, dispatches with the `grant`,
   configuration error included: it is wrong for every caller, so it belongs to
   the host's error handling rather than to one client's response.
 
-[`adispatch_request`][django_service_specs.http.adispatch_request.adispatch_request]
+[`adispatch_request`][django_spec_html.http.adispatch_request.adispatch_request]
 does the same from an async view, through `adispatch` and `apresent`. It reads
 the request in an executor hop of its own, because touching `request.user` is
 a session query and Django refuses one on the event loop.
 
 ## The class form
 
-[`SpecView`][django_service_specs.http.spec_view.SpecView] is one spec as a
+[`SpecView`][django_spec_html.http.spec_view.SpecView] is one spec as a
 view, and every attribute can be passed to `as_view()` or set on a subclass:
 `spec`, `success_status`, `unknown_arguments`, `pool_seeds` and `methods`.
 
@@ -79,14 +88,14 @@ another library's, a
 compiled there too, a declaration that does not compile is refused there, and
 its methods follow the spec it compiles to.
 
-[`AsyncSpecView`][django_service_specs.http.async_spec_view.AsyncSpecView] is
+[`AsyncSpecView`][django_spec_html.http.async_spec_view.AsyncSpecView] is
 the same view with every handler async, through `adispatch_request`. Django
 serves a class async only when all of its handlers are, which is why it is a
 class of its own rather than a setting.
 
 ## Arguments
 
-[`request_arguments`][django_service_specs.http.request_arguments.request_arguments]
+[`request_arguments`][django_spec_html.http.request_arguments.request_arguments]
 reads them, by method and body:
 
 | Request | Read from | Coerced |
@@ -106,10 +115,11 @@ spelling a django-filter CSV filter advertises. A decimal element stays the
 string it spells, so `?pks=1,2` is `["1", "2"]`, every digit kept. Repeated keys and commas may mix, and an empty part
 (`?ids=1,,2`) is refused at its index as any malformed element is. A list
 longer than the array takes - its `max_length`, or 1000 by the
-`SERVICE_SPECS_MAX_ARRAY_LENGTH` setting - is refused whole at its name, a 400
+`SERVICE_SPECS_MAX_ARRAY_LENGTH` setting, which is the kernel's and keeps its
+name - is refused whole at its name, a 400
 rather than the 500 a database answers past its variable limit, and is never
 split further than one element past it: see
-[how long a list may be](arguments.md#how-long-a-list-may-be). An array
+[how long a list may be](https://artui.github.io/django-service-specs/arguments/#how-long-a-list-may-be). An array
 of strings is split the same way when it declares choices and none of them
 holds a comma, as a django-filter `OrderingFilter`'s do: every element must be
 a choice, so `?o=title,-pk` can only be `["title", "-pk"]`. An array of
@@ -121,17 +131,17 @@ string can, and a number, a boolean, a date, a decimal, or a string whose
 `choices` leave the blank out cannot. A flat wire has no other spelling of
 "left blank", and an empty `?count=` or `?since=` from a filter form is not a
 refusal to count or a malformed date. Django's `csrfmiddlewaretoken` is never an argument. Then
-[`coerce_flat`](arguments.md#flat-transports) types the strings, and leaves an
+[`coerce_flat`](https://artui.github.io/django-service-specs/arguments/#flat-transports) types the strings, and leaves an
 undeclared key for the closed argument set to refuse under the caller's policy.
 
 **A JSON body is read as it is.** Its values are not coerced here: a `"5"`
 sent for an integer is the shape check's to read, and it reads it as 5, as it
-reads one from any caller (see [the shape check](arguments.md#the-shape-check)).
+reads one from any caller (see [the shape check](https://artui.github.io/django-service-specs/arguments/#the-shape-check)).
 A body that does not parse, or is not an object, is refused as
 `InvalidArguments` under `non_field_errors`. An empty body is no arguments.
 
 **A body in any other format is refused** as
-[`UnsupportedMediaType`][django_service_specs.http.unsupported_media_type.UnsupportedMediaType],
+[`UnsupportedMediaType`][django_spec_html.http.unsupported_media_type.UnsupportedMediaType],
 answered 415, rather than read as no arguments: a PATCH sent as `text/plain`
 or `application/merge-patch+json` to an operation whose parameters are all
 optional would otherwise run with nothing and answer success. A request with
@@ -160,7 +170,7 @@ included, and a larger one raises `RequestDataTooBig`. An
 upload under a name the spec does not declare reaches the closed argument set
 like any undeclared field, and is refused under `REJECT`; a file input left
 empty is no upload, so it is absent. Only a multipart body carries one.
-An optional file's [clear checkbox](forms.md#clearing-a-file) is a field of
+An optional file's [clear checkbox](https://artui.github.io/django-service-specs/forms/#clearing-a-file) is a field of
 the same body, `attachment-clear=true`, and is read as every flat `boolean`
 is: `true`, `false`, `1` or `0`. A checkbox with no `value` attribute posts
 `on`, which is refused, so a page posting to a `SpecView` gives it
@@ -177,12 +187,12 @@ serves, under either `unknown_arguments` policy: the mismatch is the host's,
 wrong for every request, and a 400 would tell the client it had sent
 something wrong. A host scoping by a kwarg its spec does not take (an `org`
 read by middleware, say) calls
-[`dispatch_request`][django_service_specs.http.dispatch_request.dispatch_request]
+[`dispatch_request`][django_spec_html.http.dispatch_request.dispatch_request]
 from its own view and passes the `url_kwargs` the spec declares.
 
 ### The route on its own
 
-[`route_arguments`][django_service_specs.http.route_arguments.route_arguments]
+[`route_arguments`][django_spec_html.http.route_arguments.route_arguments]
 is that rule on its own, for a view that reads the rest of its arguments some
 other way, such as through a bound form's widgets. It returns the kwargs as a
 plain, uncoerced copy, or raises `ImproperlyConfigured` naming every one the
@@ -208,7 +218,7 @@ principal never acts, on HTTP or off it. `dispatch` refuses one by the same
 rule, so a hand-written view handing `request.user` to it is covered too; the
 entry points refuse first so that the request is never read.
 
-[`request_principal`][django_service_specs.http.request_principal.request_principal]
+[`request_principal`][django_spec_html.http.request_principal.request_principal]
 is that reading, public, so a host's own view refuses by the same rule and
 before it reads anything else. It raises `PrincipalUnavailable` for a
 deactivated account and returns `request.user` otherwise. Reading
@@ -217,8 +227,8 @@ loop, as `adispatch_request` does.
 
 ## Refusals
 
-[`error_response`][django_service_specs.http.error_response.error_response]
-answers both [families](arguments.md#two-families-of-error), with the statuses
+[`error_response`][django_spec_html.http.error_response.error_response]
+answers both [families](https://artui.github.io/django-service-specs/arguments/#two-families-of-error), with the statuses
 djangorestframework-services uses. Two bodies differ from its answer. A
 service's string or list detail, which DRF answers as a bare list and this as
 a field map under `non_field_errors`, so every 400 here has one shape. And an
@@ -274,7 +284,7 @@ docs/examples/http.py:csrf
 
 ## A refusal, placed on a form
 
-[`add_argument_errors`][django_service_specs.http.add_argument_errors.add_argument_errors]
+[`add_argument_errors`][django_spec_html.http.add_argument_errors.add_argument_errors]
 places a refusal on a host's own bound form, for a page that re-renders the
 form it posted with what dispatch refused. It uses Django's public
 `form.add_error`, beside whatever errors the form carries:

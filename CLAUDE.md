@@ -67,6 +67,16 @@ Non-negotiable. They keep the package navigable, and they are the kernel's.
    `TID251`, so `make lint` and CI run it. Break a cycle by structure, never by
    a function-local import (rule 4).
 
+## Layout
+
+| Subpackage | Holds |
+| --- | --- |
+| `views/` | `SpecFormView`, a spec served as the page its form is, and the private readers it alone uses (the form's widgets, the target, the refused render) |
+| `http/` | the JSON views (`SpecView`, `AsyncSpecView`, `dispatch_request`, `adispatch_request`), `error_response`, and the request readers both halves use: `request_arguments`, `route_arguments`, `request_principal`, `add_argument_errors`; `UnsupportedMediaType`, beside its raiser; `utils.py` for `SpecViewBase` and the helpers the entry points share |
+
+`views/` imports `http/`, never the reverse. The root re-exports both
+subpackages' `__all__` and `__version__`, and `tests/test_init.py` holds that.
+
 ## Naming the concepts
 
 **One spelling each, so a rename is a replace.** No aliases, no
@@ -81,6 +91,48 @@ Each of these reads as an oversight and is not.
   reader names it, and the kernel reads it. It is not this package's to rename.
 - **The test settings list no kernel app.** The package needs nothing of the
   kernel switched on, and the suite shows it.
+- **Until the kernel release that removes its copy, every JSON name exists
+  twice in one process.** The kernel still ships the JSON half this package
+  was moved out of, and its root imports all of it, so a kernel import path
+  left unrewritten resolves, to the kernel's copy, and its tests pass while
+  testing the wrong code. Two guards hold that, and both are temporary:
+  - `pytest_sessionfinish` in `tests/conftest.py` fails the run when any module
+    of this package, the suite or the docs examples holds a module of the
+    kernel's copy, or an object one defines. It reads only modules named
+    `django_spec_html.*`, `tests.*` and `docs.*`, so **every test directory
+    needs its `__init__.py`**: without one, pytest imports a test module under
+    a bare name the guard never reads.
+  - `tests/test_kernel_copy_references.py` reads every module, every page's
+    python blocks and every docs cross-reference, for the routes a loaded
+    module cannot show: a function-local import, an attribute read through
+    the kernel's root (`k.error_response`), a dotted string, and a
+    cross-reference the kernel's own docs inventory would still resolve, so
+    `mkdocs --strict` passes on it.
+
+  Each guard's own test hands it the kernel's objects and asserts it finds
+  them. The release that raises the kernel floor past the removal deletes both
+  guards and their tests, and adds one test that the kernel's copy is absent.
+- **There are two `NON_FIELD_ERRORS`.** The kernel's, `"non_field_errors"`, is
+  the key a refusal's tree uses, read from the kernel's root; Django's,
+  `"__all__"`, is the key a bound form uses, and `add_argument_errors` imports
+  it as `FORM_NON_FIELD_ERRORS`. A rewrite by name swaps one for the other.
+- **`UnsupportedMediaType` is this package's refusal, not the kernel's.** The
+  kernel cannot import a transport, so no map in the kernel names it, and
+  `error_response` here answers it 415. `tests/http/test_unsupported_media_type.py`
+  raises this package's class through each JSON entry point, since a row
+  naming the kernel's copy would answer it 400 and every other test would pass.
+- **The test project keeps the kernel's module paths** (`tests.dispatch.utils`,
+  `tests.adapter_app`, and the rest), so a test moved from the kernel needed
+  no change to its imports. The docs examples declare their own specs and form
+  rather than importing the kernel's examples, so the pages show what they
+  serve.
+- **The page and the JSON views answer refusals through two ladders**: the
+  page's `except` chain and `error_response`'s table, at the same statuses.
+  Each is held by a docs test reading its page's table
+  (`tests/docs/test_spec_form_examples.py`, `tests/docs/test_http_examples.py`).
+- **`SpecFormView.spec` takes a `ServiceSpec` only**, where the JSON views take
+  a `SpecSource` too. That is the page as it shipped, not an omission to
+  widen in passing.
 
 ## Tests
 
