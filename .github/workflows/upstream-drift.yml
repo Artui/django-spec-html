@@ -1,0 +1,149 @@
+# What a fresh install would get today, run on a schedule.
+#
+# ``uv.lock`` is what every other job resolves against, so a dependency can be
+# unconstrained in ``pyproject.toml`` and still frozen everywhere it is actually
+# tested. That gap is why the Django 6.1 break was invisible while the matrix
+# was green: the cell that found it installed unpinned and resolved 6.1 by
+# accident.
+#
+# This job closes it deliberately. It ignores the lock, resolves the newest
+# versions ``pyproject.toml`` allows, and runs the suite — so an upstream
+# release that breaks us is found by a scheduled run rather than by a consumer.
+#
+# It is also the control that makes dropping dependency ceilings safe. A
+# ceiling is a guess about which future versions will break; this is a
+# measurement of which ones do. Do not delete it to quieten a noisy week
+# without replacing what it measures.
+name: upstream drift
+
+on:
+  schedule:
+    # Mondays, 06:00 UTC. Weekly rather than nightly: the failure this guards
+    # against is an upstream release, which is measured in weeks, and six repos
+    # running nightly is six chances a day to learn nothing.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: upstream-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+# Actions are pinned to a commit SHA rather than a tag: a tag is mutable, and an
+# action owner (or anyone who takes over the account) can silently repoint one at
+# new code that then runs with this workflow's token. The trailing version comment
+# is not decoration -- Dependabot reads it to know which release the SHA is, and
+# rewrites both together when a newer one ships.
+jobs:
+  resolve-latest:
+    name: resolve unpinned + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: false
+
+      # One cell, not the matrix. The matrix answers "does this combination
+      # work"; this answers "has an upstream moved under us", and the newest
+      # supported Python is where a new release lands first.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Resolve the newest versions pyproject allows
+        run: uv lock --upgrade
+
+      - name: Report what changed against the committed lock
+        # Informational, and the most useful line in the log when this fails:
+        # it names the upgrade that broke the build.
+        run: git --no-pager diff --stat uv.lock || true
+
+      - name: Install
+        id: install
+        run: uv sync --all-groups --all-extras
+
+      - name: Show the resolved versions
+        run: uv pip list
+
+      # A resolve can succeed by backing off. When the newest release of a
+      # direct dependency conflicts with something else this project requires,
+      # uv takes the newest version that does resolve and logs an ordinary
+      # "Updated" line, so the suite below passes against a release nobody
+      # chose. That is how django-ag-ui's run went green with pydantic-ai-slim
+      # at 2.46 and 2.54 out: from 2.47 its [ag-ui] extra caps ag-ui-protocol
+      # below the 1.0 django-ag-ui requires. This compares every direct
+      # dependency with PyPI, fails on one held below a release that has been
+      # out longer than the Dependabot cooldown, and asks uv what holds it. A
+      # ceiling declared in pyproject.toml is honoured, which is how a hold is
+      # accepted on purpose. One copy for every repo, pinned like any action.
+      - name: Check no direct dependency is held back
+        id: held-back
+        uses: Artui/held-back-check@b64bbb88fd63c9c96675caba477cce13714de93e # v0.1.0
+
+      # Runs whether or not the check above failed: they answer different
+      # questions, and a hold is no reason to stop measuring what did resolve.
+      - name: Test
+        id: test
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: uv run pytest
+
+      - name: Open or update an issue on failure
+        # Main only. A dispatch on any other branch is a trial of that branch's
+        # manifest, and an issue saying the unpinned resolve is failing would be
+        # filed against the wrong tree.
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          HELD_BACK: ${{ steps.held-back.outcome }}
+          TESTS: ${{ steps.test.outcome }}
+          REPORT: ${{ steps.held-back.outputs.report }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require("fs");
+            const title = "upstream drift: the unpinned resolve is failing";
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const sections = [];
+            if (process.env.TESTS === "failure") {
+              sections.push([
+                "The weekly unpinned resolve failed. A dependency released a version",
+                "that `pyproject.toml` admits and the suite does not survive.",
+                "",
+                "The `git diff --stat uv.lock` step in that run names what moved.",
+              ].join("\n"));
+            }
+            if (process.env.HELD_BACK === "failure") {
+              sections.push(fs.existsSync(process.env.REPORT)
+                ? fs.readFileSync(process.env.REPORT, "utf8")
+                : "The held-back check failed before writing its report; the run's log says why.");
+            }
+            if (!sections.length) {
+              sections.push("A step before the suite failed; the run's log names it.");
+            }
+            const body = [
+              ...sections,
+              "",
+              `Run: ${run}`,
+              "",
+              "Fix forward (adopt the new version) or add a floor/ceiling that says",
+              "why, but do not silence the job — it is the control that lets this",
+              "repo declare open-ended dependency windows.",
+            ].join("\n");
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: "open", labels: "upstream-drift",
+            });
+            if (existing.data.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.data[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ["upstream-drift"],
+              });
+            }

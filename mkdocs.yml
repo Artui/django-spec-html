@@ -1,0 +1,96 @@
+site_name: django-spec-html
+site_description: "A django-service-specs spec as a server-rendered page, HTML first and htmx-capable, plus the plain-Django JSON views."
+site_url: https://artui.github.io/django-spec-html/
+repo_url: https://github.com/Artui/django-spec-html
+repo_name: Artui/django-spec-html
+edit_uri: edit/main/docs/
+
+# docs/ is also a Python package, so the suite imports and runs every example
+# as docs.examples.<name>. The pages take those sources through snippets, read
+# from disk, so neither the sources nor their bytecode belong in the site. Keep
+# this narrow: the release job writes coverage.json here for the README badge
+# and relies on MkDocs copying it.
+exclude_docs: |
+  *.py
+  __pycache__/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+    - toc.follow
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          # The docstrings cite the kernel's objects by their kernel paths, and
+          # the kernel's site is where those resolve. A cross-reference into a
+          # kernel release this machine has not fetched can fail --strict from
+          # mkdocs' cached copy of the inventory while CI, with no cache, passes.
+          inventories:
+            - https://artui.github.io/django-service-specs/objects.inv
+          options:
+            docstring_style: google
+            show_root_heading: true
+            show_root_full_path: false
+            show_source: false
+            show_signature_annotations: true
+            separate_signature: true
+            line_length: 88
+            members_order: source
+            filters: ["!^_"]
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      # Examples are included from docs/examples/ by their path from the
+      # repository root, and a path that does not resolve fails the build
+      # rather than rendering an empty block. Pages use the block form, with
+      # the path on a line of its own between two --8<-- markers: the one-line
+      # form is valid Python, so ruff's formatter rewrites it inside a python
+      # fence and the include stops resolving.
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - API reference: reference.md
