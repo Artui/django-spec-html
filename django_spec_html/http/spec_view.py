@@ -6,8 +6,8 @@ from typing import Any
 
 from django.http import HttpRequest, HttpResponse
 
-from django_service_specs.http.dispatch_request import dispatch_request
-from django_service_specs.http.utils import SpecViewBase
+from django_spec_html.http.dispatch_request import dispatch_request
+from django_spec_html.http.utils import SpecViewBase
 
 
 class SpecView(SpecViewBase):

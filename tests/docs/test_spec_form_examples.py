@@ -25,7 +25,6 @@ from django.http import Http404
 from django.middleware.csrf import CsrfViewMiddleware
 from django.test import RequestFactory
 from django.urls import get_resolver
-
 from django_service_specs import (
     DispatchError,
     FormValidator,
@@ -37,15 +36,16 @@ from django_service_specs import (
     ServiceNotFound,
     ServiceSpec,
     ServiceValidationError,
-    SpecFormView,
     Unrestricted,
 )
+
+from django_spec_html import SpecFormView
 from tests.adapter_app.models import Author, Book, Status
 
 pytestmark = pytest.mark.django_db
 
 ROOT = Path(__file__).resolve().parents[2]
-URLCONF = "docs.examples.http_forms"
+URLCONF = "docs.examples.spec_form"
 RESOLVER = get_resolver(URLCONF)
 FACTORY = RequestFactory()
 NEEDS_A_DATE = "A published book needs its publication date."

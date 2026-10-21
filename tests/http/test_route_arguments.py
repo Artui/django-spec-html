@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
+from django_service_specs import InvalidArguments, Parameter, Parameters, coerce_flat
 
-import django_service_specs
-import django_service_specs.http
-from django_service_specs.http.route_arguments import route_arguments
-from django_service_specs.parameters.coerce_flat import coerce_flat
-from django_service_specs.parameters.invalid_arguments import InvalidArguments
-from django_service_specs.parameters.parameters import Parameter, Parameters
+import django_spec_html
+import django_spec_html.http
+from django_spec_html.http.route_arguments import route_arguments
 
 ROUTED = Parameters.of(Parameter("pk", "integer"), Parameter("slug", "string"))
 
@@ -47,5 +45,5 @@ def test_merged_last_and_typed_with_the_rest_one_refusal_carries_every_problem()
 def test_it_is_public_from_the_subpackage_and_the_root() -> None:
     # A host reading arguments its own way merges the route as the entry
     # points do, and refuses an undeclared kwarg as the same misconfiguration.
-    assert "route_arguments" in django_service_specs.http.__all__
-    assert "route_arguments" in django_service_specs.__all__
+    assert "route_arguments" in django_spec_html.http.__all__
+    assert "route_arguments" in django_spec_html.__all__

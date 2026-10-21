@@ -6,26 +6,29 @@ from collections.abc import Mapping
 from typing import Any
 
 from django.http import HttpRequest, HttpResponse
+from django_service_specs import (
+    DEFAULT_POOL_SEEDS,
+    DispatchError,
+    Grant,
+    PoolSeeds,
+    SelectorSpec,
+    ServiceError,
+    ServiceSpec,
+    SpecSource,
+    UnknownArguments,
+    dispatch,
+    kernel_spec,
+    present,
+)
 
-from django_service_specs.dispatch.dispatch import dispatch
-from django_service_specs.dispatch.grant import Grant
-from django_service_specs.dispatch.present import present
-from django_service_specs.http.error_response import error_response
-from django_service_specs.http.request_arguments import request_arguments
-from django_service_specs.http.request_principal import request_principal
-from django_service_specs.http.utils import (
+from django_spec_html.http.error_response import error_response
+from django_spec_html.http.request_arguments import request_arguments
+from django_spec_html.http.request_principal import request_principal
+from django_spec_html.http.utils import (
     check_asked_input,
     not_found_response,
     success_response,
 )
-from django_service_specs.pool.pool_seeds import DEFAULT_POOL_SEEDS, PoolSeeds
-from django_service_specs.services.service_error import ServiceError
-from django_service_specs.specs.kernel_spec import kernel_spec
-from django_service_specs.specs.selector_spec import SelectorSpec
-from django_service_specs.specs.service_spec import ServiceSpec
-from django_service_specs.specs.spec_source import SpecSource
-from django_service_specs.types.dispatch_error import DispatchError
-from django_service_specs.types.unknown_arguments import UnknownArguments
 
 
 def dispatch_request(
@@ -47,7 +50,7 @@ def dispatch_request(
        one in, and a deactivated principal never acts. Dispatch refuses one by
        the same rule; refusing here as well keeps the request unread for it.
     2. **The arguments** are
-       [`request_arguments`][django_service_specs.http.request_arguments.request_arguments]
+       [`request_arguments`][django_spec_html.http.request_arguments.request_arguments]
        for ``spec.parameters()``, with ``url_kwargs`` merged last.
     3. [`dispatch`][django_service_specs.dispatch.dispatch.dispatch], with
        ``grant``, ``pool_seeds`` and ``unknown_arguments`` as given.
@@ -57,7 +60,7 @@ def dispatch_request(
        defaults djangorestframework-services answers with. A 204 has no body.
 
     A refusal of either family, from any of the four steps, is answered by
-    [`error_response`][django_service_specs.http.error_response.error_response].
+    [`error_response`][django_spec_html.http.error_response.error_response].
     Anything else propagates, a configuration error included: it is wrong for
     every caller, so it belongs to the host's error handling rather than to one
     client's response. A URL kwarg ``spec`` does not declare is one, raised

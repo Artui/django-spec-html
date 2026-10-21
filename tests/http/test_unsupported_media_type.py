@@ -1,10 +1,27 @@
-"""``UnsupportedMediaType``: a refusal of the call, never the operation's own verdict."""
+"""``UnsupportedMediaType``: this package's refusal of the call, answered 415.
+
+The refusal leaves the kernel with the JSON half, so no map in the kernel names
+it and this package's own ``error_response`` is what answers it. While the
+kernel still ships a copy of the class, a row naming that copy would answer
+this package's refusal with the ``DispatchError`` row's 400, and every test
+raising the kernel's copy would still pass; so the tests here raise this
+package's class, through each JSON entry point.
+"""
 
 from __future__ import annotations
 
-from django_service_specs.http.unsupported_media_type import UnsupportedMediaType
-from django_service_specs.services.service_error import ServiceError
-from django_service_specs.types.dispatch_error import DispatchError
+from django_service_specs import DispatchError, ServiceError
+
+from django_spec_html.http.adispatch_request import adispatch_request
+from django_spec_html.http.dispatch_request import dispatch_request
+from django_spec_html.http.error_response import error_response
+from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
+from tests.http.utils import ASYNC_FACTORY, FACTORY, body, signed_in, titled_spec
+
+UNREADABLE = "application/merge-patch+json"
+"""A label the reader reads neither as JSON nor as a form."""
+
+REFUSED = {"detail": f'Unsupported media type "{UNREADABLE}" in request.'}
 
 
 def test_it_is_a_dispatch_refusal_and_not_a_service_one() -> None:
@@ -19,3 +36,24 @@ def test_its_default_message() -> None:
     assert UnsupportedMediaType().message == (
         "The request body is in a format this transport does not read."
     )
+
+
+def test_error_response_answers_this_package_s_refusal_415_with_its_detail() -> None:
+    # Below its own row the refusal is any other ``DispatchError``, a 400.
+    response = error_response(UnsupportedMediaType("Not JSON."))
+    assert response.status_code == 415
+    assert body(response) == {"detail": "Not JSON."}
+
+
+def test_a_body_the_reader_cannot_read_is_415_from_dispatch_request() -> None:
+    request = FACTORY.post("/", data='{"title": "x"}', content_type=UNREADABLE)
+    response = dispatch_request(titled_spec(), signed_in(request))
+    assert response.status_code == 415
+    assert body(response) == REFUSED
+
+
+async def test_a_body_the_reader_cannot_read_is_415_from_adispatch_request() -> None:
+    request = ASYNC_FACTORY.post("/", data='{"title": "x"}', content_type=UNREADABLE)
+    response = await adispatch_request(titled_spec(), signed_in(request))
+    assert response.status_code == 415
+    assert body(response) == REFUSED

@@ -26,30 +26,34 @@ from django.shortcuts import resolve_url
 from django.utils.decorators import classonlymethod
 from django.views import View
 from django.views.generic.base import ContextMixin, TemplateResponseMixin
+from django_service_specs import (
+    DEFAULT_POOL_SEEDS,
+    NON_FIELD_ERRORS,
+    UNSET,
+    DispatchError,
+    DispatchResult,
+    FormValidator,
+    Grant,
+    InvalidArguments,
+    NotPermitted,
+    Parameters,
+    PoolSeeds,
+    PrincipalUnavailable,
+    ServiceConflict,
+    ServiceError,
+    ServiceNotFound,
+    ServiceSpec,
+    ServiceValidationError,
+    UnknownArguments,
+    authorize,
+    coerce_flat,
+    dispatch,
+    resolve_target,
+)
 
-from django_service_specs.adapters.forms.form_validator import FormValidator
-from django_service_specs.authorization.authorize import authorize
-from django_service_specs.authorization.grant import Grant
-from django_service_specs.authorization.not_permitted import NotPermitted
-from django_service_specs.authorization.principal_unavailable import PrincipalUnavailable
-from django_service_specs.dispatch.dispatch import dispatch
-from django_service_specs.dispatch.dispatch_result import DispatchResult
-from django_service_specs.dispatch.resolve_target import resolve_target
-from django_service_specs.http.add_argument_errors import add_argument_errors
-from django_service_specs.http.utils import request_principal, route_arguments
-from django_service_specs.parameters.coerce_flat import coerce_flat
-from django_service_specs.parameters.invalid_arguments import InvalidArguments
-from django_service_specs.parameters.parameters import Parameters
-from django_service_specs.parameters.utils import NON_FIELD_ERRORS
-from django_service_specs.pool.pool_seeds import DEFAULT_POOL_SEEDS, PoolSeeds
-from django_service_specs.services.service_conflict import ServiceConflict
-from django_service_specs.services.service_error import ServiceError
-from django_service_specs.services.service_not_found import ServiceNotFound
-from django_service_specs.services.service_validation_error import ServiceValidationError
-from django_service_specs.specs.service_spec import ServiceSpec
-from django_service_specs.types.dispatch_error import DispatchError
-from django_service_specs.types.unset import UNSET
-from django_service_specs.validation.unknown_arguments import UnknownArguments
+from django_spec_html.http.add_argument_errors import add_argument_errors
+from django_spec_html.http.request_principal import request_principal
+from django_spec_html.http.route_arguments import route_arguments
 
 _TYPED: Final = (forms.IntegerField, forms.DateField, forms.DateTimeField)
 """The fields whose input formats are wider than the wire form the shape check reads.
@@ -83,7 +87,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     beside ``view`` and ``spec``: the names Django's ``FormView`` uses, with
     ``extra_context`` merged in as Django's ``ContextMixin`` does. The spec's
     class-level permission check runs first, through
-    [`authorize`][django_service_specs.authorization.authorize.authorize], so
+    [`authorize`][django_service_specs.dispatch.authorize.authorize], so
     a page is never offered to a principal the post would refuse.
 
     **An update's page shows the row it updates.** Every GET then finds its
@@ -110,7 +114,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     page - every row a choice field lists, and ``extra_context`` - by posting
     a malformed form, and a form whose constructor reads rows would read them
     for that principal. The
-    [`Grant`][django_service_specs.authorization.grant.Grant] it returns goes
+    [`Grant`][django_service_specs.dispatch.grant.Grant] it returns goes
     to dispatch, so the class-level check runs once.
 
     **Then the post finds its target, as GET does**, before the form is
@@ -135,7 +139,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     ``12,50`` - is sent on in the form the shape check reads, through the
     field's own ``to_python``, so the shape check never refuses what the form
     accepts. The URL kwargs are merged last, so the route wins a clash, as in
-    [`request_arguments`][django_service_specs.http.request_arguments.request_arguments].
+    [`request_arguments`][django_spec_html.http.request_arguments.request_arguments].
     Each is an argument, so the spec declares each one: a kwarg it does not is
     the host's misconfiguration, raised as ``ImproperlyConfigured`` under
     either ``unknown_arguments`` policy rather than answered as a refused post.
@@ -147,7 +151,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     - **A refusal of the arguments** - ``InvalidArguments``, or a
       ``ServiceValidationError`` - re-renders the bound form at 400 with the
       refusal placed on it by
-      [`add_argument_errors`][django_service_specs.http.add_argument_errors.add_argument_errors].
+      [`add_argument_errors`][django_spec_html.http.add_argument_errors.add_argument_errors].
       A service's string or list detail is about the whole form.
     - **Any other refusal** re-renders it with the message as a non-field
       error: ``ServiceConflict`` at 409, any other ``ServiceError`` at 422, any

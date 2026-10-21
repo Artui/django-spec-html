@@ -18,7 +18,7 @@ from django.contrib.auth import get_user_model
 from django.http import QueryDict
 from django.utils.translation import gettext_lazy
 
-from django_service_specs.http.add_argument_errors import add_argument_errors
+from django_spec_html.http.add_argument_errors import add_argument_errors
 from tests.adapter_app.models import Author, Book, Edition
 
 REQUIRED = "This field is required."
