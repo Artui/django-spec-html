@@ -7,7 +7,7 @@
 [![Docs](https://img.shields.io/badge/docs-artui.github.io-blue.svg)](https://artui.github.io/django-spec-html/)
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Artui/django-spec-html/gh-pages/coverage.json)](https://github.com/Artui/django-spec-html/actions/workflows/tests.yml)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![License](https://img.shields.io/pypi/l/django-spec-html.svg)](LICENSE)
+[![License](https://img.shields.io/pypi/l/django-spec-html.svg)](https://github.com/Artui/django-spec-html/blob/main/LICENSE)
 
 
 A [`django-service-specs`](https://github.com/Artui/django-service-specs) spec
@@ -20,8 +20,9 @@ script, a `fetch()` or an htmx request.
 
 Both halves are the kernel's, moved out with their history so the kernel
 carries no transport: the JSON views as kernel 0.11.0 shipped them, and
-`SpecFormView` as kernel 0.5.1 did. The behaviour is the kernel's; the import
-path is this package's. Until the kernel release that removes its own copy,
+`SpecFormView` as kernel 0.5.1 did. The behaviour is the kernel's, but for
+the page answering an `UnsupportedMediaType` an operation raises at 415 where
+the kernel's answered 400; the import path is this package's. Until the kernel release that removes its own copy,
 the kernel's root still exports the ten JSON names, and those are the kernel's
 copy: import them from `django_spec_html`.
 
@@ -81,4 +82,4 @@ urlpatterns = [
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/Artui/django-spec-html/blob/main/LICENSE).
