@@ -154,8 +154,9 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
       [`add_argument_errors`][django_spec_html.http.add_argument_errors.add_argument_errors].
       A service's string or list detail is about the whole form.
     - **Any other refusal** re-renders it with the message as a non-field
-      error: ``ServiceConflict`` at 409, any other ``ServiceError`` at 422, any
-      other ``DispatchError`` at 400. The statuses are ``error_response``'s, so
+      error: ``ServiceConflict`` at 409, any other ``ServiceError`` at 422,
+      ``UnsupportedMediaType`` at 415, any other ``DispatchError`` at 400. The
+      statuses are ``error_response``'s, read from the one map, so
       a client reading a refused post - htmx, or Turbo, which will not render
       a failed post answered 200 - reads it the same way.
     - ``NotPermitted`` and ``PrincipalUnavailable`` raise Django's
