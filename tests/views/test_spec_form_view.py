@@ -626,15 +626,13 @@ class TestSuccess:
         assert (response.status_code, response.url) == (302, "/done/")
         assert received(spec)["title"] == "Hi"
 
-    def test_a_lazy_success_url_is_resolved(self, ada: Any) -> None:
-        view = form_view(entry_spec(), success_url=reverse_lazy("done"))
+    # ``resolve_url`` reads either as ``redirect()`` does.
+    @pytest.mark.parametrize(
+        "success_url", [reverse_lazy("done"), "done"], ids=["lazy", "url-name"]
+    )
+    def test_a_success_url_is_resolved(self, ada: Any, success_url: Any) -> None:
+        view = form_view(entry_spec(), success_url=success_url)
         assert post(view, ada, {"title": "Hi"}).url == "/done/"
-
-    def test_a_url_name_is_resolved(self, ada: Any) -> None:
-        # ``resolve_url`` reads it as ``redirect()`` does.
-        assert post(form_view(entry_spec(), success_url="done"), ada, {"title": "Hi"}).url == (
-            "/done/"
-        )
 
     def test_an_overridden_get_success_url_reads_the_result(self, ada: Any) -> None:
         class ToTheEntry(SpecFormView):
@@ -1089,18 +1087,16 @@ class TestServing:
 
 
 class TestConfiguration:
-    def test_a_view_with_no_spec_is_refused(self) -> None:
+    @pytest.mark.parametrize(
+        ("given", "named"),
+        [({}, "NoneType"), ({"spec": note_spec()}, "SelectorSpec")],
+        ids=["no-spec", "selector-spec"],
+    )
+    def test_a_view_with_no_service_spec_is_refused(self, given: Any, named: str) -> None:
         with pytest.raises(ImproperlyConfigured) as refused_:
-            SpecFormView.as_view(success_url="/done/")
+            SpecFormView.as_view(**given, success_url="/done/")
         assert str(refused_.value) == (
-            "SpecFormView.as_view() needs a ServiceSpec, the write a form posts; got NoneType."
-        )
-
-    def test_a_selector_spec_is_refused(self) -> None:
-        with pytest.raises(ImproperlyConfigured) as refused_:
-            SpecFormView.as_view(spec=note_spec(), success_url="/done/")
-        assert str(refused_.value) == (
-            "SpecFormView.as_view() needs a ServiceSpec, the write a form posts; got SelectorSpec."
+            f"SpecFormView.as_view() needs a ServiceSpec, the write a form posts; got {named}."
         )
 
     @pytest.mark.parametrize(

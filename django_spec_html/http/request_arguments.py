@@ -218,15 +218,16 @@ def _splits(param: Parameter) -> bool:
     ``decimal``.
 
     One branch to coverage per return, so each condition is held by its own
-    test: test_a_number_array_reads_a_comma_separated_value_as_its_elements
+    test: test_an_array_reads_a_comma_separated_value_as_its_elements[number]
     (the types that split),
     test_a_decimal_array_reads_a_comma_separated_value_as_its_elements_exactly
-    (the format),
-    test_an_array_with_no_declared_element_is_not_split_by_its_choices
-    (``"string"``: without it an undeclared element with comma-free choices
-    would split), test_a_string_array_is_not_split (the choices declared),
-    test_a_string_array_whose_choices_hold_a_comma_is_not_split (none holds a
-    comma), and test_a_string_array_whose_choices_hold_no_comma_is_split.
+    (the format), and of
+    test_an_array_that_may_hold_a_comma_is_not_split,
+    [no-declared-element-with-choices] (``"string"``: without it an
+    undeclared element with comma-free choices would split), [string] (the
+    choices declared) and [string-whose-choices-hold-a-comma] (none holds a
+    comma); and
+    test_an_array_reads_a_comma_separated_value_as_its_elements[string-whose-choices-hold-no-comma].
     """
     if param.items in _COMMA_SEPARABLE or param.format == "decimal":
         return True

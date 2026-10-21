@@ -32,6 +32,7 @@ from tests.dispatch.utils import (
 from tests.dispatch_app.models import Note
 from tests.http.utils import (
     ASYNC_FACTORY,
+    SPEC_OR_SOURCE,
     Conflicting,
     Foreign,
     asking_spec,
@@ -103,8 +104,9 @@ async def test_a_missing_row_is_404(ada: Any) -> None:
     assert (response.status_code, body(response)) == (404, {"detail": "Not found."})
 
 
-async def test_a_service_with_nothing_to_present_is_204(ada: Any) -> None:
-    response = await adispatch_request(titled_spec(None), post(ada, {"title": "x"}))
+@SPEC_OR_SOURCE
+async def test_a_service_with_nothing_to_present_is_204(ada: Any, served: Any) -> None:
+    response = await adispatch_request(served(titled_spec(None)), post(ada, {"title": "x"}))
     assert (response.status_code, response.content) == (204, b"")
 
 
@@ -178,44 +180,27 @@ async def test_each_presented_row_carries_its_affordances(ada: Any) -> None:
     ]
 
 
-async def test_a_schema_naming_a_declared_key_is_written_as_the_422_body(ada: Any) -> None:
+@SPEC_OR_SOURCE
+async def test_a_schema_naming_a_declared_key_is_written_as_the_422_body(
+    ada: Any, served: Any
+) -> None:
     schema = {"title": {"type": "string"}}
-    response = await adispatch_request(asking_spec(schema), post(ada, {"title": "x"}))
+    response = await adispatch_request(served(asking_spec(schema)), post(ada, {"title": "x"}))
     assert (response.status_code, body(response)) == (
         422,
         {"detail": "Say which.", "schema": schema},
     )
 
 
+@SPEC_OR_SOURCE
 async def test_a_schema_naming_an_undeclared_key_is_the_services_error_not_a_422(
-    ada: Any,
+    ada: Any, served: Any
 ) -> None:
+    asking = served(asking_spec({"colour": {"type": "string"}}))
     with pytest.raises(ImproperlyConfigured, match="colour"):
-        await adispatch_request(
-            asking_spec({"colour": {"type": "string"}}), post(ada, {"title": "x"})
-        )
+        await adispatch_request(asking, post(ada, {"title": "x"}))
 
 
 async def test_a_list_source_answers_its_presented_rows(ada: Any) -> None:
     response = await adispatch_request(Foreign(notes_spec()), get(ada))
     assert (response.status_code, body(response)) == (200, [{"title": "One"}])
-
-
-async def test_a_service_source_with_nothing_to_present_is_204(ada: Any) -> None:
-    response = await adispatch_request(Foreign(titled_spec(None)), post(ada, {"title": "x"}))
-    assert (response.status_code, response.content) == (204, b"")
-
-
-async def test_a_source_s_asked_schema_is_written_as_the_422_body(ada: Any) -> None:
-    schema = {"title": {"type": "string"}}
-    response = await adispatch_request(Foreign(asking_spec(schema)), post(ada, {"title": "x"}))
-    assert (response.status_code, body(response)) == (
-        422,
-        {"detail": "Say which.", "schema": schema},
-    )
-
-
-async def test_a_source_s_undeclared_asked_key_is_the_services_error(ada: Any) -> None:
-    source = Foreign(asking_spec({"colour": {"type": "string"}}))
-    with pytest.raises(ImproperlyConfigured, match="colour"):
-        await adispatch_request(source, post(ada, {"title": "x"}))

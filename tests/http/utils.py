@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest, HttpResponseBase
 from django.test import AsyncRequestFactory, RequestFactory
@@ -59,6 +60,12 @@ class Foreign:
     def as_kernel_spec(self) -> ServiceSpec | SelectorSpec:
         self.compiles.append(1)
         return self.compiled
+
+
+SPEC_OR_SOURCE = pytest.mark.parametrize(
+    "served", [lambda spec: spec, Foreign], ids=["spec", "source"]
+)
+"""A test run on a spec, and on a source compiling to it, which is served as its compiled spec."""
 
 
 def signed_in(request: HttpRequest, user: Any = None) -> HttpRequest:

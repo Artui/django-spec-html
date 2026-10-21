@@ -21,7 +21,7 @@ from django.core.exceptions import ImproperlyConfigured, RequestDataTooBig
 from django.core.files.uploadedfile import SimpleUploadedFile, UploadedFile
 from django.http import HttpRequest
 from django.http.request import RawPostDataException
-from django.test import RequestFactory, override_settings
+from django.test import override_settings
 from django.test.client import encode_multipart
 from django_service_specs import (
     NON_FIELD_ERRORS,
@@ -40,12 +40,10 @@ from django_spec_html.http.request_arguments import request_arguments
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 from tests.dispatch.utils import make_user
 from tests.dispatch_app.models import Note
-from tests.http.utils import DEEP_JSON
+from tests.http.utils import DEEP_JSON, FACTORY
 
 # The module, which ``http``'s own ``request_arguments`` re-export shadows as an attribute.
 request_arguments_module = importlib.import_module("django_spec_html.http.request_arguments")
-
-FACTORY = RequestFactory()
 
 
 def coded(detail: Any) -> Any:
@@ -192,25 +190,36 @@ class TestCommaSeparatedArrays:
     choices. ``_splits`` names the test holding each condition.
     """
 
-    def test_a_number_array_reads_a_comma_separated_value_as_its_elements(self) -> None:
-        assert read(FACTORY.get("/?pks=1,2.5"), CSV) == {"pks": [1.0, 2.5]}
-
-    def test_an_integer_array_reads_a_comma_separated_value_as_its_elements(self) -> None:
-        assert read(FACTORY.get("/?ids=1,2,3"), CSV) == {"ids": [1, 2, 3]}
-
-    def test_a_boolean_array_reads_a_comma_separated_value_as_its_elements(self) -> None:
-        assert read(FACTORY.get("/?flags=true,0,False"), CSV) == {"flags": [True, False, False]}
-
-    def test_space_around_a_part_is_trimmed(self) -> None:
-        # A boolean is the type that cares: " true" is no spelling of one,
-        # where an integer already ignores the space.
-        assert read(FACTORY.get("/?flags=true, false ,1"), CSV) == {"flags": [True, False, True]}
-
-    def test_repeated_keys_still_make_a_list(self) -> None:
-        assert read(FACTORY.get("/?ids=1&ids=2"), CSV) == {"ids": [1, 2]}
-
-    def test_repeated_keys_and_commas_mix_with_each_value_split(self) -> None:
-        assert read(FACTORY.get("/?ids=1,2&ids=3&ids=4,5"), CSV) == {"ids": [1, 2, 3, 4, 5]}
+    @pytest.mark.parametrize(
+        ("query", "expected"),
+        [
+            ("pks=1,2.5", {"pks": [1.0, 2.5]}),
+            ("ids=1,2,3", {"ids": [1, 2, 3]}),
+            ("flags=true,0,False", {"flags": [True, False, False]}),
+            # A boolean is the type that cares: " true" is no spelling of one,
+            # where an integer already ignores the space.
+            ("flags=true, false ,1", {"flags": [True, False, True]}),
+            ("ids=1&ids=2", {"ids": [1, 2]}),
+            ("ids=1,2&ids=3&ids=4,5", {"ids": [1, 2, 3, 4, 5]}),
+            # ``?o=title,-pk``: the spelling django-filter's OrderingFilter
+            # takes. No choice holds a comma, so a value holding one is several
+            # choices.
+            ("o=title,-pk&o=pk", {"o": ["title", "-pk", "pk"]}),
+        ],
+        ids=[
+            "number",
+            "integer",
+            "boolean",
+            "space-around-a-part-trimmed",
+            "repeated-keys",
+            "repeated-keys-and-commas",
+            "string-whose-choices-hold-no-comma",
+        ],
+    )
+    def test_an_array_reads_a_comma_separated_value_as_its_elements(
+        self, query: str, expected: dict[str, Any]
+    ) -> None:
+        assert read(FACTORY.get(f"/?{query}"), CSV) == expected
 
     def test_a_form_body_splits_too(self) -> None:
         request = FACTORY.post("/", data="ids=1,2&pks=3", content_type=FORM)
@@ -228,23 +237,27 @@ class TestCommaSeparatedArrays:
         assert read(FACTORY.get("/?pks=&pks=1"), _decimal_pks()) == {"pks": ["1"]}
         assert read(FACTORY.get("/?pks="), _decimal_pks()) == {}
 
-    def test_a_string_array_is_not_split(self) -> None:
-        # A comma is part of a string; the whole value is the element.
-        assert read(FACTORY.get("/?words=a,b&words=c"), CSV) == {"words": ["a,b", "c"]}
-
-    def test_a_string_array_whose_choices_hold_no_comma_is_split(self) -> None:
-        # ``?o=title,-pk``: the spelling django-filter's OrderingFilter takes. No
-        # choice holds a comma, so a value holding one is several choices.
-        assert read(FACTORY.get("/?o=title,-pk&o=pk"), CSV) == {"o": ["title", "-pk", "pk"]}
-
-    def test_a_string_array_whose_choices_hold_a_comma_is_not_split(self) -> None:
-        # One choice holds a comma, so the whole value may be that choice.
-        assert read(FACTORY.get("/?places=Paris, France&places=Paris"), CSV) == {
-            "places": ["Paris, France", "Paris"]
-        }
-
-    def test_an_array_with_no_declared_element_is_not_split_by_its_choices(self) -> None:
-        assert read(FACTORY.get("/?marks=a,b"), CSV) == {"marks": ["a,b"]}
+    @pytest.mark.parametrize(
+        ("query", "expected"),
+        [
+            # A comma is part of a string; the whole value is the element.
+            ("words=a,b&words=c", {"words": ["a,b", "c"]}),
+            # One choice holds a comma, so the whole value may be that choice.
+            ("places=Paris, France&places=Paris", {"places": ["Paris, France", "Paris"]}),
+            ("marks=a,b", {"marks": ["a,b"]}),
+            ("tags=a,b", {"tags": ["a,b"]}),
+        ],
+        ids=[
+            "string",
+            "string-whose-choices-hold-a-comma",
+            "no-declared-element-with-choices",
+            "no-declared-element",
+        ],
+    )
+    def test_an_array_that_may_hold_a_comma_is_not_split(
+        self, query: str, expected: dict[str, Any]
+    ) -> None:
+        assert read(FACTORY.get(f"/?{query}"), CSV) == expected
 
     @pytest.mark.django_db
     @pytest.mark.parametrize("query", ["o=title,-pk", "o=title&o=-pk"])
@@ -256,9 +269,6 @@ class TestCommaSeparatedArrays:
         spec = SelectorSpec(kind=SelectorKind.LIST, selector=lambda: None, filter_set=_Ordered)
         ordered = shape_queryset(Note.objects.all(), spec, checked, source_label="x")
         assert list(ordered.values_list("pk", flat=True)) == [rows[2].pk, rows[1].pk, rows[0].pk]
-
-    def test_an_array_with_no_declared_element_is_not_split(self) -> None:
-        assert read(FACTORY.get("/?tags=a,b"), CSV) == {"tags": ["a,b"]}
 
     def test_an_array_of_rows_is_not_split_and_stays_refused_by_name(self) -> None:
         assert refusal(FACTORY.get("/?books=a,b"), CSV) == {
