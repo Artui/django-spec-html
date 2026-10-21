@@ -1144,6 +1144,7 @@ class TestAnHtmxRequest:
         assert (htmx.status_code, refused(htmx)) == (plain.status_code, refused(plain))
         assert htmx.status_code == 400
         assert htmx.template_name == plain.template_name == [TEMPLATE]
+        assert set(htmx.context_data) == set(plain.context_data)
         assert self.hx_headers(htmx) == []
 
 

@@ -167,8 +167,8 @@ refusal - a required field left blank, a date that does not parse - the
 form's further checks, such as a length, `clean()` or uniqueness, answer the
 next post rather than this one. The statuses are
 [`error_response`](http.md#refusals)'s, so a client reading a refused post - Turbo,
-which will not render a failed post answered 200 - reads it the same way it
-reads the JSON views.
+which will not render a failed post answered 200 - reads its outcome from the
+status.
 
 `as_view()` refuses, when the URLconf is imported, a view with no
 `ServiceSpec`, a spec whose Validator is not a `FormValidator`, a `many`
@@ -179,8 +179,8 @@ only** in this release.
 <a id="htmx"></a>
 **The page reads no htmx header** in this release, so an htmx request is
 answered as any other post. A success is the redirect to the success URL, which
-the request follows itself, so the element is swapped for the page that URL
-serves. A refusal is the whole page at its 4xx status, which htmx does not swap
+the request follows itself, so the page that URL serves is swapped into the
+request's target. A refusal is the whole page at its 4xx status, which htmx does not swap
 by default. A fragment answer for an htmx request, with `HX-Redirect` on a
 success, is planned for 0.2.0. Until then, serve an htmx form from a view of
 your own.
