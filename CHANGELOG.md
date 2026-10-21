@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The documentation and the package summary no longer claim htmx support
+  the page does not have.** `SpecFormView` reads no htmx header, so an htmx
+  post is answered as any other: a success is the redirect, which the request
+  follows itself, and a refusal is the whole page at its 4xx status, which htmx
+  does not swap by default. The PyPI summary and keywords, the README, the
+  documentation site and the view's docstring said the page answered an htmx
+  request with a fragment; they now say what it does, and that a fragment
+  answer is planned for 0.2.0. The JSON views are described as serving a
+  script or a `fetch()`, since htmx swaps HTML. Two tests hold the page's
+  answer to an htmx post. No code changed.
+
 ## [0.1.1] — 2026-10-21
 
 ### Changed

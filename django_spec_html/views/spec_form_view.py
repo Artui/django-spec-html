@@ -157,11 +157,16 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
       error: ``ServiceConflict`` at 409, any other ``ServiceError`` at 422,
       ``UnsupportedMediaType`` at 415, any other ``DispatchError`` at 400. The
       statuses are ``error_response``'s, read from the one map, so
-      a client reading a refused post - htmx, or Turbo, which will not render
-      a failed post answered 200 - reads it the same way.
+      a client reading a refused post - Turbo, which will not render a failed
+      post answered 200 - reads it the same way.
     - ``NotPermitted`` and ``PrincipalUnavailable`` raise Django's
       ``PermissionDenied``, and a not-found result or ``ServiceNotFound``
       raises ``Http404``, for the host's own 403 and 404 pages.
+
+    The view reads no htmx header, so an htmx request is answered as any
+    other post: a success is the redirect, which the request follows, and a
+    refusal is the whole page at its 4xx status, which htmx does not swap by
+    default.
 
     **A re-rendered form carries the refusal and nothing else**: the page says
     what dispatch decided. The page's own form is never validated: its

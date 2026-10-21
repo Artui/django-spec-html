@@ -10,8 +10,8 @@ as JSON.
 from django_spec_html import AsyncSpecView, SpecView, adispatch_request, dispatch_request
 ```
 
-It is the plumbing, not the pages: a view here answers JSON to a script, a
-`fetch()` or an htmx request. A page a person reads, such as a spec's own form
+It is the plumbing, not the pages: a view here answers JSON to a script or a
+`fetch()`. A page a person reads, such as a spec's own form
 rendered and re-rendered with its refusal, is a [page view](pages.md). The pieces
 the entry points are built from are public so that such a view reads a request
 by the same rules: [`request_principal`](#the-principal),

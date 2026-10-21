@@ -6,8 +6,10 @@ Guidance for working in this repository.
 
 A `django-service-specs` spec served as a server-rendered page. `SpecFormView`
 renders a spec's form, validates a post through it, runs the kernel's
-`dispatch`, and answers either a full page or, for an htmx request, a fragment:
-two wrappers over one outcome, so every page also works as a plain form post.
+`dispatch`, and answers as a plain form post: a redirect on a success, and the
+page again with the refusal on its form. It reads no htmx header, so an htmx
+request is answered the same way; a fragment for one is planned for 0.2.0 and
+not built.
 Beside the pages, `http/` serves a spec as plain-Django JSON (`SpecView`,
 `AsyncSpecView`, `dispatch_request`, `error_response`, `request_arguments`), for
 a client that wants JSON with no API framework.
