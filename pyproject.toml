@@ -41,8 +41,9 @@ dependencies = [
     # not.
     "django>=4.2",
     # The first kernel release with every name the moved code reads at its
-    # root: ``refusal_messages``, ``unanswered_refusals`` and the helpers the
-    # form view and the argument reader import were private below it.
+    # root: ``refusal_messages``, ``expected_type_refusal``, ``NON_FIELD_KEYS``,
+    # ``max_length_in_force``, ``clean_held_to_their_columns`` and
+    # ``is_deactivated`` were private below it.
     "django-service-specs>=0.10.0",
 ]
 

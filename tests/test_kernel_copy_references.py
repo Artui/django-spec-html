@@ -49,8 +49,14 @@ EXEMPT = {
 }
 """Files that name the kernel's copy on purpose, each for the reason beside it."""
 
-_CROSS_REFERENCE = re.compile(rf"\]\[{re.escape(_COPY)}[.\]]")
-"""A docs cross-reference into the kernel's copy, ``[name][django_service_specs.http.x]``."""
+_CROSS_REFERENCE = re.compile(rf"\]\[({KERNEL}(?:\.\w+)*)\]|^\s*:::\s*({KERNEL}(?:\.\w+)*)")
+"""A docs cross-reference or ``:::`` directive naming a kernel path, captured whole.
+
+The kernel's inventory lists every moved name at its root as well as under
+``http``, so ``[SpecView][django_service_specs.SpecView]`` resolves to the
+kernel's copy as surely as the module path does; the target is judged by
+``_forbidden_path``, the rule the import check uses.
+"""
 
 
 def _forbidden_path(path: str) -> bool:
@@ -121,7 +127,8 @@ def cross_references(text: str) -> list[str]:
     return [
         f"{number}: {line.strip()}"
         for number, line in enumerate(text.splitlines(), start=1)
-        if _CROSS_REFERENCE.search(line)
+        for match in _CROSS_REFERENCE.finditer(line)
+        if _forbidden_path(match.group(1) or match.group(2))
     ]
 
 
@@ -224,6 +231,12 @@ def test_no_python_block_on_a_page_reaches_the_kernel_s_copy(
             ["2: django_service_specs.http"],
         ),
         (
+            # Not a moved root name, so only the module path answers: ``ANSWERABLE``
+            # is a tuple, which the session guard cannot attribute to a module.
+            "from django_service_specs.http.utils import ANSWERABLE\n",
+            ["1: from django_service_specs.http.utils import ANSWERABLE"],
+        ),
+        (
             "importlib.import_module('django_service_specs.http.request_arguments')\n",
             ["1: 'django_service_specs.http.request_arguments'"],
         ),
@@ -253,10 +266,14 @@ def test_a_cross_reference_into_the_kernel_s_copy_is_found() -> None:
     text = (
         "See [`SpecView`][django_service_specs.http.spec_view.SpecView].\n"
         "And [`http`][django_service_specs.http].\n"
+        "Or [`SpecView`][django_service_specs.SpecView], through the kernel's root.\n"
+        "::: django_service_specs.http.spec_view.SpecView\n"
     )
     assert cross_references(text) == [
         "1: See [`SpecView`][django_service_specs.http.spec_view.SpecView].",
         "2: And [`http`][django_service_specs.http].",
+        "3: Or [`SpecView`][django_service_specs.SpecView], through the kernel's root.",
+        "4: ::: django_service_specs.http.spec_view.SpecView",
     ]
 
 
@@ -265,5 +282,6 @@ def test_a_cross_reference_the_kernel_keeps_is_not_found() -> None:
         "[`dispatch`][django_service_specs.dispatch.dispatch.dispatch], "
         "[`SpecView`][django_spec_html.http.spec_view.SpecView], "
         "[a page](https://artui.github.io/django-service-specs/http/)\n"
+        "::: django_service_specs.dispatch.dispatch.dispatch\n"
     )
     assert cross_references(text) == []
