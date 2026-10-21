@@ -81,7 +81,15 @@ the map is the whole truth a check reading it needs: the kernel's
 is held by ``test_every_refusal_has_a_row_of_its_own``.
 
 ``UnsupportedMediaType`` is this package's refusal, which the kernel's check
-does not ask about, so ``test_unsupported_media_type_is_415`` holds its row."""
+does not ask about, so ``test_unsupported_media_type_is_415`` holds its row.
+
+Each row's status is held twice over, by the two tables the docs publish:
+``test_the_pages_status_table_is_the_one_shipped`` for the JSON views and
+``test_the_pages_outcome_table_is_the_one_shipped`` for the page, beside the
+row's own tests in ``test_error_response`` and ``test_spec_form_view``.
+
+The dispatch rows sit above the service rows, so a refusal deriving from one
+of each answers at its dispatch row's status, on both halves alike."""
 
 
 def refusal_status(refused: DispatchError | ServiceError) -> int:

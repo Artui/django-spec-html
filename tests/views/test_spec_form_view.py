@@ -186,6 +186,14 @@ class NoCreating(PermissionCheck):
         return scope is not None
 
 
+class Deactivating(PermissionCheck):
+    """Admits the principal at class level, then deactivates it, as a concurrent request might."""
+
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        principal.is_active = False
+        return True
+
+
 class DisabledTitleForm(forms.Form):
     """A plain form whose ``title`` is shown and never read."""
 
@@ -193,7 +201,7 @@ class DisabledTitleForm(forms.Form):
 
 
 class Throttled(DispatchError):
-    """A dispatch refusal no row of the ladder names, as a later release might add."""
+    """A dispatch refusal no row of the status map names, as a later release might add."""
 
 
 class UserForm(forms.ModelForm):
@@ -489,6 +497,14 @@ class TestAnUpdatePage:
             get(form_view(spec), ada)
         with pytest.raises(PermissionDenied, match=r"^Nothing may be created here\.$"):
             post(form_view(spec), ada, {"title": "Hi"})
+
+    def test_a_principal_deactivated_once_admitted_is_refused_at_the_row(self, ada: Any) -> None:
+        # The target's lookup refuses a deactivated principal on its own, so
+        # one admitted at class level and deactivated before the row is found
+        # is the host's 403, not an unhandled refusal.
+        note = Note.objects.create(owner=ada, title="Ada's")
+        with pytest.raises(PermissionDenied, match=r"^The acting principal is unavailable\.$"):
+            get(form_view(row_spec(permissions=[Deactivating()])), ada, pk=note.pk)
 
     def test_a_missing_row_is_http404(self, ada: Any) -> None:
         with pytest.raises(Http404):

@@ -254,6 +254,8 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             # At the status ``error_response`` answers it with, whoever
             # refused: a denial raised by the operation, the target's checks
             # having answered before dispatch, is the host's 403 or 404 page.
+            # Both statuses are held by
+            # test_the_pages_outcome_table_is_the_one_shipped.
             status = refusal_status(refused)
             if status in (403, 404):
                 raise _denial(refused) from refused
