@@ -2,59 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
 
 from django_service_specs import (
-    Output,
-    OutputField,
-    Parameter,
-    Parameters,
-    PermissionCheck,
-    Presenter,
     SelectorSpec,
     ServiceSpec,
-    ValidationContext,
-    Validator,
 )
-
-
-class Titled(Validator):
-    def __init__(self, *names: str) -> None:
-        self.names = names or ("title",)
-
-    def parameters(self) -> Parameters:
-        return Parameters(Parameter(name, "string") for name in self.names)
-
-    def validate(self, arguments: Mapping[str, Any], context: ValidationContext) -> dict[str, Any]:
-        return dict(arguments)
-
-
-class Bare(Validator):
-    """A Validator declaring nothing: it is what a spec needs to take ``input_data``."""
-
-    def parameters(self) -> Parameters:
-        return Parameters()
-
-    def validate(self, arguments: Mapping[str, Any], context: ValidationContext) -> dict[str, Any]:
-        return dict(arguments)
-
-
-class Named(Presenter):
-    def output(self) -> Output:
-        return Output((OutputField("name", "string"),))
-
-    def present(self, value: Any) -> Any:
-        return {"name": str(value)}
-
-
-class Nobody(PermissionCheck):
-    def has_permission(self, principal: Any, spec: Any) -> bool:
-        return False
-
-
-PK = Parameters.of(Parameter("pk", "integer", required=True))
 
 
 @dataclass(frozen=True)
@@ -74,13 +27,3 @@ class Foreign:
     def as_kernel_spec(self) -> ServiceSpec | SelectorSpec:
         self.compiles.append(1)
         return self.compiled
-
-
-@dataclass(frozen=True)
-class ForeignWithContract(Foreign):
-    """A ``Foreign`` that answers ``agent_contract()``, as the real one does while it carries one."""
-
-    contract: Any = None
-
-    def agent_contract(self) -> Any:
-        return self.contract
