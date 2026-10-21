@@ -15,8 +15,15 @@ from django_service_specs import UnknownArguments
 from django_spec_html.http.async_spec_view import AsyncSpecView
 from tests.dispatch.utils import TENANT_SEEDS, make_user
 from tests.dispatch_app.models import Note
-from tests.http.utils import ASYNC_FACTORY, DEEP_JSON, body, note_spec, notes_spec, titled_spec
-from tests.specs.utils import Foreign
+from tests.http.utils import (
+    ASYNC_FACTORY,
+    DEEP_JSON,
+    Foreign,
+    body,
+    note_spec,
+    notes_spec,
+    titled_spec,
+)
 
 # transaction=True for the reason test_adispatch_request gives.
 pytestmark = pytest.mark.django_db(transaction=True)

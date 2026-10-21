@@ -6,6 +6,7 @@ import dataclasses
 import json
 from typing import Any
 
+import django_filters
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ImproperlyConfigured
@@ -18,7 +19,6 @@ from django_service_specs import (
 )
 
 from django_spec_html.http.dispatch_request import dispatch_request
-from tests.adapters.filters.utils import NoteFilters
 from tests.dispatch.utils import (
     OPEN,
     REFUSED_ARCHIVED,
@@ -34,6 +34,7 @@ from tests.dispatch_app.models import Note
 from tests.http.utils import (
     FACTORY,
     Conflicting,
+    Foreign,
     Seen,
     asking_spec,
     body,
@@ -42,11 +43,28 @@ from tests.http.utils import (
     signed_in,
     titled_spec,
 )
-from tests.specs.utils import Foreign
 
 pytestmark = pytest.mark.django_db
 
 UNAVAILABLE = {"detail": "The acting principal is unavailable."}
+
+
+class NumberInFilter(django_filters.BaseInFilter, django_filters.NumberFilter):
+    """``?pks=1,2``: a CSV filter takes its element type from its second base."""
+
+
+class NumberCsvRangeFilter(django_filters.BaseRangeFilter, django_filters.NumberFilter):
+    """``?pk_between=1,5``: two values in one argument, unlike ``RangeFilter``."""
+
+
+class NoteFilters(django_filters.FilterSet):
+    """The two comma-separated spellings, as real django-filter classes rather than stand-ins.
+
+    The reading is checked against what django-filter itself reads.
+    """
+
+    pks = NumberInFilter(field_name="pk", lookup_expr="in")
+    pk_between = NumberCsvRangeFilter(field_name="pk", lookup_expr="range")
 
 
 @dataclasses.dataclass

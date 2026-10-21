@@ -33,13 +33,13 @@ from tests.dispatch_app.models import Note
 from tests.http.utils import (
     ASYNC_FACTORY,
     Conflicting,
+    Foreign,
     asking_spec,
     body,
     note_spec,
     notes_spec,
     titled_spec,
 )
-from tests.specs.utils import Foreign
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

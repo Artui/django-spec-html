@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass, field
 from typing import Any
 
 from django.contrib.auth.models import AnonymousUser
@@ -39,6 +40,25 @@ one of those decodes under another, and a test sent it is refused as
 "Expected an object." without reaching the refusal it names. 1,000,000
 levels is past each, at 2 MB, under the 2.5 MB body Django reads by default.
 """
+
+
+@dataclass(frozen=True)
+class Foreign:
+    """A stand-in for djangorestframework-services' spec: a declaration compiling to a kernel one.
+
+    Shaped as the real one is where the compile seam reads it: a frozen
+    dataclass, so it compares by its fields, holding a list, so it has no hash.
+    It counts its compiles, so a test can tell a cached spec from a recompiled
+    one.
+    """
+
+    compiled: ServiceSpec | SelectorSpec
+    labels: list[str] = field(default_factory=list)
+    compiles: list[int] = field(default_factory=list, compare=False)
+
+    def as_kernel_spec(self) -> ServiceSpec | SelectorSpec:
+        self.compiles.append(1)
+        return self.compiled
 
 
 def signed_in(request: HttpRequest, user: Any = None) -> HttpRequest:

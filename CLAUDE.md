@@ -121,9 +121,9 @@ Each of these reads as an oversight and is not.
   `error_response` here answers it 415. `tests/http/test_unsupported_media_type.py`
   raises this package's class through each JSON entry point, since a row
   naming the kernel's copy would answer it 400 and every other test would pass.
-- **The test project keeps the kernel's module paths** (`tests.dispatch.utils`,
-  `tests.adapter_app`, and the rest), so a test moved from the kernel needed
-  no change to its imports. The docs examples declare their own specs and form
+- **A test helper only one test module uses lives in that module**; a
+  `tests/<x>/utils.py` holds what several share (`tests.dispatch.utils`,
+  `tests.http.utils`). The docs examples declare their own specs and form
   rather than importing the kernel's examples, so the pages show what they
   serve.
 - **The page and the JSON views answer refusals through two ladders**: the

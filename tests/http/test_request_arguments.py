@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import json
+from collections.abc import Mapping
 from typing import Any
 
 import django_filters
@@ -40,12 +41,28 @@ from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 from tests.dispatch.utils import make_user
 from tests.dispatch_app.models import Note
 from tests.http.utils import DEEP_JSON
-from tests.parameters.utils import coded
 
 # The module, which ``http``'s own ``request_arguments`` re-export shadows as an attribute.
 request_arguments_module = importlib.import_module("django_spec_html.http.request_arguments")
 
 FACTORY = RequestFactory()
+
+
+def coded(detail: Any) -> Any:
+    """``detail`` with every message read as ``(message, code)``, ``None`` for a message with none.
+
+    Read through ``getattr`` rather than the message's type, so a test written
+    with it compiles against a tree that carries no codes at all, and fails
+    there by its assertion rather than at import. The pair, not the code alone,
+    so each assertion also says which message answered.
+    """
+    if isinstance(detail, Mapping):
+        return {key: coded(value) for key, value in detail.items()}
+    if isinstance(detail, list):
+        return [coded(message) for message in detail]
+    return (str(detail), getattr(detail, "code", None))
+
+
 FORM = "application/x-www-form-urlencoded"
 NOT_JSON = "The request body is not valid JSON."
 BOUNDARY = "BoUnDaRy"

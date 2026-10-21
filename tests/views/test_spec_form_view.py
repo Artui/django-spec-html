@@ -19,6 +19,7 @@ import pytest
 from django import forms
 from django.contrib.auth import get_user_model
 from django.core.exceptions import BadRequest, ImproperlyConfigured, PermissionDenied
+from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import Http404, HttpResponse
 from django.urls import path, reverse_lazy
@@ -56,11 +57,24 @@ from tests.dispatch.utils import (
 )
 from tests.dispatch_app.models import Note
 from tests.http.utils import FACTORY, note_spec, signed_in
-from tests.mutations.utils import STORED, stored_document
 
 pytestmark = pytest.mark.django_db
 
 urlpatterns = [path("done/", lambda request: HttpResponse(), name="done")]
+
+# Where ``stored_document`` puts its optional file, under the field's ``upload_to``.
+STORED = "documents/notes.txt"
+
+
+def stored_document(*, attachment: bool = True) -> Document:
+    """A saved row holding its required file and, unless told not to, its optional one."""
+    row = Document(title="Notes")
+    if attachment:
+        row.attachment.save("notes.txt", ContentFile(b"notes"), save=False)
+    row.scan.save("scan.txt", ContentFile(b"scan"), save=False)
+    row.save()
+    return row
+
 
 TEMPLATE = "spec_form.html"
 REQUIRED = "This field is required."
