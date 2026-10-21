@@ -91,27 +91,11 @@ Each of these reads as an oversight and is not.
   reader names it, and the kernel reads it. It is not this package's to rename.
 - **The test settings list no kernel app.** The package needs nothing of the
   kernel switched on, and the suite shows it.
-- **Until the kernel release that removes its copy, every JSON name exists
-  twice in one process.** The kernel still ships the JSON half this package
-  was moved out of, and its root imports all of it, so a kernel import path
-  left unrewritten resolves, to the kernel's copy, and its tests pass while
-  testing the wrong code. Two guards hold that, and both are temporary:
-  - `pytest_sessionfinish` in `tests/conftest.py` fails the run when any module
-    of this package, the suite or the docs examples holds a module of the
-    kernel's copy, or an object one defines. It reads only modules named
-    `django_spec_html.*`, `tests.*` and `docs.*`, so **every test directory
-    needs its `__init__.py`**: without one, pytest imports a test module under
-    a bare name the guard never reads.
-  - `tests/test_kernel_copy_references.py` reads every module, every page's
-    python blocks and every docs cross-reference, for the routes a loaded
-    module cannot show: a function-local import, an attribute read through
-    the kernel's root (`k.error_response`), a dotted string, and a
-    cross-reference the kernel's own docs inventory would still resolve, so
-    `mkdocs --strict` passes on it.
-
-  Each guard's own test hands it the kernel's objects and asserts it finds
-  them. The release that raises the kernel floor past the removal deletes both
-  guards and their tests, and adds one test that the kernel's copy is absent.
+- **The kernel no longer ships these names.** `django_service_specs.http` and
+  its ten root names are gone from kernel 0.12.0, which is the floor, so an
+  import left pointing at the kernel fails at import rather than resolving to
+  a second copy. `tests/test_init.py` holds that absence, and would fail on a
+  floor lowered past the removal.
 - **There are two `NON_FIELD_ERRORS`.** The kernel's, `"non_field_errors"`, is
   the key a refusal's tree uses, read from the kernel's root; Django's,
   `"__all__"`, is the key a bound form uses, and `add_argument_errors` imports
@@ -120,10 +104,10 @@ Each of these reads as an oversight and is not.
   kernel cannot import a transport, so no map in the kernel names it, and
   `error_response` here answers it 415. `tests/http/test_unsupported_media_type.py`
   raises this package's class through each JSON entry point, since a row
-  naming the kernel's copy would answer it 400 and every other test would pass.
+  that missed it would answer it 400 and every other test would pass.
 - **The test project keeps the kernel's names** (`tests.adapter_app`,
-  `tests.dispatch_app`, `tests.dispatch.utils`), so a test read beside the
-  kernel's copy names the same models and doubles. A helper only one test
+  `tests.dispatch_app`, `tests.dispatch.utils`), so a test read beside
+  the kernel's own names the same models and doubles. A helper only one test
   module uses lives in that module; a `tests/<x>/utils.py` holds what several
   share. The docs examples declare their own specs and form
   rather than importing the kernel's examples, so the pages show what they

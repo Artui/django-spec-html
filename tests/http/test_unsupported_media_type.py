@@ -1,11 +1,9 @@
 """``UnsupportedMediaType``: this package's refusal of the call, answered 415.
 
 The refusal leaves the kernel with the JSON half, so no map in the kernel names
-it and this package's own ``error_response`` is what answers it. While the
-kernel still ships a copy of the class, a row naming that copy would answer
-this package's refusal with the ``DispatchError`` row's 400, and every test
-raising the kernel's copy would still pass; so the tests here raise this
-package's class, through each JSON entry point.
+it and this package's own ``error_response`` is what answers it. The tests
+here raise this package's class through each JSON entry point, since a row
+that missed it would answer it with the ``DispatchError`` row's 400.
 """
 
 from __future__ import annotations

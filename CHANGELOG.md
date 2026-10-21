@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The kernel floor is now `django-service-specs>=0.12.0`, the first release
+  without its own copy of these views.** Until then the kernel's root still
+  exported the ten JSON names as classes and functions of its own, so
+  `from django_service_specs import SpecView` resolved to a second, different
+  class beside this package's, and an `isinstance` check against either missed
+  the other. From 0.12.0 those names are imported from `django_spec_html`
+  alone.
+
 ## [0.1.0] — 2026-10-21
 
 ### Added
