@@ -107,7 +107,7 @@ Each of these reads as an oversight and is not.
   that missed it would answer it 400 and every other test would pass.
 - **The test project keeps the kernel's names** (`tests.adapter_app`,
   `tests.dispatch_app`, `tests.dispatch.utils`), so a test read beside
-  the kernel's own names the same models and doubles. A helper only one test
+  the kernel's own tests names the same models and doubles. A helper only one test
   module uses lives in that module; a `tests/<x>/utils.py` holds what several
   share. The docs examples declare their own specs and form
   rather than importing the kernel's examples, so the pages show what they

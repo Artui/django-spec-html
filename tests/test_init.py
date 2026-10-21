@@ -95,7 +95,9 @@ _MOVED_NAMES = [
 def test_the_kernel_ships_no_http_package() -> None:
     # The JSON views live here alone. A kernel floor lowered past the release
     # that removed them would put a second SpecView beside this package's, one
-    # that an isinstance check or a mock patch against either would miss.
+    # that an isinstance check or a mock patch against either would miss. A
+    # kernel source checkout can also leave an http/ directory holding only
+    # __pycache__, which find_spec reports as a namespace package and fails here.
     assert importlib.util.find_spec("django_service_specs.http") is None
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("django_service_specs.http")
@@ -109,6 +111,6 @@ def test_the_kernel_root_exports_none_of_the_moved_names(name: str) -> None:
 
 
 def test_every_moved_name_is_served_here() -> None:
-    # The list above is the ten JSON names, so a name added to the surface and
-    # left off it would be unchecked against the kernel's root.
+    # The absence check above passes for any name the kernel never had, so a
+    # misspelt entry would hold nothing. Each must be a name this package serves.
     assert set(_MOVED_NAMES) <= set(django_spec_html.__all__)
