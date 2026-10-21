@@ -461,16 +461,16 @@ wheels = [
 
 [[package]]
 name = "django-service-specs"
-version = "0.11.0"
+version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django", version = "5.2.18", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "django", version = "6.1.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4d/cc/edf2c86492b44d4a313978440f510a2faeed85da86833c1418db98e54dc2/django_service_specs-0.11.0.tar.gz", hash = "sha256:926fa982735696153dc0ce3238c42c10c95a30b51c7a274b4aea0e55114ee0a3", size = 951537, upload-time = "2026-10-20T19:28:24.563Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5b/02/18c1162f260c674ba2172f7b043c9c56bad203f67547c5e7fe0893ad15b8/django_service_specs-0.12.0.tar.gz", hash = "sha256:945d7cdff25f80435c4d257e8d33c14b6ebe64093f2437346cb447291a38d651", size = 899512, upload-time = "2026-10-21T09:36:43.208Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/67/01/34ed8dc96613e5aff52058c659359a315186e38711c81145c89f195cdbe3/django_service_specs-0.11.0-py3-none-any.whl", hash = "sha256:a4ddc9ff79ec3df475dcef2a04b1eebee98c37f7775d116e5ccb28fbe232aeaa", size = 432549, upload-time = "2026-10-20T19:28:22.69Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/6b/7398a3307e4e1434be34ffaf0b9636945024c2dcd21a610e0829ba045e5e/django_service_specs-0.12.0-py3-none-any.whl", hash = "sha256:a4474614bfffedd7afd6ddd58053c69c856c4f14d9ea27f6f9874b9712d3aa4a", size = 407461, upload-time = "2026-10-21T09:36:41.541Z" },
 ]
 
 [package.optional-dependencies]
@@ -515,7 +515,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=4.2" },
-    { name = "django-service-specs", specifier = ">=0.10.0" },
+    { name = "django-service-specs", specifier = ">=0.12.0" },
 ]
 
 [package.metadata.requires-dev]

@@ -22,9 +22,8 @@ Both halves are the kernel's, moved out with their history so the kernel
 carries no transport: the JSON views as kernel 0.11.0 shipped them, and
 `SpecFormView` as kernel 0.5.1 did. The behaviour is the kernel's, but for
 the page answering an `UnsupportedMediaType` an operation raises at 415 where
-the kernel's answered 400; the import path is this package's. Until the kernel release that removes its own copy,
-the kernel's root still exports the ten JSON names, and those are the kernel's
-copy: import them from `django_spec_html`.
+the kernel's answered 400; the import path is this package's. The kernel no
+longer ships these names: import them from `django_spec_html`.
 
 ## Install
 
@@ -32,7 +31,7 @@ copy: import them from `django_spec_html`.
 pip install django-spec-html
 ```
 
-Python 3.10 or later, Django 4.2 or later, and `django-service-specs` 0.10.0 or
+Python 3.10 or later, Django 4.2 or later, and `django-service-specs` 0.12.0 or
 later, which it installs. Neither package needs an entry in `INSTALLED_APPS`.
 
 ## Quickstart

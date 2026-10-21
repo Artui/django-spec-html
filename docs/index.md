@@ -26,7 +26,7 @@ pip install django-spec-html
 ```
 
 It installs [`django-service-specs`](https://artui.github.io/django-service-specs/), the kernel whose specs it serves,
-from 0.10.0, on Python 3.10 and Django 4.2 or later. Neither package needs an
+from 0.12.0, on Python 3.10 and Django 4.2 or later. Neither package needs an
 entry in `INSTALLED_APPS`.
 
 Both halves were the kernel's, and moved here so the kernel carries no
@@ -34,7 +34,5 @@ transport: the JSON views as kernel 0.11.0 shipped them, and `SpecFormView`
 as kernel 0.5.1 did. The behaviour is the kernel's, but for the page
 answering an `UnsupportedMediaType` an operation raises at 415 where the
 kernel's answered 400 ([refusals on the page](pages.md)); the import path is
-this package's. Until the kernel release that removes its own copy of the JSON
-views, the kernel's root still exports the ten JSON names, and those are the
-kernel's classes and functions, not this package's: import them from
+this package's. The kernel no longer ships these names: import them from
 `django_spec_html`.
