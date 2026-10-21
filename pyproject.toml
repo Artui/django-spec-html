@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "django-spec-html"
 dynamic = ["version"]
-description = "A django-service-specs spec as a server-rendered page, HTML first and htmx-capable, plus the plain-Django JSON views."
+description = "A django-service-specs spec as a server-rendered page, served as a plain form post, plus the plain-Django JSON views."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
     { name = "Artur Veres", email = "artur8118@gmail.com" },
 ]
-keywords = ["django", "forms", "htmx", "html", "views", "services", "specs", "dispatch"]
+keywords = ["django", "forms", "html", "views", "services", "specs", "dispatch"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Environment :: Web Environment",
@@ -148,7 +148,7 @@ skip-magic-trailing-comma = false
 root = ["./django_spec_html"]
 
 [tool.bumpversion]
-current_version = "0.1.1"
+current_version = "0.1.2"
 allow_dirty = false
 commit = false
 tag = false

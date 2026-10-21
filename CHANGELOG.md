@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-10-21
+
+### Fixed
+- **The documentation and the package summary no longer claim htmx support
+  the page does not have.** `SpecFormView` reads no htmx header, so an htmx
+  post is answered as any other: a success is the redirect, which the request
+  follows itself, and a refusal is the whole page at its 4xx status, which htmx
+  does not swap by default. The PyPI summary called the page htmx-capable and
+  listed htmx among its keywords, the README and the documentation site named
+  htmx as a client of the JSON views, and the page's documentation and the
+  view's docstring named htmx as a client that reads a refused post's status.
+  They now say what the page does, and that a fragment answer for htmx is
+  planned for 0.2.0. The JSON views are described as serving a script or a
+  `fetch()`, since htmx swaps HTML. Two tests hold the page's answer to an htmx
+  post. No behaviour changed.
+
 ## [0.1.1] — 2026-10-21
 
 ### Changed
@@ -53,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/Artui/django-spec-html/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Artui/django-spec-html/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Artui/django-spec-html/compare/v0.0.0...v0.1.0

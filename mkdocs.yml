@@ -1,5 +1,5 @@
 site_name: django-spec-html
-site_description: "A django-service-specs spec as a server-rendered page, HTML first and htmx-capable, plus the plain-Django JSON views."
+site_description: "A django-service-specs spec as a server-rendered page, served as a plain form post, plus the plain-Django JSON views."
 site_url: https://artui.github.io/django-spec-html/
 repo_url: https://github.com/Artui/django-spec-html
 repo_name: Artui/django-spec-html

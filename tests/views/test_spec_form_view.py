@@ -1120,6 +1120,34 @@ class TestServing:
         assert SpecFormView.view_is_async is False
 
 
+class TestAnHtmxRequest:
+    # The docs say the page reads no htmx header in this release, so an htmx
+    # post is answered exactly as a plain one: these hold that claim until a
+    # fragment answer replaces it.
+
+    @staticmethod
+    def htmx_post(view: Any, user: Any, data: Mapping[str, Any]) -> Any:
+        return view(signed_in(FACTORY.post("/", data=data, HTTP_HX_REQUEST="true"), user))
+
+    @staticmethod
+    def hx_headers(response: Any) -> list[str]:
+        return [name for name in response.headers if name.lower().startswith("hx-")]
+
+    def test_a_success_is_the_same_redirect(self, ada: Any) -> None:
+        response = self.htmx_post(form_view(entry_spec()), ada, {"title": "Hi"})
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert self.hx_headers(response) == []
+
+    def test_a_refusal_is_the_same_whole_page(self, ada: Any) -> None:
+        plain = post(form_view(entry_spec()), ada, {"title": "shut"})
+        htmx = self.htmx_post(form_view(entry_spec()), ada, {"title": "shut"})
+        assert (htmx.status_code, refused(htmx)) == (plain.status_code, refused(plain))
+        assert htmx.status_code == 400
+        assert htmx.template_name == plain.template_name == [TEMPLATE]
+        assert set(htmx.context_data) == set(plain.context_data)
+        assert self.hx_headers(htmx) == []
+
+
 class TestConfiguration:
     @pytest.mark.parametrize(
         ("given", "named"),
