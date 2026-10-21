@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-10-21
+
 ### Fixed
 - **The documentation and the package summary no longer claim htmx support
   the page does not have.** `SpecFormView` reads no htmx header, so an htmx
@@ -65,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/Artui/django-spec-html/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Artui/django-spec-html/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Artui/django-spec-html/compare/v0.0.0...v0.1.0
