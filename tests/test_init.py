@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import pkgutil
 from types import ModuleType
+
+import django_service_specs
+import pytest
 
 import django_spec_html
 
@@ -49,16 +53,6 @@ def test_each_root_name_is_the_subpackage_s_own_object() -> None:
             assert getattr(django_spec_html, name) is getattr(package, name), name
 
 
-def test_each_root_name_is_defined_in_this_package() -> None:
-    # The kernel ships its own copy of the JSON half until the release that
-    # removes it, and a re-export of that copy would pass every identity check
-    # above while serving the kernel's code under this package's name.
-    for name in django_spec_html.__all__:
-        if name != "__version__":
-            module = getattr(django_spec_html, name).__module__
-            assert module.startswith("django_spec_html."), (name, module)
-
-
 def test_the_root_names_nothing_it_does_not_define() -> None:
     assert [name for name in django_spec_html.__all__ if not hasattr(django_spec_html, name)] == []
 
@@ -82,3 +76,39 @@ def test_the_root_serves_the_two_halves_and_the_version() -> None:
         django_spec_html.__version__
         == importlib.import_module("django_spec_html.version").__version__
     )
+
+
+_MOVED_NAMES = [
+    "AsyncSpecView",
+    "SpecView",
+    "UnsupportedMediaType",
+    "add_argument_errors",
+    "adispatch_request",
+    "dispatch_request",
+    "error_response",
+    "request_arguments",
+    "request_principal",
+    "route_arguments",
+]
+
+
+def test_the_kernel_ships_no_http_package() -> None:
+    # The JSON views live here alone. A kernel floor lowered past the release
+    # that removed them would put a second SpecView beside this package's, one
+    # that an isinstance check or a mock patch against either would miss.
+    assert importlib.util.find_spec("django_service_specs.http") is None
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("django_service_specs.http")
+
+
+@pytest.mark.parametrize("name", _MOVED_NAMES)
+def test_the_kernel_root_exports_none_of_the_moved_names(name: str) -> None:
+    # Each name is held on its own, so the failure names the one that came back.
+    assert name not in django_service_specs.__all__
+    assert not hasattr(django_service_specs, name)
+
+
+def test_every_moved_name_is_served_here() -> None:
+    # The list above is the ten JSON names, so a name added to the surface and
+    # left off it would be unchecked against the kernel's root.
+    assert set(_MOVED_NAMES) <= set(django_spec_html.__all__)
