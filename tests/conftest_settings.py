@@ -1,7 +1,7 @@
 """Settings for the test suite.
 
-SQLite, and no DRF anywhere: the kernel's reason to exist is dispatch without
-it, and a suite that could import it could not notice the kernel doing so. The
+SQLite, and no DRF anywhere: this package serves a spec with no API framework,
+and a suite that could import DRF could not notice the package needing it. The
 two contrib apps are the ones a spec's permission check and principal
 resolution reach, since a principal is a Django user.
 

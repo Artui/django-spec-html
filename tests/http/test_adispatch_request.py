@@ -1,11 +1,11 @@
 """``adispatch_request``: ``dispatch_request`` from async code, with nothing queried on the loop.
 
-Each test runs with ``transaction=True``, for the reason ``test_adispatch``
-gives: the executor thread's connection cannot see rows written inside the
-ordinary test transaction. Any query that strays onto the event loop raises
-``SynchronousOnlyOperation``, so a test passing is also evidence that nothing
-did - and the principal here is the lazy object AuthenticationMiddleware
-leaves on a request, whose first read *is* a query.
+Each test runs with ``transaction=True``: the executor thread's connection
+cannot see rows written inside the ordinary test transaction. Any query that
+strays onto the event loop raises ``SynchronousOnlyOperation``, so a test
+passing is also evidence that nothing did - and the principal here is the lazy
+object AuthenticationMiddleware leaves on a request, whose first read *is* a
+query.
 """
 
 from __future__ import annotations
