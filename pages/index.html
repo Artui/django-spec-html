@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A django-service-specs spec as a server-rendered page, HTML first and htmx-capable, plus the plain-Django JSON views.">
+        <meta name="description" content="A django-service-specs spec as a server-rendered page, served as a plain form post, plus the plain-Django JSON views.">
       
       
       
@@ -662,14 +662,22 @@ reaches the database through the page's own checks. So after a shape-check
 refusal - a required field left blank, a date that does not parse - the
 form's further checks, such as a length, <code>clean()</code> or uniqueness, answer the
 next post rather than this one. The statuses are
-<a href="../http/#refusals"><code>error_response</code></a>'s, so a client reading a refused post - htmx,
-or Turbo, which will not render a failed post answered 200 - reads it the
-same way it reads the JSON views.</p>
+<a href="../http/#refusals"><code>error_response</code></a>'s, so a client reading a refused post - Turbo,
+which will not render a failed post answered 200 - reads its outcome from the
+status.</p>
 <p><code>as_view()</code> refuses, when the URLconf is imported, a view with no
 <code>ServiceSpec</code>, a spec whose Validator is not a <code>FormValidator</code>, a <code>many</code>
 spec, whose list of rows no form posts, and a view with neither a
 <code>success_url</code> nor its own <code>get_success_url</code>. The view is <strong>sync
 only</strong> in this release.</p>
+<p><a id="htmx"></a>
+<strong>The page reads no htmx header</strong> in this release, so an htmx request is
+answered as any other post. A success is the redirect to the success URL, which
+the request follows itself, so the page that URL serves is swapped into the
+request's target. A refusal is the whole page at its 4xx status, which htmx does not swap
+by default. A fragment answer for an htmx request, with <code>HX-Redirect</code> on a
+success, is planned for 0.2.0. Until then, serve an htmx form from a view of
+your own.</p>
 
 
 

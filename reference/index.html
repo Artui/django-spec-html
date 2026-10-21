@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A django-service-specs spec as a server-rendered page, HTML first and htmx-capable, plus the plain-Django JSON views.">
+        <meta name="description" content="A django-service-specs spec as a server-rendered page, served as a plain form post, plus the plain-Django JSON views.">
       
       
       
@@ -1144,12 +1144,16 @@ Then <a class="autorefs autorefs-external" href="https://artui.github.io/django-
   error: <code>ServiceConflict</code> at 409, any other <code>ServiceError</code> at 422,
   <code>UnsupportedMediaType</code> at 415, any other <code>DispatchError</code> at 400. The
   statuses are <code>error_response</code>'s, read from the one map, so
-  a client reading a refused post - htmx, or Turbo, which will not render
-  a failed post answered 200 - reads it the same way.</li>
+  a client reading a refused post - Turbo, which will not render a failed
+  post answered 200 - reads it the same way.</li>
 <li><code>NotPermitted</code> and <code>PrincipalUnavailable</code> raise Django's
   <code>PermissionDenied</code>, and a not-found result or <code>ServiceNotFound</code>
   raises <code>Http404</code>, for the host's own 403 and 404 pages.</li>
 </ul>
+<p>The view reads no htmx header, so an htmx request is answered as any
+other post: a success is the redirect, which the request follows, and a
+refusal is the whole page at its 4xx status, which htmx does not swap by
+default.</p>
 <p><strong>A re-rendered form carries the refusal and nothing else</strong>: the page says
 what dispatch decided. The page's own form is never validated: its
 errors start empty and the refusal is placed on them, so nothing the

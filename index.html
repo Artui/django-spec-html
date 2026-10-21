@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A django-service-specs spec as a server-rendered page, HTML first and htmx-capable, plus the plain-Django JSON views.">
+        <meta name="description" content="A django-service-specs spec as a server-rendered page, served as a plain form post, plus the plain-Django JSON views.">
       
       
       
@@ -492,12 +492,13 @@ framework between the request and the kernel's
   <a class="autorefs autorefs-internal" title="SpecFormView" href="reference/#django_spec_html.views.spec_form_view.SpecFormView"><code>SpecFormView</code></a> serves
   a spec whose Validator is a Django form as the page a person fills that form
   in on. A refused post comes back as the page again, with the refusal placed
-  on its form.</li>
+  on its form. The page reads no htmx header, so an htmx request is answered as
+  any other post (<a href="pages/#htmx">htmx</a>).</li>
 <li><strong><a href="http/">JSON views</a>.</strong>
   <a class="autorefs autorefs-internal" title="SpecView" href="reference/#django_spec_html.http.spec_view.SpecView"><code>SpecView</code></a>,
   <a class="autorefs autorefs-internal" title="AsyncSpecView" href="reference/#django_spec_html.http.async_spec_view.AsyncSpecView"><code>AsyncSpecView</code></a> and
-  the functions they are built from serve a spec as JSON, for a script, a
-  <code>fetch()</code> or an htmx request.</li>
+  the functions they are built from serve a spec as JSON, for a script or a
+  <code>fetch()</code>.</li>
 </ul>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_spec_html</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpecFormView</span><span class="p">,</span> <span class="n">SpecView</span>
 </span></code></pre></div>

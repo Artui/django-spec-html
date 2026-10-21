@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="A django-service-specs spec as a server-rendered page, HTML first and htmx-capable, plus the plain-Django JSON views.">
+        <meta name="description" content="A django-service-specs spec as a server-rendered page, served as a plain form post, plus the plain-Django JSON views.">
       
       
       
@@ -659,8 +659,8 @@ arguments off the request, dispatches, and answers the result or the refusal
 as JSON.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_spec_html</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncSpecView</span><span class="p">,</span> <span class="n">SpecView</span><span class="p">,</span> <span class="n">adispatch_request</span><span class="p">,</span> <span class="n">dispatch_request</span>
 </span></code></pre></div>
-<p>It is the plumbing, not the pages: a view here answers JSON to a script, a
-<code>fetch()</code> or an htmx request. A page a person reads, such as a spec's own form
+<p>It is the plumbing, not the pages: a view here answers JSON to a script or a
+<code>fetch()</code>. A page a person reads, such as a spec's own form
 rendered and re-rendered with its refusal, is a <a href="../pages/">page view</a>. The pieces
 the entry points are built from are public so that such a view reads a request
 by the same rules: <a href="#the-principal"><code>request_principal</code></a>,
