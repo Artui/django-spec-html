@@ -71,7 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default), is the target projected for a person by its Output's
   `FieldMarking`s, presented through the spec's presenter with the context
   dispatch hands it. `HIDDEN` and `HANDLE` fields are dropped, choices are
-  spoken as their displays, and the field marked `LABEL` names the row. A set's
+  spoken as their displays, and the field marked `LABEL` names the row. A row
+  carries its `fields` and the same fields as `pairs`, the one a template loops
+  over, since `fields.items` reads a field named `items`. A set's
   display covers at most `target_display_limit` rows (10 by default), read in
   one bounded query. `as_view()` refuses a page displaying its target whose
   spec has no Output, marks none of its own fields, or carries markings the

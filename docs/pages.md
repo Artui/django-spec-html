@@ -57,7 +57,7 @@ INSTALLED_APPS = [
 template and the setting, so the URLconf's import says so rather than the
 first request's `TemplateDoesNotExist`. It asks for the page and its fragment,
 or the page alone where `fragment_template_name` names a fragment of the
-project's own, and follows neither one's `extends` or `include`: a shipped page
+project's own or `get_fragment_template_names` is overridden, and follows neither one's `extends` or `include`: a shipped page
 copied into a directory of the project's own, without the app, needs
 `base.html` and `target.html` found there too. A page naming a template of its
 own needs no app.

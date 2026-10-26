@@ -818,7 +818,7 @@ def _check_configuration(cls: type[SpecPageBase], initkwargs: Mapping[str, Any])
 
 
 def _check_shipped_templates(cls: type[SpecPageBase], initkwargs: Mapping[str, Any]) -> None:
-    """Refuse a page rendering a template this package ships that no template engine finds.
+    """Refuse a page rendering a template this package ships that the view's template engine does not find.
 
     The shipped templates are found as any app's are, so a project lists
     ``django_spec_html`` in ``INSTALLED_APPS`` with ``APP_DIRS`` on, or puts
@@ -829,7 +829,10 @@ def _check_shipped_templates(cls: type[SpecPageBase], initkwargs: Mapping[str, A
     still renders the shipped fragment under htmx; the page alone when
     ``fragment_template_name`` names a fragment of the project's own, which
     is the one an htmx request renders
-    (test_a_fragment_of_the_project_s_own_is_not_the_shipped_one).
+    (test_a_fragment_of_the_project_s_own_is_not_the_shipped_one), or when
+    ``get_fragment_template_names`` is overridden, which may read the request
+    (test_an_overridden_get_fragment_template_names_is_not_asked). One branch
+    to coverage, so each condition is held by its own test.
 
     Those two names and no more: a template either of them extends or
     includes is not followed, so a project copying a shipped page that
@@ -852,14 +855,23 @@ def _check_shipped_templates(cls: type[SpecPageBase], initkwargs: Mapping[str, A
     # request renders with (test_the_view_s_own_engine_is_the_one_asked).
     engine = initkwargs.get("template_engine", cls.template_engine)
     fragment = initkwargs.get("fragment_template_name", cls.fragment_template_name)
-    for name in (page,) if fragment is not None else (page, _SHIPPED_FRAGMENTS[page]):
+    fragments = initkwargs.get("get_fragment_template_names", cls.get_fragment_template_names)
+    own = fragment is not None or fragments is not SpecPageBase.get_fragment_template_names
+    # Named, the engine is the one the advice is about: the app may be
+    # installed and found by every engine but this one.
+    finder = (
+        "no template engine finds it: add 'django_spec_html' to INSTALLED_APPS with APP_DIRS on"
+        if engine is None
+        else f"the {engine!r} engine does not find it: turn APP_DIRS on in that engine, with "
+        "'django_spec_html' in INSTALLED_APPS"
+    )
+    for name in (page,) if own else (page, _SHIPPED_FRAGMENTS[page]):
         try:
             get_template(name, using=engine)
         except TemplateDoesNotExist as missing:
             raise ImproperlyConfigured(
-                f"{cls.__name__} renders {name}, a template django-spec-html ships, and no "
-                "template engine finds it: add 'django_spec_html' to INSTALLED_APPS with "
-                "APP_DIRS on, or set template_name to a template of the project's own."
+                f"{cls.__name__} renders {name}, a template django-spec-html ships, and "
+                f"{finder}, or set template_name to a template of the project's own."
             ) from missing
 
 

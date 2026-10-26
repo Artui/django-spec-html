@@ -604,7 +604,9 @@ class TestAPageNoEngineCanRender:
         ]
         with (
             override_settings(TEMPLATES=templates),
-            pytest.raises(ImproperlyConfigured, match="spec_form.html"),
+            pytest.raises(
+                ImproperlyConfigured, match="spec_form.html, .* the 'bare' engine does not"
+            ),
         ):
             built(SpecFormView, form_spec(), template_engine="bare")
 
@@ -625,6 +627,40 @@ class TestAPageNoEngineCanRender:
     def test_a_page_s_own_template_is_not_looked_for(self) -> None:
         with override_settings(INSTALLED_APPS=WITHOUT_THE_APP):
             built(SpecFormView, form_spec(), template_name="nowhere.html")
+
+    def test_an_overridden_get_fragment_template_names_is_not_asked(self, tmp_path: Path) -> None:
+        (tmp_path / "django_spec_html").mkdir()
+        (tmp_path / "django_spec_html" / "spec_form.html").write_text("<p>Ours</p>")
+        templates = [
+            {
+                "BACKEND": "django.template.backends.django.DjangoTemplates",
+                "DIRS": [str(tmp_path)],
+            }
+        ]
+
+        class Chosen(SpecFormView):
+            def get_fragment_template_names(self) -> list[str]:
+                return [f"notes/{self.request.method.lower()}.html"]
+
+        with override_settings(INSTALLED_APPS=WITHOUT_THE_APP, TEMPLATES=templates):
+            built(Chosen, form_spec())
+
+    def test_what_a_page_extends_is_not_followed(self, tmp_path: Path) -> None:
+        # Left to the first request, as the docs say: a copied page extending
+        # a base.html no engine finds passes here.
+        (tmp_path / "django_spec_html").mkdir()
+        for name in ("spec_form.html", "spec_form_fragment.html"):
+            (tmp_path / "django_spec_html" / name).write_text(
+                '{% extends "django_spec_html/base.html" %}'
+            )
+        templates = [
+            {
+                "BACKEND": "django.template.backends.django.DjangoTemplates",
+                "DIRS": [str(tmp_path)],
+            }
+        ]
+        with override_settings(INSTALLED_APPS=WITHOUT_THE_APP, TEMPLATES=templates):
+            built(SpecFormView, form_spec())
 
     def test_an_overridden_get_template_names_is_not_asked(self) -> None:
         class Chosen(SpecFormView):

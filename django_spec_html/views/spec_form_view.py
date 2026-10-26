@@ -287,7 +287,9 @@ class SpecFormView(SpecPageBase):
     selector's - with the context dispatch hands it, projected by the kernel's
     ``project_payload``, and with every ``HANDLE`` dropped as well as every
     ``HIDDEN`` one. A row's is a dict of its ``fields``, with ``label``, the
-    value of the field marked ``LABEL``, beside them where there is one; a
+    value of the field marked ``LABEL``, beside them where there is one, and
+    ``pairs``, the same fields as name and value in order, for a template to
+    loop over, since ``fields.items`` reads a field named ``items``; a
     set's is a list of those, one per row, for at most
     ``target_display_limit`` rows, read in one query. ``as_view()`` refuses a
     page displaying its target whose spec has no Output, whose Output marks
