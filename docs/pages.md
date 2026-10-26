@@ -731,8 +731,8 @@ override for another rule, such as two buttons that both commit:
   post carries, other than the button, is another control's request, and does
   not commit even where the button's name reached the data some other way,
   such as an inherited `hx-vals`. A form's own `name`, or no header at all,
-  leaves the decision to the data. htmx 4 sends no `HX-Trigger-Name`, which is
-  why the data decides.
+  leaves the decision to the data, which is what decides for every client:
+  a browser and htmx alike post the pressed button's name.
 - **Enter presses the first submit button** in the form, so put the commit
   button first, as the template above does; a refresh button placed before it
   would turn Enter into a refresh. Give a refresh button `formnovalidate`, so

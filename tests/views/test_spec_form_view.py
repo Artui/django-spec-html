@@ -3881,6 +3881,14 @@ class TestAPostThatDoesNotCommit:
         with pytest.raises(PermissionDenied, match=r"^Only editors may run this\.$"):
             post(committing(spec), ada, {"title": "Hi"})
 
+    def test_a_route_the_target_refuses_is_a_bad_request_as_on_get(self, ada: Any) -> None:
+        # GET's answer, since the page a refresh re-renders is GET's; a
+        # committing post leaves the route to dispatch, which answers 400.
+        spec = row_spec()
+        with pytest.raises(BadRequest):
+            post(committing(spec), ada, {"title": "Hi"}, pk="nope")
+        assert spec.service.calls == []
+
     def test_asked_fields_are_held_back_as_get_holds_them(self, ada: Any) -> None:
         spec = confirm_spec()
         view = committing(spec, asked_fields=("confirmed",))

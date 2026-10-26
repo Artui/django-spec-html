@@ -125,8 +125,9 @@ _SUCCEEDED: Final = "spec-succeeded"
 _TRIGGER_NAME: Final = "HX-Trigger-Name"
 """The ``name`` of the element an htmx 2 request was issued from: a form, or a control of its own.
 
-htmx 4 sends no such header, which is why ``commits`` reads it only to stop
-a commit the post's data would otherwise make."""
+A header htmx 2 sends, and not every client that posts the form does, which
+is why ``commits`` reads it only to stop a commit the post's data would
+otherwise make."""
 
 
 class SpecFormView(TemplateResponseMixin, ContextMixin, View):
@@ -724,9 +725,9 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         Every post commits while ``commit_button`` is ``None``. Once it names
         a button, a post commits only when its data carries that name, which
         is how a browser says which submit button was pressed, with or
-        without JavaScript; htmx 2 and 4 alike add the clicked button's name
-        and value to a form's post, and send no button's name for a request
-        a control of its own issued, such as a ``<select hx-post>``.
+        without JavaScript; htmx 2 adds the clicked button's name and value
+        to a form's post, and sends no button's name for a request a control
+        of its own issued, such as a ``<select hx-post>``.
 
         ``HX-Trigger-Name``, which htmx 2 sends, can only stop a commit, never
         make one. It names the element the request was issued from, and
