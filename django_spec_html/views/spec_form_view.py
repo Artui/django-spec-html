@@ -11,8 +11,10 @@ from contextlib import suppress
 from decimal import Decimal
 from types import MappingProxyType
 from typing import Any, Final, cast
+from urllib.parse import unquote
 
 from django import forms
+from django.contrib import messages
 from django.core.exceptions import (
     BadRequest,
     ImproperlyConfigured,
@@ -119,6 +121,13 @@ _SPEC_RESULT: Final = "spec-result"
 
 _SUCCEEDED: Final = "spec-succeeded"
 """The event ``HX-Trigger`` names on a success answered in place, for the rest of the page."""
+
+_TRIGGER_NAME: Final = "HX-Trigger-Name"
+"""The ``name`` of the element an htmx 2 request was issued from: a form, or a control of its own.
+
+A header htmx 2 sends, and not every client that posts the form does, which
+is why ``commits`` reads it only to stop a commit the post's data would
+otherwise make."""
 
 
 class SpecFormView(TemplateResponseMixin, ContextMixin, View):
@@ -264,7 +273,30 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     Both wrappers set ``Vary`` on the three headers the choice reads. No
     htmx header reaches dispatch: the arguments are the form's fields and the
     route's kwargs whichever wrapper answers, so a spec cannot tell the two
-    apart.
+    apart. One header is read before dispatch, ``HX-Trigger-Name``, and only
+    to stop a post committing, below.
+
+    **A post that does not commit.** A form that refreshes a dependent
+    choice, adds a row or searches posts without meaning to run the
+    operation. ``commit_button`` names the submit button whose post commits;
+    ``None``, the default, commits every post. Once set, ``commits(request)``
+    decides: a post whose data does not carry that name, or an htmx request
+    whose ``HX-Trigger-Name`` names another control the post carries, is the
+    page GET renders, admitted and with its target, its affordances and
+    ``asked_fields`` held back as GET's are, but with the form bound to the
+    post and built through ``form_kwargs`` as every form is, so a choice its
+    constructor narrows by a posted value is narrowed again. Nothing is
+    dispatched and nothing validated: the form shows no error, and the
+    context carries ``refreshed``, absent from every other render. It
+    answers 200 on the page, and the form's fragment at 200 under htmx.
+
+    **A success message.** ``success_message``, where it is set, is sent
+    through ``django.contrib.messages`` on every success - the redirect, the
+    ``HX-Redirect`` and the result fragment alike - formatted by
+    ``get_success_message(result)``, ``%`` with the form's cleaned data as
+    Django's ``SuccessMessageMixin`` formats it. Without the messages
+    middleware it is skipped, and never raises ``MessageFailure``. A refusal,
+    a confirmation page and a post that does not commit send none.
 
     **The request is read through the same attributes and hooks as**
     ``SpecView``**'s**, checked by the same code in ``http/utils.py``:
@@ -364,8 +396,10 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
 
     ``as_view()`` refuses, when the URLconf is imported, a view with no
     ``ServiceSpec``, a spec whose Validator is not a ``FormValidator``, a
-    ``many`` spec, whose list of rows no form posts, and a view with no
-    ``success_url`` that does not override ``get_success_url``.
+    ``many`` spec, whose list of rows no form posts, a view with no
+    ``success_url`` that does not override ``get_success_url``, and a
+    ``commit_button`` that is not a button's name or is one of the form's
+    fields.
 
     **Sync only**, in this release. **CSRF is the host's middleware**, as for
     any Django view, and the template renders ``{% csrf_token %}``.
@@ -399,6 +433,14 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             ``AdditionalInputRequired`` asks for them by name: a tuple of
             optional, enabled fields the server does not answer for, checked at
             ``as_view()``. Empty by default, so every field is shown.
+        commit_button: The ``name`` of the submit button whose post commits,
+            read by ``commits``: ``None``, the default, commits every post;
+            a non-empty string no field of the form declares, checked at
+            ``as_view()``.
+        success_message: The message a successful post sends through
+            ``django.contrib.messages``, formatted by
+            ``get_success_message`` with the form's cleaned data. Empty by
+            default, which sends none.
     """
 
     spec: ServiceSpec | None = None
@@ -411,6 +453,8 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     display_target: bool = False
     target_display_limit: int = 10
     asked_fields: tuple[str, ...] = ()
+    commit_button: str | None = None
+    success_message: str = ""
 
     @classonlymethod
     def as_view(cls, **initkwargs: Any) -> Callable[..., HttpResponseBase]:
@@ -444,11 +488,30 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
 
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         """The page, with an unbound form showing the target row, for a principal admitted to it."""
+        return self._page(request, kwargs)
+
+    def _page(
+        self, request: HttpRequest, url_kwargs: Mapping[str, Any], **bound: Any
+    ) -> HttpResponse:
+        """The page GET renders, its form bound by ``bound`` for a post that does not commit.
+
+        One path for both, so a post that does not commit is admitted, finds
+        its target, asks the affordances and holds ``asked_fields`` back as
+        GET does, and renders what GET renders with the post's values in it
+        (test_a_refresh_is_the_page_get_renders_with_the_post_in_it). Bound,
+        the form is built from the post through ``form_kwargs`` like every
+        other, so a choice its constructor narrows by a posted value is
+        narrowed again (test_a_dependent_choice_is_narrowed_by_the_posted_value);
+        its error state is set to none, as ``_render_refused`` sets a refused
+        form's, so nothing is validated and no field is called required
+        (test_a_post_without_the_button_neither_dispatches_nor_validates). The
+        context says so as ``refreshed``, absent from every other render.
+        """
         spec = self.served_spec()
         served = self._served(request)
-        principal, grant = _admitted(spec, request, kwargs, served)
+        principal, grant = _admitted(spec, request, url_kwargs, served)
         try:
-            target, _ = _found(spec, principal, grant, kwargs, served)
+            target, _ = _found(spec, principal, grant, url_kwargs, served)
         except InvalidArguments as refused:
             # No post to place it on beside the form's: the route names a
             # target its reads refuse, which a post answers at 400 too.
@@ -460,14 +523,25 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         # Absent when every condition is met, as ``code`` is on a refusal
         # that has none, so a template's ``{% if unavailable %}`` reads one
         # context on every answer: test_every_condition_met_leaves_it_out.
-        context = {} if unavailable is None else {"unavailable": unavailable}
-        form = _page_form(spec, principal, target, served)
+        context: dict[str, Any] = {} if unavailable is None else {"unavailable": unavailable}
+        form = _page_form(spec, principal, target, served, **bound)
+        if bound:
+            # Before ``_hold_back``, which reads the form's errors and would
+            # otherwise validate it.
+            _without_errors(form)
+            context["refreshed"] = True
         _hold_back(form, self.asked_fields, ())
         context.update(self._target_context(spec, principal, target, served, pool))
         return self._rendered(self.get_context_data(form=form, **context), status=200)
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-        """Dispatch the posted form: a redirect on success, the form re-rendered on a refusal."""
+        """Dispatch the posted form: a redirect on success, the form re-rendered on a refusal.
+
+        A post ``commits`` refuses is the page again, its form bound to the
+        post, and nothing is dispatched.
+        """
+        if not self.commits(request):
+            return self._page(request, kwargs, data=request.POST, files=request.FILES)
         spec = self.served_spec()
         # Admitted as ``get`` admits, before the form is built from the post:
         # re-rendering a refused post offers the page, and dispatch's shape
@@ -556,6 +630,16 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         # Never ``not_found``: the target was found before dispatch, which
         # looks nothing up when handed it, and where the route's value was
         # refused the shape check refuses it again before any lookup.
+        # The message before either wrapper is chosen, so the redirect, the
+        # ``HX-Redirect`` and the result fragment all carry it, and a host's
+        # own ``fragment_success`` does too
+        # (test_each_success_stores_the_message). ``fail_silently``, since
+        # without the messages middleware there is nowhere to send it, and a
+        # write already committed must not answer ``MessageFailure``
+        # (test_without_the_middleware_nothing_is_raised). An empty message
+        # is dropped by Django's storage
+        # (test_an_empty_message_sends_nothing).
+        messages.success(request, self.get_success_message(result), fail_silently=True)
         if self.wants_fragment(request):
             return self.fragment_success(result)
         return HttpResponseRedirect(self.get_success_url(result))
@@ -571,6 +655,19 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         Override it to read ``result``, such as the row a create returned.
         """
         return resolve_url(self.success_url)
+
+    def get_success_message(self, result: DispatchResult) -> str:
+        """The message a successful post sends: ``success_message`` formatted with the form's cleaned data.
+
+        As Django's ``SuccessMessageMixin`` formats it, ``%`` with a mapping:
+        ``result.data``, the cleaned data the Validator's form handed the
+        service, so ``"%(title)s was added."`` reads the post's own title
+        (test_it_is_formatted_with_the_cleaned_data). On a partial page a
+        field left blank is not in it. An empty message sends nothing.
+        Override it to read the result, such as the row a create returned,
+        under ``result.value``.
+        """
+        return self.success_message % result.data
 
     def get_pool_seeds(self, request: HttpRequest) -> PoolSeeds:
         """The seeds this request's call is resolved with: ``pool_seeds`` unless overridden.
@@ -621,6 +718,44 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             and headers.get("HX-Boosted") != "true"
             and headers.get("HX-History-Restore-Request") != "true"
         )
+
+    def commits(self, request: HttpRequest) -> bool:
+        """Whether a post runs the operation, or re-renders its form with the post's values.
+
+        Every post commits while ``commit_button`` is ``None``. Once it names
+        a button, a post commits only when its data carries that name, which
+        is how a browser says which submit button was pressed, with or
+        without JavaScript; htmx 2 adds the clicked button's name and value
+        to a form's post, and sends no button's name for a request a control
+        of its own issued, such as a ``<select hx-post>``.
+
+        ``HX-Trigger-Name``, which htmx 2 sends, can only stop a commit, never
+        make one. It names the element the request was issued from, and
+        that element's own value is in the post when it is a control, while
+        a form's ``name`` never is. So a header naming a key the post carries,
+        other than the button, is another control's request, and does not
+        commit even where something - an inherited ``hx-vals``, a hidden
+        input - put the button's name in the data. A form's own ``name`` in
+        the header, or none at all, leaves the decision to the data. A value
+        htmx had to encode is read decoded, as
+        ``HX-Trigger-Name-URI-AutoEncoded`` says.
+
+        One branch to coverage, so each condition is held by its own test:
+        test_a_post_without_the_button_neither_dispatches_nor_validates (the
+        data must carry the button),
+        test_a_trigger_naming_another_posted_control_does_not_commit (the
+        header vetoes), test_a_trigger_that_is_the_button_itself_commits (the
+        button issuing its own request is no other control) and
+        test_a_trigger_naming_the_form_commits (a name the post does not
+        carry is no control). Override it for another rule, such as two
+        buttons that both commit.
+        """
+        button = self.commit_button
+        if button is None:
+            return True
+        trigger = _trigger_name(request)
+        another = trigger != button and trigger in request.POST
+        return button in request.POST and not another
 
     def get_fragment_template_names(self) -> list[str]:
         """The templates a fragment's form renders: ``fragment_template_name``, or each page's ``#spec-form``.
@@ -811,12 +946,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         if merged:
             clean_held_to_their_columns(form)
         else:
-            # Django's own two attributes, as ``full_clean()`` starts them,
-            # with the form's renderer as Django 5.0 and later pass it;
-            # ``Any``, as the stubs declare neither as assignable.
-            bound: Any = form
-            bound._errors = ErrorDict(renderer=form.renderer)
-            bound.cleaned_data = {}
+            _without_errors(form)
         add_argument_errors(form, detail)
         schema: Mapping[str, Any] = {}
         # One branch to coverage, so each condition is held by its own test:
@@ -922,6 +1052,34 @@ def _check_configuration(cls: type[SpecFormView], initkwargs: Mapping[str, Any])
         initkwargs.get("asked_fields", cls.asked_fields),
         initkwargs.get("server_arguments", cls.server_arguments),
     )
+    _check_commit_button(label, spec, initkwargs.get("commit_button", cls.commit_button))
+
+
+def _check_commit_button(label: str, spec: ServiceSpec, button: Any) -> None:
+    """Refuse a ``commit_button`` that is not a button's name, or is the name of one of the form's fields.
+
+    ``None`` commits every post. Otherwise a non-empty string, the ``name``
+    a submit button posts: one branch to coverage, held by the ``a-tuple``
+    and ``empty`` cases of test_anything_but_a_button_s_name_is_refused. A
+    field's name is refused (test_a_field_s_name_is_refused), since a
+    field posts its value on every submit, and the rule could never tell a
+    post that commits from one that does not.
+    """
+    if button is None:
+        return
+    if not isinstance(button, str) or not button:
+        raise ImproperlyConfigured(
+            f"{label}.commit_button must be None or the name of the submit button whose post "
+            f"commits; got {button!r}."
+        )
+    form_class = _form_class(spec)
+    # ``base_fields`` is set by the metaclass, which the stubs do not declare.
+    fields: dict[str, forms.Field] = form_class.base_fields  # ty: ignore[unresolved-attribute]
+    if button in fields:
+        raise ImproperlyConfigured(
+            f"{label}.commit_button names {button!r}, a field {form_class.__name__} declares: a "
+            "field is posted by every submit, so it cannot say which one commits."
+        )
 
 
 def _check_asked_fields(
@@ -1026,6 +1184,36 @@ def _hold_back(form: forms.BaseForm, held: tuple[str, ...], asked: Collection[st
         elif name not in form.errors:
             # ``None`` beside it, for a field a form's ``__init__`` removed.
             form.fields.pop(name, None)
+
+
+def _without_errors(form: forms.BaseForm) -> None:
+    """Set a bound form's error state to none, so rendering it validates nothing.
+
+    Django's own two attributes, as ``full_clean()`` starts them, with the
+    form's renderer as Django 5.0 and later pass it; ``Any``, as the stubs
+    declare neither as assignable. A refused post's form then carries the
+    refusal alone, and a post that does not commit shows no error at all.
+    """
+    bound: Any = form
+    bound._errors = ErrorDict(renderer=form.renderer)
+    bound.cleaned_data = {}
+
+
+def _trigger_name(request: HttpRequest) -> str | None:
+    """``HX-Trigger-Name``, decoded where htmx encoded it, or ``None`` where it was not sent.
+
+    htmx 2 sends a value the browser refuses as a header URI-encoded, and
+    says so in ``HX-Trigger-Name-URI-AutoEncoded``, as django-htmx reads it
+    (test_an_encoded_trigger_name_is_read_decoded). One branch to coverage,
+    so each condition is held by its own test:
+    test_an_encoded_flag_with_no_name_is_no_trigger (there is no name to
+    decode) and test_an_unencoded_trigger_name_is_read_as_sent (a ``%``
+    htmx did not put there is the name's own).
+    """
+    name = request.headers.get(_TRIGGER_NAME)
+    if name is None or request.headers.get(f"{_TRIGGER_NAME}-URI-AutoEncoded") != "true":
+        return name
+    return unquote(name)
 
 
 def _address(template_name: str, fragment: str) -> str:

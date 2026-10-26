@@ -24,6 +24,7 @@ import pytest
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
+from django.contrib.messages.storage.cookie import CookieStorage
 from django.core.exceptions import PermissionDenied
 from django.core.handlers.exception import response_for_exception
 from django.http import Http404
@@ -54,7 +55,7 @@ from django_service_specs import (
 from django_spec_html import SpecFormView, UnsupportedMediaType
 from django_spec_html.http.utils import refusal_outcome
 from docs.examples import htmx as htmx_example
-from tests.adapter_app.models import Author, Book, Status
+from tests.adapter_app.models import Author, Book, Edition, Status
 
 pytestmark = pytest.mark.django_db
 
@@ -747,3 +748,76 @@ class TestAConfirmationInADialog:
         response = serve(FACTORY.post(IN_A_DIALOG, data=data, **HTMX), ada)
         assert (response.status_code, response["HX-Redirect"]) == (200, "/books/")
         assert not Book.objects.filter(status=Status.DRAFT).exists()
+
+
+def editions(**fields: Any) -> dict[str, Any]:
+    """What the edition page sends: the token, and the fields and button a test names."""
+    return {"csrfmiddlewaretoken": "token", **fields}
+
+
+class TestAPostThatDoesNotCommit:
+    """``editions/new/``: the author picker and "Show their books" re-render, "Add" commits."""
+
+    @pytest.fixture
+    def shelved(self, author: Author) -> tuple[Book, Book]:
+        theirs = Book.objects.create(title="Earthsea", price=Decimal("9.99"), author=author)
+        other = Author.objects.create(name="Butler")
+        return theirs, Book.objects.create(title="Kindred", price=Decimal("8.00"), author=other)
+
+    def test_the_page_offers_no_book_until_an_author_is_chosen(self, ada: Any) -> None:
+        response = serve(FACTORY.get("/editions/new/"), ada).render()
+        assert list(response.context_data["form"].fields["book"].queryset) == []
+        # The picker posts the form itself, and the button Enter presses,
+        # the first, is the one that commits.
+        assert b'hx-trigger="change"' in response.content
+        assert response.content.index(b'name="add"') < response.content.index(b'name="refresh"')
+
+    def test_show_their_books_re_renders_the_form_with_theirs(
+        self, ada: Any, author: Author, shelved: tuple[Book, Book]
+    ) -> None:
+        data = editions(author=str(author.pk), refresh="Show their books")
+        response = serve(FACTORY.post("/editions/new/", data=data), ada).render()
+        assert response.status_code == 200
+        assert list(response.context_data["form"].fields["book"].queryset) == [shelved[0]]
+        assert response.context_data["refreshed"] is True
+        # Nothing validated: the book and number left blank are not called required.
+        assert b"This field is required." not in response.content
+        assert not Edition.objects.exists()
+
+    def test_the_picker_under_htmx_is_the_form_alone(
+        self, ada: Any, author: Author, shelved: tuple[Book, Book]
+    ) -> None:
+        # What htmx sends for the select's own request: the form's values,
+        # no button, and the select's name as ``HX-Trigger-Name``.
+        headers = {**HTMX, "HTTP_HX_TRIGGER_NAME": "author"}
+        request = FACTORY.post("/editions/new/", data=editions(author=str(author.pk)), **headers)
+        response = serve(request, ada).render()
+        assert response.status_code == 200
+        assert response.content.startswith(b'<form method="post" hx-post=""')
+        assert b"<h1>" not in response.content
+        assert response.context_data["refreshed"] is True
+        assert b"errorlist" not in response.content
+        assert list(response.context_data["form"].fields["book"].queryset) == [shelved[0]]
+        assert not Edition.objects.exists()
+
+    def test_add_commits_and_says_so(
+        self, ada: Any, author: Author, shelved: tuple[Book, Book]
+    ) -> None:
+        data = editions(author=str(author.pk), book=str(shelved[0].pk), number="2", add="Add")
+        request = FACTORY.post("/editions/new/", data=data)
+        # The store the messages middleware puts on a request.
+        request._messages = CookieStorage(request)
+        response = serve(request, ada)
+        assert (response.status_code, response.url) == (302, "/books/")
+        assert Edition.objects.get().number == 2
+        assert [each.message for each in request._messages] == ["Edition 2 added."]
+
+    def test_a_book_by_another_author_is_refused_on_add(
+        self, ada: Any, author: Author, shelved: tuple[Book, Book]
+    ) -> None:
+        # The Validator's form is narrowed by the same post, so the commit is too.
+        data = editions(author=str(author.pk), book=str(shelved[1].pk), number="2", add="Add")
+        response = serve(FACTORY.post("/editions/new/", data=data), ada)
+        assert response.status_code == 400
+        assert list(response.context_data["form"].errors) == ["book"]
+        assert not Edition.objects.exists()

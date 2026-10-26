@@ -661,7 +661,9 @@ which swapped into a form's target would nest a second layout inside it.
 is decided, to choose the wrapper: the arguments are the form's fields and the
 route's kwargs, and dispatch is called the same way in both modes. So a spec
 cannot branch on the mode, and its outcome on the page and in a fragment is one
-outcome.
+outcome. One header is read before dispatch, `HX-Trigger-Name`, and only to
+stop a post committing on a page that names its
+[commit button](#a-post-that-does-not-commit).
 
 **A denial is the host's to answer, for htmx too.** The view raises
 `PermissionDenied` and `Http404` in both modes, and a handler answering an htmx
@@ -686,3 +688,99 @@ answers those in the form instead, by raising a `ServiceError`. The view's
 `Vary` never reaches a denial, which is raised rather than answered, so the
 handler sets its own on `HX-Request`, since it answers the two kinds of request
 differently.
+
+## A post that does not commit
+
+A form that refreshes a dependent choice, adds a row or searches posts without
+meaning to run the operation. **`commit_button` names the submit button whose
+post commits**, and every other post re-renders the form. It is `None` by
+default, and then every post commits, as a page that does not set it always has.
+
+```python
+--8<--
+docs/examples/spec_form.py:refresh
+--8<--
+```
+
+The URLconf routes it as `editions/new/`, with `commit_button="add"`, and its
+form is a file of its own, so it renders on any Django:
+
+```html
+--8<--
+tests/templates/spec_edition_form.html
+--8<--
+```
+
+Choosing an author posts the form, through htmx where it is loaded, and
+"Show their books" does the same without it. Neither carries `add`, so
+neither runs the operation; the form comes back with the books of the author
+posted, and "Add the edition" commits. A book by another author is refused on
+that post, since the Validator's form is narrowed by the same post.
+
+**Which posts commit**, decided by one method, `commits(request)`, to
+override for another rule, such as two buttons that both commit:
+
+- **The post's data must carry the button's name.** A browser posts the name
+  and value of the submit button that was pressed and of no other, with or
+  without JavaScript. htmx does the same for a form it submits, and posts no
+  button's name for a request a control issues itself, such as the author
+  picker's `hx-post`.
+- **Under htmx 2, `HX-Trigger-Name` can stop a commit, never make one.** It
+  names the element the request came from: the form, whose `name` is never
+  posted, or a control, whose own value always is. A header naming a key the
+  post carries, other than the button, is another control's request, and does
+  not commit even where the button's name reached the data some other way,
+  such as an inherited `hx-vals`. A form's own `name`, or no header at all,
+  leaves the decision to the data, which is what decides for every client:
+  a browser and htmx alike post the pressed button's name.
+- **Enter presses the first submit button** in the form, so put the commit
+  button first, as the template above does; a refresh button placed before it
+  would turn Enter into a refresh. Give a refresh button `formnovalidate`, so
+  the browser posts the form with its required fields still blank.
+
+**What a post that does not commit renders** is the page GET renders, with
+the form bound to the post:
+
+- It is admitted and finds its target as GET does, so a principal the spec
+  refuses is refused, and the context carries `target`, the count of a set,
+  `target_display` and `unavailable` as GET's does.
+- The form is built through `form_kwargs` like every other form the page
+  builds, bound to the post, so a choice its constructor narrows - by a
+  keyword, or by a value posted - is narrowed again.
+- Nothing is dispatched and nothing validated: the form shows the values
+  posted and no error, and a required field left blank is not called
+  required. `asked_fields` are held back, as on GET.
+- The context carries `refreshed`, `True`, for a template that needs to tell;
+  it is absent from every other render.
+- The page answers 200, and an htmx request the form's fragment at 200.
+
+`commit_button` is checked at `as_view()`: `None`, or a non-empty string that
+names no field of the form, since a field is posted by every submit and could
+not say which one commits.
+
+## A success message
+
+**`success_message` is sent through `django.contrib.messages` on every
+success**: the page's redirect, the `HX-Redirect` and the result fragment
+alike. It is formatted as Django's `SuccessMessageMixin` formats its own, `%`
+with the form's cleaned data, so `"Edition %(number)s added."` above reads the
+number posted, as the form cleaned it. The cleaned data is the result's
+`data`, what the Validator's form handed the service; on a
+[partial page](#a-partial-page) a field left blank is not in it.
+
+`get_success_message(result)` answers it, to override for a message that reads
+what the operation returned:
+
+```python
+class AddBookThenSayWhich(SpecFormView):
+    def get_success_message(self, result: DispatchResult) -> str:
+        return f"Book {result.value.pk} added."
+```
+
+- **Without the messages middleware it is skipped**, and never raises
+  Django's `MessageFailure`: a message needs the store the middleware puts on
+  the request, which the app installed alone does not, and the write has
+  already committed.
+- **A refusal, a confirmation page and a post that does not commit send
+  none.** The message is sent once the operation has run.
+- An empty message, the default, sends nothing.
