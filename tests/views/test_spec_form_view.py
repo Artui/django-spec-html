@@ -73,7 +73,7 @@ from django_service_specs import (
 )
 
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
-from django_spec_html.views import spec_form_view
+from django_spec_html.views import utils as views_utils
 from django_spec_html.views.spec_form_view import SpecFormView
 from tests.adapter_app.models import Author as BookAuthor
 from tests.adapter_app.models import Book, Document, Edition, Status
@@ -1688,13 +1688,13 @@ class TestNothingHtmxReachesTheSpec:
         self, ada: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         calls: list[dict[str, Any]] = []
-        real = spec_form_view.dispatch
+        real = views_utils.dispatch
 
         def recording(spec: Any, **kwargs: Any) -> Any:
             calls.append(kwargs)
             return real(spec, **kwargs)
 
-        monkeypatch.setattr(spec_form_view, "dispatch", recording)
+        monkeypatch.setattr(views_utils, "dispatch", recording)
         spec = entry_spec()
         data = {"title": "Hi", "csrfmiddlewaretoken": "token", "save": "Save"}
         post(fragmented(spec), ada, data)
@@ -3715,7 +3715,7 @@ def triggered(name: str, **headers: str) -> dict[str, str]:
 def never_dispatched(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     """Every call the view makes to dispatch, which a post that does not commit makes none of."""
     calls: list[Any] = []
-    monkeypatch.setattr(spec_form_view, "dispatch", lambda *args, **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(views_utils, "dispatch", lambda *args, **kwargs: calls.append(kwargs))
     return calls
 
 
