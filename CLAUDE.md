@@ -96,7 +96,7 @@ Each of these reads as an oversight and is not.
 - **The test settings list no kernel app.** The package needs nothing of the
   kernel switched on, and the suite shows it.
 - **The kernel no longer ships these names.** `django_service_specs.http` and
-  its ten root names are gone from kernel 0.12.0, which is the floor, so an
+  its ten root names are gone from kernel 0.12.0, below the floor, so an
   import left pointing at the kernel fails at import rather than resolving to
   a second copy. `tests/test_init.py` holds that absence, and would fail on a
   floor lowered past the removal.
@@ -173,7 +173,7 @@ configured and enforced. isort order is stdlib, third party, first party.
 | --- | --- | --- |
 | Python | 3.10 | 3.10 through 3.14 |
 | Django | 4.2 | 4.2, 5.0, 5.1, 5.2, 6.0, 6.1 |
-| django-service-specs | 0.12.0 | the newest release, and the floor in the `floor` job |
+| django-service-specs | 0.15.0 | the newest release, and the floor in the `floor` job |
 
 The Python and Django floors are the kernel's, and cannot sit below them.
 

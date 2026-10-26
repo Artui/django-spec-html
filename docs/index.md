@@ -27,7 +27,7 @@ pip install django-spec-html
 ```
 
 It installs [`django-service-specs`](https://artui.github.io/django-service-specs/), the kernel whose specs it serves,
-from 0.12.0, on Python 3.10 and Django 4.2 or later. Neither package needs an
+from 0.15.0, on Python 3.10 and Django 4.2 or later. Neither package needs an
 entry in `INSTALLED_APPS`.
 
 Both halves were the kernel's, and moved here so the kernel carries no

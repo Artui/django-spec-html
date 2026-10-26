@@ -40,15 +40,15 @@ dependencies = [
     # kernel's specs, so this package cannot support a Django the kernel does
     # not.
     "django>=4.2",
-    # The first kernel release without its own copy of these views. Below it
-    # the kernel's root exported the same ten JSON names as objects of its
-    # own, so one process held two ``SpecView`` classes and an ``isinstance``
-    # against either missed the other. Every name the moved code reads at the
-    # kernel's root (``refusal_messages``, ``expected_type_refusal``,
-    # ``NON_FIELD_KEYS``, ``max_length_in_force``, ``clean_held_to_their_columns``,
-    # ``is_deactivated``, and ``unanswered_refusals`` for the suite's check of
-    # the status map) is public from 0.10.0, so this floor also covers them.
-    "django-service-specs>=0.12.0",
+    # The request hooks need 0.15.0: from 0.14.0 a permission check is offered
+    # a registered seed by name, which is how a per-call seed reaches the
+    # object-level and scope checks, and from 0.15.0 a top-level Validator
+    # field named like a registered seed stays the caller's, which the
+    # server binding's checks against the declared seeds rely on. Below 0.12.0
+    # the kernel's root also exported its own copy of the ten JSON names, so
+    # one process held two ``SpecView`` classes. Every other name the moved
+    # code reads at the kernel's root is public from 0.10.0.
+    "django-service-specs>=0.15.0",
 ]
 
 [project.urls]
