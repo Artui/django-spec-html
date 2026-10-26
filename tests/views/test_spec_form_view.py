@@ -1096,7 +1096,9 @@ class TestRefusals:
             (ActionUnavailable("Moved while you were editing.", code="moved"), 409),
             (ServiceError("Moved while you were editing."), 422),
             (
-                AdditionalInputRequired("Moved while you were editing.", schema={"type": "object"}),
+                AdditionalInputRequired(
+                    "Moved while you were editing.", schema={"urgent": {"type": "boolean"}}
+                ),
                 422,
             ),
             (Throttled("Moved while you were editing."), 400),
@@ -1610,7 +1612,11 @@ class TestTheFragmentOnARefusal:
             ({"title": "Hi"}, ServiceConflict("Moved."), 409),
             ({"title": "Hi"}, ActionUnavailable("Moved.", code="moved"), 409),
             ({"title": "Hi"}, ServiceError("Moved."), 422),
-            ({"title": "Hi"}, AdditionalInputRequired("Moved.", schema={"type": "object"}), 422),
+            (
+                {"title": "Hi"},
+                AdditionalInputRequired("Moved.", schema={"urgent": {"type": "boolean"}}),
+                422,
+            ),
             ({"title": "Hi"}, Throttled("Moved."), 400),
             ({"title": "Hi"}, UnsupportedMediaType("Moved."), 415),
         ],
@@ -3342,3 +3348,325 @@ class TestTheDisplayLimit:
         notes(ada, 2)
         view = shown_view(set_spec(presenter=DataclassPresenter(NoteOut)), target_display_limit=1)
         assert len(get(view, ada).context_data["target_display"]) == 1
+
+
+ASK = "3 notes match. Confirm to proceed."
+CONFIRM = {"confirmed": {"type": "boolean"}}
+
+
+class DeleteForm(forms.Form):
+    """A destructive operation's form: a value of its own, and the confirmation it declares."""
+
+    reason = forms.CharField(required=False)
+    confirmed = forms.BooleanField(required=False)
+
+
+class Confirming:
+    """A service that asks until it is confirmed, recording what each call was validated into."""
+
+    def __init__(self, schema: Any = CONFIRM, *, always: bool = False) -> None:
+        self.schema = schema
+        self.always = always
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(self, *, data: dict[str, Any], **pool: Any) -> None:
+        self.calls.append(dict(data))
+        if self.always or not data["confirmed"]:
+            raise AdditionalInputRequired(ASK, schema=self.schema)
+
+
+def confirm_spec(service: Any = None, **kwargs: Any) -> ServiceSpec:
+    kwargs.setdefault("permissions", OPEN)
+    return ServiceSpec(
+        service=Confirming() if service is None else service,
+        validator=FormValidator(DeleteForm),
+        **kwargs,
+    )
+
+
+def confirm_view(spec: ServiceSpec, **attributes: Any) -> Any:
+    """A page holding ``confirmed`` back, set as a class attribute as a host's subclass sets it."""
+    attributes = {
+        "template_name": TEMPLATE,
+        "success_url": "/done/",
+        "asked_fields": ("confirmed",),
+        **attributes,
+    }
+    return type("Confirm", (SpecFormView,), attributes).as_view(spec=spec)
+
+
+def shows(response: Any, name: str) -> bool:
+    """Whether the rendered page carries the field ``name``: its input, and its place in the form."""
+    response.render()
+    rendered = f'name="{name}"'.encode() in response.content
+    assert rendered == (name in response.context_data["form"].fields)
+    return rendered
+
+
+class TestTheConfirmationPage:
+    """``AdditionalInputRequired`` rendered: the bound form again, the fields it asks for revealed."""
+
+    def test_get_holds_the_asked_field_back(self, ada: Any) -> None:
+        response = get(confirm_view(confirm_spec()), ada)
+        assert response.status_code == 200
+        assert not shows(response, "confirmed")
+        assert shows(response, "reason")
+        assert "requested_input" not in response.context_data
+
+    def test_a_post_that_is_asked_reveals_it_at_the_maps_status(self, ada: Any) -> None:
+        response = post(confirm_view(confirm_spec()), ada, {"reason": "Tidy", "save": "Save"})
+        assert response.status_code == 422
+        assert shows(response, "confirmed")
+        # Every value posted is kept, so the confirming post carries them all.
+        assert b'name="reason" value="Tidy"' in response.content
+        assert refused(response) == {"__all__": [ASK]}
+        asked = response.context_data["requested_input"]
+        assert (asked["message"], asked["schema"]) == (ASK, CONFIRM)
+        assert [field.name for field in asked["fields"]] == ["confirmed"]
+
+    def test_the_first_post_answers_no(self, ada: Any) -> None:
+        service = Confirming()
+        post(confirm_view(confirm_spec(service)), ada, {"reason": "Tidy"})
+        # An absent box cleans to False, so a box never shown never answers.
+        assert service.calls == [{"reason": "Tidy", "confirmed": False}]
+
+    def test_the_confirming_post_runs_with_every_value(self, ada: Any) -> None:
+        service = Confirming()
+        view = confirm_view(confirm_spec(service))
+        response = post(view, ada, {"reason": "Tidy", "confirmed": "on", "save": "Save"})
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert service.calls == [{"reason": "Tidy", "confirmed": True}]
+
+    def test_a_re_ask_is_never_ticked_from_the_post(self, ada: Any) -> None:
+        # Asked again after a yes - the set it counted moved, say - the box is
+        # shown empty, so one click never answers a question nobody read.
+        view = confirm_view(confirm_spec(Confirming(always=True)))
+        response = post(view, ada, {"reason": "Tidy", "confirmed": "on"})
+        assert response.status_code == 422
+        assert shows(response, "confirmed")
+        assert b"checked" not in field_tag(response, "confirmed")
+        assert b'name="reason" value="Tidy"' in response.content
+
+    def test_a_multi_select_keeps_every_value_it_posted(self, ada: Any) -> None:
+        # The posted values are copied to clear the box, and a copy of a
+        # request's ``POST`` keeps each value of a key, where a dict keeps one.
+        spec = raising(AdditionalInputRequired(ASK, schema={"urgent": {"type": "boolean"}}))
+        view = confirm_view(spec, asked_fields=("urgent",))
+        response = post(view, ada, {"title": "Hi", "urgent": "on", "tags": ["home", "work"]})
+        assert shows(response, "urgent")
+        assert b"checked" not in field_tag(response, "urgent")
+        assert response.context_data["form"]["tags"].value() == ["home", "work"]
+
+    @pytest.mark.parametrize(
+        "exc",
+        [ServiceError("Moved."), ServiceConflict("Moved."), ServiceValidationError("Moved.")],
+        ids=["service-error", "conflict", "service-validation-error"],
+    )
+    def test_any_other_refusal_holds_it_back(self, ada: Any, exc: Exception) -> None:
+        response = post(confirm_view(confirm_spec(raising_service(exc))), ada, {"reason": "Tidy"})
+        assert refused(response) == {"__all__": ["Moved."]}
+        assert not shows(response, "confirmed")
+        assert "requested_input" not in response.context_data
+
+    def test_a_held_field_a_refusal_names_is_shown_with_it(self, ada: Any) -> None:
+        # Its error would otherwise be placed on a field nobody can see.
+        exc = ServiceValidationError({"confirmed": ["Tick it to go on."]})
+        response = post(confirm_view(confirm_spec(raising_service(exc))), ada, {})
+        assert refused(response) == {"confirmed": ["Tick it to go on."]}
+        assert shows(response, "confirmed")
+        assert b"Tick it to go on." in response.content
+
+    def test_a_question_with_no_schema_reveals_nothing(self, ada: Any) -> None:
+        response = post(confirm_view(confirm_spec(Confirming(schema=None))), ada, {})
+        assert response.status_code == 422
+        assert not shows(response, "confirmed")
+        assert response.context_data["requested_input"] == {
+            "message": ASK,
+            "schema": None,
+            "fields": [],
+        }
+
+    def test_a_key_no_field_declares_is_asked_by_its_message_alone(self, ada: Any) -> None:
+        # A read the spec declares passes the kernel's check, and the page
+        # builds no widget from a schema, so nothing is revealed for it.
+        schema = {"ack": {"type": "boolean"}}
+        spec = confirm_spec(
+            Confirming(schema=schema), reads=Parameters.of(Parameter("ack", "boolean"))
+        )
+        response = post(confirm_view(spec), ada, {})
+        assert (response.status_code, refused(response)) == (422, {"__all__": [ASK]})
+        assert not shows(response, "confirmed")
+        assert response.context_data["requested_input"]["fields"] == []
+
+    def test_an_ordinary_field_asked_for_keeps_its_posted_value(self, ada: Any) -> None:
+        schema = {"reason": {"type": "string"}}
+        response = post(
+            confirm_view(confirm_spec(Confirming(schema=schema))), ada, {"reason": "Tidy"}
+        )
+        assert [field.name for field in response.context_data["requested_input"]["fields"]] == [
+            "reason"
+        ]
+        assert not shows(response, "confirmed")
+        assert b'name="reason" value="Tidy"' in response.content
+
+    def test_the_confirmation_counts_the_set_again(self, ada: Any) -> None:
+        # The count is a time of check: the page that asks says what it found
+        # when the post that asked was made, not what the page's GET counted.
+        notes(ada, 2)
+        spec = confirm_spec(
+            collection_selector_spec=SelectorSpec(
+                kind=SelectorKind.LIST, selector=lambda *, user: notes_of(user)
+            )
+        )
+        view = confirm_view(spec)
+        counted = get(view, ada).context_data
+        assert counted["target_count"] == 2
+        notes(ada, 1)
+        response = post(view, ada, {"reason": "Tidy"})
+        context = response.context_data
+        assert "requested_input" in context
+        assert context["target_count"] == 3
+        assert context["target_counted_at"] > counted["target_counted_at"]
+
+
+def raising_service(exc: Exception) -> Any:
+    def service(**pool: Any) -> None:
+        raise exc
+
+    return service
+
+
+class TestTheQuestionIsChecked:
+    """A schema the kernel's ``check_requested_input`` refuses is raised, never rendered."""
+
+    @pytest.mark.parametrize(
+        ("schema", "named"),
+        [
+            ({"undeclared": {"type": "boolean"}}, "'undeclared'"),
+            ({"confirmed": {"type": "string"}}, "'confirmed'"),
+            ({"confirmed": {"type": "object"}}, "'confirmed'"),
+        ],
+        ids=["undeclared", "a-type-the-field-refuses", "unrenderable"],
+    )
+    @pytest.mark.parametrize("headers", [{}, HTMX], ids=["page", "fragment"])
+    def test_a_question_no_route_could_ask_is_raised(
+        self, ada: Any, schema: Any, named: str, headers: Mapping[str, str]
+    ) -> None:
+        view = confirm_view(confirm_spec(Confirming(schema=schema)))
+        with pytest.raises(ImproperlyConfigured, match=named):
+            hx_post(view, ada, {"reason": "Tidy"}, headers=headers)
+
+    def test_the_call_s_seeds_are_the_ones_it_reads(self, ada: Any) -> None:
+        # A reflected read is filled by the seed of its name, so an answer
+        # under that key would be dropped, and only the call's seeds say the
+        # seed is there: without them, the same spec is asked as any other.
+        def spec() -> ServiceSpec:
+            reads = Parameters.of(Parameter("ack", "boolean", reflected=True))
+            return confirm_spec(Confirming(schema={"ack": {"type": "boolean"}}), reads=reads)
+
+        assert post(confirm_view(spec()), ada, {}).status_code == 422
+        seeded = confirm_view(
+            spec(), get_pool_seeds=lambda self, request: PoolSeeds().extend(ack=lambda: None)
+        )
+        with pytest.raises(ImproperlyConfigured, match="a provider or a pool seed fills it"):
+            post(seeded, ada, {})
+
+    def test_the_map_s_order_decides_what_is_a_question(self, ada: Any) -> None:
+        # A refusal that is a dispatch refusal as well reads as its dispatch
+        # row, failed at 400, so it is no question: nothing is checked or
+        # revealed, and a schema no route could ask is never read.
+        class Both(DispatchError, AdditionalInputRequired): ...
+
+        exc = Both("Moved.")
+        exc.schema = {"undeclared": {"type": "boolean"}}
+        response = post(confirm_view(confirm_spec(raising_service(exc))), ada, {})
+        assert (response.status_code, refused(response)) == (400, {"__all__": ["Moved."]})
+        assert not shows(response, "confirmed")
+        assert "requested_input" not in response.context_data
+
+
+class TestTheConfirmationFragment:
+    """Under htmx the confirmation is the form fragment, at 200, in the target the form swaps."""
+
+    def test_it_is_the_form_fragment_in_place(self, ada: Any) -> None:
+        view = confirm_view(confirm_spec(), template_name=PAGE, fragment_template_name=FRAGMENT)
+        response = hx_post(view, ada, {"reason": "Tidy"})
+        assert (response.status_code, response.template_name) == (200, [FRAGMENT])
+        # No retarget and no reswap: it lands where the form was.
+        assert hx_headers(response) == {}
+        assert shows(response, "confirmed")
+        assert b"<html>" not in response.content
+        assert response.context_data["requested_input"]["message"] == ASK
+
+    def test_its_get_holds_the_field_back_too(self, ada: Any) -> None:
+        view = confirm_view(confirm_spec(), template_name=PAGE, fragment_template_name=FRAGMENT)
+        response = hx_get(view, ada)
+        assert response.template_name == [FRAGMENT]
+        assert not shows(response, "confirmed")
+
+    def test_the_page_and_the_fragment_carry_one_context(self, ada: Any) -> None:
+        def view() -> Any:
+            return confirm_view(confirm_spec(), template_name=PAGE, fragment_template_name=FRAGMENT)
+
+        page = post(view(), ada, {"reason": "Tidy"})
+        fragment = hx_post(view(), ada, {"reason": "Tidy"})
+        assert set(fragment.context_data) == set(page.context_data)
+        assert refused(fragment) == refused(page)
+
+
+class TestAskedFields:
+    """``asked_fields`` is checked when the URLconf is imported."""
+
+    def test_it_may_be_passed_to_as_view(self, ada: Any) -> None:
+        view = SpecFormView.as_view(
+            spec=confirm_spec(),
+            template_name=TEMPLATE,
+            success_url="/done/",
+            asked_fields=("confirmed",),
+        )
+        assert not shows(get(view, ada), "confirmed")
+
+    def test_nothing_is_held_back_by_default(self, ada: Any) -> None:
+        assert shows(get(form_view(confirm_spec()), ada), "confirmed")
+
+    @pytest.mark.parametrize(
+        ("asked", "message"),
+        [
+            (
+                "confirmed",
+                "Confirm.asked_fields must be a tuple of the form's field names; got 'confirmed'.",
+            ),
+            (
+                ["confirmed"],
+                "Confirm.asked_fields must be a tuple of the form's field names; got ['confirmed'].",
+            ),
+            (
+                ("confirm",),
+                "Confirm.asked_fields names 'confirm', which DeleteForm does not declare.",
+            ),
+        ],
+        ids=["a-string", "a-list", "no-such-field"],
+    )
+    def test_anything_but_the_form_s_field_names_is_refused(self, asked: Any, message: str) -> None:
+        with pytest.raises(ImproperlyConfigured) as raised:
+            confirm_view(confirm_spec(), asked_fields=asked)
+        assert str(raised.value) == message
+
+    def test_a_required_field_is_refused(self) -> None:
+        # Held back, it is never posted, so every ordinary post would be refused.
+        with pytest.raises(ImproperlyConfigured) as raised:
+            confirm_view(entry_spec(), asked_fields=("title",))
+        assert str(raised.value) == (
+            "Confirm.asked_fields names 'title', which EntryForm requires: a field held back "
+            "until a question asks for it is absent from every other post, so it must be optional."
+        )
+
+    def test_a_field_the_server_answers_for_is_refused(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as raised:
+            confirm_view(
+                confirm_spec(), server_arguments=ServerArguments(values={"confirmed": True})
+            )
+        assert str(raised.value) == (
+            "Confirm.asked_fields names 'confirmed', which the server answers for: "
+            "nobody posting the form could answer it."
+        )

@@ -457,7 +457,7 @@ def test_the_pages_outcome_table_is_the_one_shipped(ada: Any) -> None:
         ServiceConflict(),
         ActionUnavailable(code="x"),
         ServiceError(),
-        AdditionalInputRequired("x", schema={"type": "object"}),
+        AdditionalInputRequired("x", schema={"note": {"type": "string"}}),
         UnsupportedMediaType(),
         DispatchError(),
     ]
@@ -617,3 +617,128 @@ class TestTurningHtmxOn:
     def test_a_browser_s_success_is_still_the_redirect(self, ada: Any, author: Author) -> None:
         response = self.serve(FACTORY.post("/books/new/", data=posted(author)), ada)
         assert (response.status_code, response.url) == (302, "/books/")
+
+
+DISCARD = "/books/discard-drafts/"
+IN_A_DIALOG = "/books/discard-drafts/in-a-dialog/"
+ASKED = "{count} drafts will be deleted. Confirm to proceed."
+
+
+def discarding(**fields: Any) -> dict[str, Any]:
+    """What the discard page sends, the token and the button included."""
+    return {"csrfmiddlewaretoken": "token", "save": "Save", "reason": "Tidy", **fields}
+
+
+class TestTheConfirmationPage:
+    """``discard_drafts_spec``: asked until confirmed, through ``spec_confirm.html``."""
+
+    @pytest.fixture(autouse=True)
+    def shelf(self, author: Author) -> None:
+        drafts(author, "Earthsea", "Lavinia")
+        drafts(author, "The Dispossessed", status=Status.PUBLISHED)
+
+    def test_the_page_counts_the_set_and_holds_the_box_back(self, ada: Any) -> None:
+        response = serve(FACTORY.get(DISCARD), ada).render()
+        content = response.content.decode()
+        assert response.status_code == 200
+        assert "2 drafts selected, counted at" in content
+        assert "<ul><li>Earthsea</li><li>Lavinia</li></ul>" in content
+        assert 'name="reason"' in content
+        assert 'name="confirmed"' not in content
+
+    def test_a_post_is_asked_and_nothing_is_deleted(self, ada: Any) -> None:
+        response = serve(FACTORY.post(DISCARD, data=discarding()), ada).render()
+        content = response.content.decode()
+        assert response.status_code == 422
+        assert content.count(ASKED.format(count=2)) == 1
+        assert 'name="confirmed"' in content
+        assert "Yes, discard them" in content
+        assert 'name="reason" value="Tidy"' in content
+        assert Book.objects.filter(status=Status.DRAFT).count() == 2
+
+    def test_the_question_counts_the_set_as_it_is_then(self, ada: Any, author: Author) -> None:
+        assert serve(FACTORY.get(DISCARD), ada).context_data["target_count"] == 2
+        drafts(author, "Searoad")
+        response = serve(FACTORY.post(DISCARD, data=discarding()), ada).render()
+        assert response.context_data["target_count"] == 3
+        content = response.content.decode()
+        assert "3 drafts selected, counted at" in content
+        assert ASKED.format(count=3) in content
+
+    def test_the_confirming_post_deletes_them(self, ada: Any) -> None:
+        data = discarding(confirmed="on")
+        response = serve(FACTORY.post(DISCARD, data=data), ada)
+        assert (response.status_code, response.url) == (302, "/books/")
+        assert list(Book.objects.values_list("title", flat=True)) == ["The Dispossessed"]
+
+    def test_htmx_gets_the_form_with_the_box_held_back(self, ada: Any) -> None:
+        response = serve(FACTORY.get(DISCARD, **HTMX), ada).render()
+        assert response.content.lstrip().startswith(b"<form")
+        assert b'name="confirmed"' not in response.content
+
+    def test_htmx_is_asked_in_place_at_200(self, ada: Any) -> None:
+        response = serve(FACTORY.post(DISCARD, data=discarding(), **HTMX), ada).render()
+        assert response.status_code == 200
+        assert response.content.lstrip().startswith(b"<form")
+        assert b"<h1>" not in response.content
+        assert b'name="confirmed"' in response.content
+        # In place: no header sends the answer anywhere but the form's target.
+        assert not [name for name in response.headers if name.lower().startswith("hx-")]
+        assert Book.objects.filter(status=Status.DRAFT).count() == 2
+
+    def test_htmx_s_confirming_post_deletes_them(self, ada: Any) -> None:
+        data = discarding(confirmed="on")
+        response = serve(FACTORY.post(DISCARD, data=data, **HTMX), ada)
+        assert (response.status_code, response["HX-Redirect"]) == (200, "/books/")
+        assert not Book.objects.filter(status=Status.DRAFT).exists()
+
+
+class TestAConfirmationInADialog:
+    """``spec_confirm_dialog.html``: the question swapped out of band, into a dialog outside the form."""
+
+    @pytest.fixture(autouse=True)
+    def shelf(self, author: Author, settings: Any) -> None:
+        drafts(author, "Earthsea", "Lavinia")
+        if django.VERSION < (6, 0):
+            settings.TEMPLATES = htmx_example.TEMPLATES
+
+    @staticmethod
+    def form_and_rest(content: bytes) -> tuple[bytes, bytes]:
+        form, _, rest = content.partition(b"</form>")
+        return form, rest
+
+    def test_the_fragment_carries_the_dialog_out_of_band(self, ada: Any) -> None:
+        response = serve(FACTORY.post(IN_A_DIALOG, data=discarding(), **HTMX), ada).render()
+        assert response.status_code == 200
+        assert not [name for name in response.headers if name.lower().startswith("hx-")]
+        form, rest = self.form_and_rest(response.content)
+        assert form.lstrip().startswith(b'<form id="discard-drafts"')
+        # The question is the dialog's, never the form's.
+        assert ASKED.format(count=2).encode() not in form
+        assert b'name="confirmed"' not in form
+        assert b'<dialog id="confirm-discard" hx-swap-oob="true" open>' in rest
+        assert ASKED.format(count=2).encode() in rest
+        # Outside the form, so each control names the form it posts with.
+        assert b'name="confirmed" form="discard-drafts"' in rest
+        assert b'name="save" form="discard-drafts"' in rest
+        assert b'name="reason" value="Tidy"' in form
+
+    def test_no_dialog_before_a_question(self, ada: Any) -> None:
+        response = serve(FACTORY.get(IN_A_DIALOG, **HTMX), ada).render()
+        assert b"<dialog" not in response.content
+        assert b'name="confirmed"' not in response.content
+        assert b'name="reason"' in response.content
+
+    def test_the_page_has_one_dialog_to_swap_into(self, ada: Any) -> None:
+        page = serve(FACTORY.get(IN_A_DIALOG), ada).render().content
+        assert page.count(b'<dialog id="confirm-discard">') == 1
+        asked = serve(FACTORY.post(IN_A_DIALOG, data=discarding()), ada).render()
+        assert asked.status_code == 422
+        assert asked.content.count(b'id="confirm-discard"') == 1
+
+    def test_what_the_dialog_posts_deletes_them(self, ada: Any) -> None:
+        # The ticked box and the button, the form's own fields beside them.
+        data = discarding(confirmed="on")
+        response = serve(FACTORY.post(IN_A_DIALOG, data=data, **HTMX), ada)
+        assert (response.status_code, response["HX-Redirect"]) == (200, "/books/")
+        assert not Book.objects.filter(status=Status.DRAFT).exists()

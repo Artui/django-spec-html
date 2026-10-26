@@ -18,6 +18,7 @@ from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.urls import path, reverse, reverse_lazy
 from django_service_specs import (
+    AdditionalInputRequired,
     Affordance,
     ChangeResult,
     DataclassPresenter,
@@ -257,6 +258,36 @@ publish_drafts_spec = ServiceSpec(
 # --8<-- [end:target]
 
 
+# --8<-- [start:confirm]
+class DiscardForm(forms.Form):
+    reason = forms.CharField(max_length=200, required=False)
+    # The answer to the service's question, declared like any other field:
+    # the page holds it back until the question asks for it.
+    confirmed = forms.BooleanField(required=False, label="Yes, discard them")
+
+
+def discard(*, collection: QuerySet[Book], data: dict[str, Any]) -> list[int]:
+    if not data["confirmed"]:
+        raise AdditionalInputRequired(
+            f"{collection.count()} drafts will be deleted. Confirm to proceed.",
+            schema={"confirmed": {"type": "boolean"}},
+        )
+    discarded = list(collection.values_list("pk", flat=True))
+    collection.delete()
+    return discarded
+
+
+# Every draft, deleted once a person says yes.
+discard_drafts_spec = ServiceSpec(
+    service=discard,
+    permissions=[IsSignedIn()],
+    validator=FormValidator(DiscardForm),
+    collection_selector_spec=publish_drafts_spec.collection_selector_spec,
+    output_selector_spec=publish_drafts_spec.output_selector_spec,
+)
+# --8<-- [end:confirm]
+
+
 def books(request: HttpRequest) -> HttpResponse:
     return HttpResponse("The books.")
 
@@ -327,6 +358,27 @@ urlpatterns = [
             success_url=reverse_lazy("books"),
             display_target=True,
             target_display_limit=3,
+        ),
+    ),
+    path(
+        "books/discard-drafts/",
+        SpecFormView.as_view(
+            spec=discard_drafts_spec,
+            template_name="spec_confirm.html",
+            fragment_template_name="spec_confirm_form.html",
+            success_url=reverse_lazy("books"),
+            display_target=True,
+            asked_fields=("confirmed",),
+        ),
+    ),
+    path(
+        "books/discard-drafts/in-a-dialog/",
+        SpecFormView.as_view(
+            spec=discard_drafts_spec,
+            template_name="spec_confirm_dialog.html",
+            success_url=reverse_lazy("books"),
+            display_target=True,
+            asked_fields=("confirmed",),
         ),
     ),
     path("branches/<branch>/books/new/", StockBook.as_view()),

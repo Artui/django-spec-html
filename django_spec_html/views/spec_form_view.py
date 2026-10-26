@@ -6,7 +6,7 @@ import copy
 import dataclasses
 import datetime
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from contextlib import suppress
 from decimal import Decimal
 from types import MappingProxyType
@@ -44,6 +44,7 @@ from django_service_specs import (
     NON_FIELD_ERRORS,
     UNSET,
     ActionUnavailable,
+    AdditionalInputRequired,
     Affordance,
     AudienceProjection,
     DispatchError,
@@ -68,6 +69,7 @@ from django_service_specs import (
     audience_projection_for_spec,
     authorize,
     base_pool,
+    check_requested_input,
     clean_held_to_their_columns,
     coerce_flat,
     dispatch,
@@ -213,9 +215,30 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
       statuses are ``error_response``'s, read from the one map, so
       a client reading a refused post - Turbo, which will not render a failed
       post answered 200 - reads it the same way.
+    - **A question**, ``AdditionalInputRequired``, re-renders it at 422, the
+      message as a non-field error, as the confirmation page below.
     - ``NotPermitted`` and ``PrincipalUnavailable`` raise Django's
       ``PermissionDenied``, and a not-found result or ``ServiceNotFound``
       raises ``Http404``, for the host's own 403 and 404 pages.
+
+    **The confirmation page is an** ``AdditionalInputRequired`` **rendered.**
+    Its ``schema`` is checked first by the kernel's
+    [`check_requested_input`][django_service_specs.dispatch.check_requested_input.check_requested_input],
+    with the call's seeds, so a question no route could hear answered - a key
+    no parameter declares, one a seed fills, a shape a transport cannot
+    render, a type the parameter refuses - raises ``ImproperlyConfigured`` on
+    the page and in the fragment alike, and is never rendered. Then the bound
+    form is re-rendered with every value posted, and the context carries
+    ``requested_input``: the ``message``, the ``schema``, and the ``fields``,
+    the form's bound fields the schema names. The page builds no widget from
+    a schema. The answer is a field the spec's form declares, an optional
+    ``BooleanField`` whose absent box cleans to ``False``, and
+    ``asked_fields`` holds it back until a question names it: it is taken out
+    of the form each GET and every other refusal renders, so it posts nothing
+    of its own, and shown empty when asked, so a yes is never carried over to
+    a question asked again. A key no field declares is asked by the message
+    alone. The target is found and a set counted again for the post that
+    asked, so the page says what it found then.
 
     **Two wrappers, one outcome.** The view decides what a request ends in
     once - a success, or the refusal's ``Outcome`` - and only then reads
@@ -372,6 +395,10 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             projects, the first that many in the set's own order: a positive
             int, 10 by default, checked at ``as_view()``. ``target_count``
             counts them all.
+        asked_fields: The fields of the form held back until a post's
+            ``AdditionalInputRequired`` asks for them by name: a tuple of
+            optional fields the server does not answer for, checked at
+            ``as_view()``. Empty by default, so every field is shown.
     """
 
     spec: ServiceSpec | None = None
@@ -383,6 +410,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     server_arguments: ServerArguments | None = None
     display_target: bool = False
     target_display_limit: int = 10
+    asked_fields: tuple[str, ...] = ()
 
     @classonlymethod
     def as_view(cls, **initkwargs: Any) -> Callable[..., HttpResponseBase]:
@@ -434,6 +462,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         # context on every answer: test_every_condition_met_leaves_it_out.
         context = {} if unavailable is None else {"unavailable": unavailable}
         form = _page_form(spec, principal, target, served)
+        _hold_back(form, self.asked_fields, ())
         context.update(self._target_context(spec, principal, target, served, pool))
         return self._rendered(self.get_context_data(form=form, **context), status=200)
 
@@ -480,8 +509,23 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             # operation, the target's checks having answered before dispatch,
             # is the host's 403 or 404 page in either mode. Every row's
             # answer is held by test_the_pages_outcome_table_is_the_one_shipped.
-            if refusal_outcome(refused) is Outcome.DENIED:
+            outcome = refusal_outcome(refused)
+            if outcome is Outcome.DENIED:
                 raise _denial(refused) from refused
+            # A question is read off the map's row, as every outcome is, never
+            # off the refusal's class: one that is a dispatch refusal as well
+            # answers at its dispatch row, failed, and asks nothing
+            # (test_the_map_s_order_decides_what_is_a_question). That row
+            # names ``AdditionalInputRequired`` alone, hence the cast. Its
+            # schema is checked before either wrapper is chosen, so a question
+            # no route could hear answered is raised on the page and in the
+            # fragment alike, and with the call's own seeds, since a key a seed
+            # the request registers fills would be dropped from the answer
+            # (test_the_call_s_seeds_are_the_ones_it_reads).
+            requested: AdditionalInputRequired | None = None
+            if outcome is Outcome.NEEDS_INPUT:
+                requested = cast("AdditionalInputRequired", refused)
+                check_requested_input(spec, requested.schema, pool_seeds=served.seeds)
             # One branch to coverage, so each condition is held by its own
             # test: test_a_refusal_after_the_validator_took_the_form_validates_it_no_further
             # (an argument refusal: any other is no verdict on the post's
@@ -505,6 +549,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
                 _refusal_tree(refused),
                 status=refusal_status(refused),
                 merged=merged,
+                requested=requested,
                 **_refusal_code(refused),
                 **self._target_context(spec, principal, target, served, None),
             )
@@ -735,6 +780,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         *,
         status: int,
         merged: bool,
+        requested: AdditionalInputRequired | None,
         **context: Any,
     ) -> HttpResponse:
         """The page again, the bound form carrying ``detail``, and its own errors where ``merged``.
@@ -753,6 +799,14 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         Otherwise the form carries ``detail`` alone: its error state is set to
         none directly, which is what Django's ``add_error`` needs, and the
         refusal is placed on it.
+
+        Then ``asked_fields`` are held back, but for those ``requested`` asks
+        for, as ``_hold_back`` reads them, and a question is in the context as
+        ``requested_input``: its message, its schema, and the form's bound
+        fields it names, in the schema's order. A key no field of the form
+        declares is asked by the message alone, since the page builds no
+        widget from a schema
+        (test_a_key_no_field_declares_is_asked_by_its_message_alone).
         """
         if merged:
             clean_held_to_their_columns(form)
@@ -764,6 +818,19 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             bound._errors = ErrorDict(renderer=form.renderer)
             bound.cleaned_data = {}
         add_argument_errors(form, detail)
+        schema: Mapping[str, Any] = {}
+        # One branch to coverage, so each condition is held by its own test:
+        # test_any_other_refusal_holds_it_back (no question was asked) and
+        # test_a_question_with_no_schema_reveals_nothing (one that names no key).
+        if requested is not None and requested.schema is not None:
+            schema = requested.schema
+        _hold_back(form, self.asked_fields, schema)
+        if requested is not None:
+            context["requested_input"] = {
+                "message": requested.message,
+                "schema": requested.schema,
+                "fields": [form[name] for name in schema if name in form.fields],
+            }
         return self._rendered(self.get_context_data(form=form, **context), status=status)
 
     def _rendered(self, context: dict[str, Any], *, status: int) -> HttpResponse:
@@ -849,6 +916,52 @@ def _check_configuration(cls: type[SpecFormView], initkwargs: Mapping[str, Any])
         )
     if initkwargs.get("display_target", cls.display_target):
         _check_display(label, spec)
+    _check_asked_fields(
+        label,
+        spec,
+        initkwargs.get("asked_fields", cls.asked_fields),
+        initkwargs.get("server_arguments", cls.server_arguments),
+    )
+
+
+def _check_asked_fields(
+    label: str, spec: ServiceSpec, asked: Any, server: ServerArguments | None
+) -> None:
+    """Refuse ``asked_fields`` naming anything but optional fields of the form that the client answers.
+
+    A tuple, as ``route_kwargs``' names are, so a bare string is not read as
+    its letters (test_anything_but_the_form_s_field_names_is_refused). Each
+    name is a field the form class declares; one that is optional, since a
+    field held back is absent from every post no question asked for, and a
+    required one would refuse them all (test_a_required_field_is_refused);
+    and one the server does not answer for, whose field the page disables, so
+    no person could answer it (test_a_field_the_server_answers_for_is_refused).
+    """
+    if not isinstance(asked, tuple):
+        raise ImproperlyConfigured(
+            f"{label}.asked_fields must be a tuple of the form's field names; got {asked!r}."
+        )
+    form_class = _form_class(spec)
+    # ``base_fields`` is set by the metaclass, which the stubs do not declare.
+    fields: dict[str, forms.Field] = form_class.base_fields  # ty: ignore[unresolved-attribute]
+    owned = server_names(server)
+    for name in asked:
+        if name not in fields:
+            raise ImproperlyConfigured(
+                f"{label}.asked_fields names {name!r}, which {form_class.__name__} does not "
+                "declare."
+            )
+        if fields[name].required:
+            raise ImproperlyConfigured(
+                f"{label}.asked_fields names {name!r}, which {form_class.__name__} requires: a "
+                "field held back until a question asks for it is absent from every other post, "
+                "so it must be optional."
+            )
+        if name in owned:
+            raise ImproperlyConfigured(
+                f"{label}.asked_fields names {name!r}, which the server answers for: nobody "
+                "posting the form could answer it."
+            )
 
 
 class _ClientRedirect(HttpResponseRedirectBase):
@@ -872,6 +985,40 @@ class _ClientRedirect(HttpResponseRedirectBase):
     @property
     def url(self) -> str:
         return self["HX-Redirect"]
+
+
+def _hold_back(form: forms.BaseForm, held: tuple[str, ...], asked: Collection[str]) -> None:
+    """Take the ``held`` fields ``asked`` does not name out of the form a page renders.
+
+    Out of this form's own ``fields``, which Django copies per instance, so
+    the class and every other request's form keep them, and at render only:
+    the post has read its arguments by now, through every field, so a
+    confirming post's answer is read like any other value
+    (test_the_confirming_post_runs_with_every_value). A field taken out
+    renders nothing, with ``{{ form }}`` or field by field, so it posts no
+    value of its own and a box never shown answers ``False``
+    (test_the_first_post_answers_no). A held field a refusal's error names is
+    left in, or the error would sit on a field nobody can see
+    (test_a_held_field_a_refusal_names_is_shown_with_it).
+
+    A held field a question asks for is shown without what was posted for it,
+    every other field keeping its value: asked again after a yes, since the
+    set it counted moved, say, the box is shown empty, and one click never
+    answers a question nobody read (test_a_re_ask_is_never_ticked_from_the_post).
+    """
+    for name in held:
+        if name in asked:
+            # A copy, since a request's ``POST`` is immutable, and the form
+            # reads its data afresh each time a field renders. ``Any``, as
+            # the stubs declare the data a ``Mapping``, and the page binds a
+            # ``QueryDict``, whose copy keeps every value of a multi-select.
+            posted: Any = form.data
+            data = posted.copy()
+            data.pop(form.add_prefix(name), None)
+            form.data = data
+        elif name not in form.errors:
+            # ``None`` beside it, for a field a form's ``__init__`` removed.
+            form.fields.pop(name, None)
 
 
 def _address(template_name: str, fragment: str) -> str:
