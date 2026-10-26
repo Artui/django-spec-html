@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from io import BytesIO
 from typing import Any, NoReturn
 
+from django.core.exceptions import ImproperlyConfigured
 from django.http import HttpRequest, QueryDict
 from django.http.multipartparser import MultiPartParser
 from django.utils.datastructures import MultiValueDict
@@ -17,6 +18,7 @@ from django_service_specs import (
     InvalidArguments,
     Parameter,
     Parameters,
+    ServerArguments,
     coerce_flat,
     expected_type_refusal,
     max_length_in_force,
@@ -40,7 +42,12 @@ _MULTIPART = "multipart/form-data"
 
 
 def request_arguments(
-    request: HttpRequest, parameters: Parameters, *, url_kwargs: Mapping[str, Any] | None = None
+    request: HttpRequest,
+    parameters: Parameters,
+    *,
+    url_kwargs: Mapping[str, Any] | None = None,
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None,
+    server_arguments: ServerArguments | None = None,
 ) -> dict[str, Any]:
     """The arguments a request carries for ``parameters``, typed as a JSON caller would send them.
 
@@ -109,7 +116,22 @@ def request_arguments(
     move the route's scope, so ``/notes/4/`` with ``pk=9`` in its body is about
     note 4. On a flat request the two are coerced together, so every refusal
     comes back at once and a clashing client value the route replaced is
-    never refused.
+    never refused. ``route_kwargs`` says which URL kwargs fill which
+    parameters, renaming or dropping the rest, as
+    [`route_arguments`][django_spec_html.http.route_arguments.route_arguments]
+    reads it.
+
+    **Every name** ``server_arguments`` **answers for is dropped** from what
+    the client sent, before anything is coerced, so a client's ``?owner=abc``
+    for a bound integer is never refused as the client's 400 for a name it was
+    never offered. **A URL kwarg filling one is refused** instead, as the
+    host's misconfiguration: the route is the host's, and it may not
+    contradict the host's own binding, so a capture the spec should not read
+    is dropped explicitly, with ``route_kwargs={name: None}``. Only the names are read
+    here: the values are laid by the kernel's
+    [`apply_server_arguments`][django_service_specs.dispatch.apply_server_arguments.apply_server_arguments],
+    which needs the spec to check them, so a host's own view passes the result
+    through it, as ``dispatch_request`` does.
 
     Raises:
         InvalidArguments: a JSON body that does not parse or is not an object,
@@ -117,18 +139,61 @@ def request_arguments(
             its parameter's name.
         UnsupportedMediaType: a body that is neither JSON nor a form.
         ImproperlyConfigured: a URL kwarg ``parameters`` does not declare,
-            which is the host's route rather than the client's request; see
+            a ``route_kwargs`` naming a parameter they do not, or a URL
+            kwarg filling a name ``server_arguments`` answers for, which is
+            the host's route rather than the client's request; see
             [`route_arguments`][django_spec_html.http.route_arguments.route_arguments].
     """
-    route = route_arguments(parameters, url_kwargs)
+    route = route_arguments(parameters, url_kwargs, route_kwargs=route_kwargs)
+    owned = frozenset() if server_arguments is None else server_arguments.names()
+    _refuse_server_owned(url_kwargs, route_kwargs, owned)
     if request.method in ("GET", "HEAD"):
-        return coerce_flat(parameters, {**_flat(parameters, request.GET), **route})
+        read = {**_flat(parameters, request.GET), **route}
+        return coerce_flat(parameters, _without(read, owned))
     if request.content_type == "application/json":
-        return {**_json_object(request), **coerce_flat(parameters, route)}
+        return {
+            **_without(_json_object(request), owned),
+            **coerce_flat(parameters, route),
+        }
     fields, uploads = _form(request)
-    return coerce_flat(
-        parameters, {**_flat(parameters, fields), **_uploads(parameters, uploads), **route}
-    )
+    read = {**_flat(parameters, fields), **_uploads(parameters, uploads), **route}
+    return coerce_flat(parameters, _without(read, owned))
+
+
+def _refuse_server_owned(
+    url_kwargs: Mapping[str, Any] | None,
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
+    owned: frozenset[str],
+) -> None:
+    """Refuse every captured kwarg that would fill a name the server answers for, by its captured name.
+
+    Named as the route captured it, so the refusal says which kwarg to drop,
+    whether it fills the name under its own or through a mapping.
+    """
+    filling = sorted(name for name in url_kwargs or {} if _filled_by(name, route_kwargs) in owned)
+    if filling:
+        raise ImproperlyConfigured(
+            f"The route captures {', '.join(filling)}, which server_arguments answers for. "
+            f"Drop each with route_kwargs={dict.fromkeys(filling)!r}, or leave it out of "
+            "server_arguments: the route is the host's, and may not contradict the host's "
+            "own binding."
+        )
+
+
+def _filled_by(
+    name: str, route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None
+) -> str | None:
+    """The parameter the captured kwarg ``name`` fills under ``route_kwargs``, or ``None`` if dropped."""
+    if route_kwargs is None:
+        return name
+    if isinstance(route_kwargs, Mapping):
+        return route_kwargs.get(name, name)
+    return name if name in route_kwargs else None
+
+
+def _without(arguments: Mapping[str, Any], names: frozenset[str]) -> dict[str, Any]:
+    """``arguments`` with every name in ``names`` left out: the ones the server answers for."""
+    return {key: value for key, value in arguments.items() if key not in names}
 
 
 def _flat(parameters: Parameters, source: QueryDict) -> dict[str, Any]:
