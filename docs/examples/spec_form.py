@@ -37,7 +37,7 @@ from django_service_specs import (
 )
 
 from django_spec_html import SpecFormView
-from tests.adapter_app.models import Author, Book, Status
+from tests.adapter_app.models import Author, Book, Edition, Status
 
 
 # --8<-- [start:form]
@@ -288,6 +288,46 @@ discard_drafts_spec = ServiceSpec(
 # --8<-- [end:confirm]
 
 
+# --8<-- [start:refresh]
+class AddEditionForm(forms.Form):
+    # Choosing an author posts the form again, through htmx where it is
+    # loaded, so the books offered below are theirs.
+    author = forms.ModelChoiceField(
+        queryset=Author.objects.all(),
+        widget=forms.Select(
+            attrs={
+                "hx-post": "",
+                "hx-trigger": "change",
+                "hx-target": "closest form",
+                "hx-swap": "outerHTML",
+            }
+        ),
+    )
+    book = forms.ModelChoiceField(queryset=Book.objects.none())
+    number = forms.IntegerField(min_value=1)
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # The books of the author the post names, and none until it names
+        # one: a string from the page's post, the number itself in the form
+        # the Validator binds to the coerced arguments.
+        author = self.data.get(self.add_prefix("author"))
+        if str(author).isdigit():
+            self.fields["book"].queryset = Book.objects.filter(author_id=author)
+
+
+def add_edition(*, data: dict[str, Any]) -> Edition:
+    return Edition.objects.create(book=data["book"], number=data["number"])
+
+
+add_edition_spec = ServiceSpec(
+    service=add_edition,
+    permissions=[IsSignedIn()],
+    validator=FormValidator(AddEditionForm),
+)
+# --8<-- [end:refresh]
+
+
 def books(request: HttpRequest) -> HttpResponse:
     return HttpResponse("The books.")
 
@@ -379,6 +419,19 @@ urlpatterns = [
             success_url=reverse_lazy("books"),
             display_target=True,
             asked_fields=("confirmed",),
+        ),
+    ),
+    path(
+        "editions/new/",
+        SpecFormView.as_view(
+            spec=add_edition_spec,
+            template_name="spec_edition.html",
+            fragment_template_name="spec_edition_form.html",
+            success_url=reverse_lazy("books"),
+            # Only "Add the edition" runs the operation: the author picker
+            # and "Show their books" post the form to re-render it.
+            commit_button="add",
+            success_message="Edition %(number)s added.",
         ),
     ),
     path("branches/<branch>/books/new/", StockBook.as_view()),

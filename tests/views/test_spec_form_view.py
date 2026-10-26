@@ -13,6 +13,7 @@ import dataclasses
 import datetime
 import re
 import tempfile
+import types
 from collections.abc import Callable, Iterator, Mapping
 from decimal import Decimal
 from typing import Annotated, Any
@@ -20,7 +21,9 @@ from typing import Annotated, Any
 import django
 import pytest
 from django import forms
+from django.contrib import messages
 from django.contrib.auth import get_user_model, login
+from django.contrib.messages import get_messages
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.core.exceptions import (
     BadRequest,
@@ -35,6 +38,7 @@ from django.db import connection
 from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.template import TemplateDoesNotExist
+from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.urls import path, reverse_lazy
 from django.utils import timezone, translation
@@ -3690,3 +3694,349 @@ class TestAskedFields:
             "Confirm.asked_fields names 'confirmed', which the server answers for: "
             "nobody posting the form could answer it."
         )
+
+
+def committing(spec: ServiceSpec, **attributes: Any) -> Any:
+    """A page whose post commits only from its ``save`` button, set as a host's subclass sets it."""
+    attributes = {
+        "template_name": TEMPLATE,
+        "success_url": "/done/",
+        "commit_button": "save",
+        **attributes,
+    }
+    return type("Committing", (SpecFormView,), attributes).as_view(spec=spec)
+
+
+def triggered(name: str, **headers: str) -> dict[str, str]:
+    """An htmx request's headers, naming the element it was issued from."""
+    return {**HTMX, "HTTP_HX_TRIGGER_NAME": name, **headers}
+
+
+def never_dispatched(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Every call the view makes to dispatch, which a post that does not commit makes none of."""
+    calls: list[Any] = []
+    monkeypatch.setattr(spec_form_view, "dispatch", lambda *args, **kwargs: calls.append(kwargs))
+    return calls
+
+
+class ShelvedBookForm(forms.Form):
+    """A book by an author: the authors ``form_kwargs`` offers, and the books of the one posted."""
+
+    author = forms.ModelChoiceField(queryset=BookAuthor.objects.none())
+    book = forms.ModelChoiceField(queryset=Book.objects.none())
+
+    def __init__(self, *args: Any, authors: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["author"].queryset = authors
+        chosen = self.data.get(self.add_prefix("author"))
+        if chosen:
+            self.fields["book"].queryset = Book.objects.filter(author_id=chosen)
+
+
+def offered_authors(*, user: Any) -> Mapping[str, Any]:
+    return {"authors": BookAuthor.objects.exclude(name="Hidden")}
+
+
+class TestAPostThatDoesNotCommit:
+    """``commit_button``: a post without that button re-renders its form, and runs nothing."""
+
+    def test_a_page_that_names_no_button_commits_every_post(self, ada: Any) -> None:
+        # The default: whatever the post carries and whoever issued it, as before.
+        spec = entry_spec()
+        response = post(form_view(spec), ada, {"title": "Hi", "refresh": "Refresh"})
+        assert (response.status_code, response.url) == (302, "/done/")
+        response = hx_post(
+            fragmented(spec), ada, {"title": "Hi", "colour": "red"}, triggered("colour")
+        )
+        assert hx_headers(response) == {"HX-Redirect": "/done/"}
+        assert [call["data"]["title"] for call in spec.service.calls] == ["Hi", "Hi"]
+
+    def test_a_post_with_the_button_commits(self, ada: Any) -> None:
+        spec = entry_spec()
+        response = post(committing(spec), ada, {"title": "Hi", "save": "Save"})
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert received(spec)["title"] == "Hi"
+
+    def test_a_post_without_the_button_neither_dispatches_nor_validates(
+        self, ada: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls = never_dispatched(monkeypatch)
+        spec = entry_spec()
+        # A required title left out and a count no integer field reads: both
+        # refused by the form, and neither shown, since nothing was validated.
+        response = post(committing(spec), ada, {"count": "many", "refresh": "Refresh"}).render()
+        assert response.status_code == 200
+        form = response.context_data["form"]
+        assert form.is_bound
+        assert form.errors == {}
+        assert b"errorlist" not in response.content
+        assert REQUIRED.encode() not in response.content
+        assert WHOLE.encode() not in response.content
+        assert b'value="many"' in response.content
+        assert response.context_data["refreshed"] is True
+        assert calls == []
+        assert validated(spec) == 0
+        assert spec.service.calls == []
+
+    def test_an_htmx_post_without_it_is_the_form_fragment_at_200(self, ada: Any) -> None:
+        spec = entry_spec()
+        view = committing(spec, template_name=PAGE, fragment_template_name=FRAGMENT)
+        response = hx_post(view, ada, {"title": "Hi", "refresh": "Refresh"}).render()
+        assert response.status_code == 200
+        assert response.template_name == [FRAGMENT]
+        assert response.context_data["refreshed"] is True
+        assert b'value="Hi"' in response.content
+        assert varied_on(response) >= MODE_HEADERS
+        assert spec.service.calls == []
+
+    def test_a_trigger_naming_another_posted_control_does_not_commit(self, ada: Any) -> None:
+        # The button's name is in the data, put there by an inherited
+        # ``hx-vals`` say, but the request was issued by the colour picker.
+        spec = entry_spec()
+        data = {"title": "Hi", "colour": "red", "save": "Save"}
+        response = hx_post(fragmented(spec, commit_button="save"), ada, data, triggered("colour"))
+        assert response.status_code == 200
+        assert response.context_data["refreshed"] is True
+        assert spec.service.calls == []
+
+    def test_a_trigger_that_is_the_button_itself_commits(self, ada: Any) -> None:
+        # ``<button name="save" hx-post="">``: the header names it, and its value is posted.
+        spec = entry_spec()
+        data = {"title": "Hi", "save": "Save"}
+        response = hx_post(fragmented(spec, commit_button="save"), ada, data, triggered("save"))
+        assert hx_headers(response) == {"HX-Redirect": "/done/"}
+        assert received(spec)["title"] == "Hi"
+
+    def test_a_trigger_naming_the_form_commits(self, ada: Any) -> None:
+        # ``<form name="entry" hx-post="">`` submitted by its button: the
+        # header names the form, which is no key of the post.
+        spec = entry_spec()
+        data = {"title": "Hi", "save": "Save"}
+        response = hx_post(fragmented(spec, commit_button="save"), ada, data, triggered("entry"))
+        assert hx_headers(response) == {"HX-Redirect": "/done/"}
+        assert received(spec)["title"] == "Hi"
+
+    def test_an_encoded_trigger_name_is_read_decoded(self, ada: Any) -> None:
+        # htmx 2 encodes a name the browser refuses as a header, and says so.
+        spec = entry_spec()
+        data = {"title": "Hi", "grüppe": "a", "save": "Save"}
+        headers = triggered("gr%C3%BCppe", HTTP_HX_TRIGGER_NAME_URI_AUTOENCODED="true")
+        response = hx_post(fragmented(spec, commit_button="save"), ada, data, headers)
+        assert response.context_data["refreshed"] is True
+        assert spec.service.calls == []
+
+    def test_an_unencoded_trigger_name_is_read_as_sent(self, ada: Any) -> None:
+        # No flag, so a ``%`` in the name is the name's own.
+        spec = entry_spec()
+        data = {"title": "Hi", "a%41": "x", "save": "Save"}
+        response = hx_post(fragmented(spec, commit_button="save"), ada, data, triggered("a%41"))
+        assert response.context_data["refreshed"] is True
+        assert spec.service.calls == []
+
+    def test_an_encoded_flag_with_no_name_is_no_trigger(self, ada: Any) -> None:
+        spec = entry_spec()
+        headers = {**HTMX, "HTTP_HX_TRIGGER_NAME_URI_AUTOENCODED": "true"}
+        data = {"title": "Hi", "save": "Save"}
+        response = hx_post(fragmented(spec, commit_button="save"), ada, data, headers)
+        assert hx_headers(response) == {"HX-Redirect": "/done/"}
+
+    def test_a_dependent_choice_is_narrowed_by_the_posted_value(self, ada: Any) -> None:
+        le_guin = BookAuthor.objects.create(name="Le Guin")
+        hidden = BookAuthor.objects.create(name="Hidden")
+        earthsea = Book.objects.create(author=le_guin, title="Earthsea", price=Decimal("9.99"))
+        Book.objects.create(author=hidden, title="Elsewhere", price=Decimal("5.00"))
+        spec = ServiceSpec(
+            service=Record(),
+            permissions=OPEN,
+            validator=FormValidator(ShelvedBookForm, form_kwargs=offered_authors),
+        )
+        view = committing(spec)
+        offered = get(view, ada).context_data["form"].fields
+        assert list(offered["book"].queryset) == []
+        refreshed = post(view, ada, {"author": str(le_guin.pk), "refresh": "Show their books"})
+        # Re-rendered, not refused: the book left blank is not called required.
+        assert refreshed.status_code == 200
+        assert refreshed.context_data["form"].errors == {}
+        fields = refreshed.context_data["form"].fields
+        # Narrowed by ``form_kwargs``, as every form the page builds is, and
+        # by the author the post names.
+        assert list(fields["author"].queryset) == [le_guin]
+        assert list(fields["book"].queryset) == [earthsea]
+        assert spec.service.calls == []
+
+    def test_a_refresh_is_the_page_get_renders_with_the_post_in_it(
+        self, ada: Any, note: Note
+    ) -> None:
+        spec = row_spec(affordances=[CLOSED_TODAY])
+        response = post(committing(spec), ada, {"title": "Draft"}, pk=note.pk)
+        assert response.status_code == 200
+        assert response.context_data["target"] == note
+        assert response.context_data["unavailable"] is CLOSED_TODAY
+        assert response.context_data["form"]["title"].value() == "Draft"
+        assert spec.service.calls == []
+
+    def test_a_refresh_is_admitted_as_get_is(self, ada: Any) -> None:
+        # The page is offered to nobody the spec refuses, refreshed or not.
+        spec = entry_spec(permissions=[Refuse()])
+        with pytest.raises(PermissionDenied, match=r"^Only editors may run this\.$"):
+            post(committing(spec), ada, {"title": "Hi"})
+
+    def test_asked_fields_are_held_back_as_get_holds_them(self, ada: Any) -> None:
+        spec = confirm_spec()
+        view = committing(spec, asked_fields=("confirmed",))
+        response = post(view, ada, {"reason": "Tidy", "confirmed": "on"})
+        assert response.status_code == 200
+        assert not shows(response, "confirmed")
+        assert shows(response, "reason")
+        assert spec.service.calls == []
+
+    def test_every_other_render_carries_no_refreshed(self, ada: Any) -> None:
+        view = committing(entry_spec())
+        refused_ = post(view, ada, {"title": "shut", "save": "Save"})
+        assert refused_.status_code == 400
+        assert "refreshed" not in refused_.context_data
+        assert "refreshed" not in get(view, ada).context_data
+
+
+class TestTheCommitButtonIsChecked:
+    @pytest.mark.parametrize("button", [("save",), ""], ids=["a-tuple", "empty"])
+    def test_anything_but_a_button_s_name_is_refused(self, button: Any) -> None:
+        with pytest.raises(ImproperlyConfigured) as raised:
+            committing(entry_spec(), commit_button=button)
+        assert str(raised.value) == (
+            "Committing.commit_button must be None or the name of the submit button whose post "
+            f"commits; got {button!r}."
+        )
+
+    def test_a_field_s_name_is_refused(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as raised:
+            committing(entry_spec(), commit_button="urgent")
+        assert str(raised.value) == (
+            "Committing.commit_button names 'urgent', a field EntryForm declares: a field is "
+            "posted by every submit, so it cannot say which one commits."
+        )
+
+    def test_it_may_be_passed_to_as_view(self, ada: Any) -> None:
+        spec = entry_spec()
+        view = form_view(spec, commit_button="save")
+        assert post(view, ada, {"title": "Hi"}).status_code == 200
+        assert spec.service.calls == []
+
+
+MESSAGES_STACK = [
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+]
+
+
+@pytest.fixture
+def stack(settings: Any) -> Callable[..., Any]:
+    """Post through Django's handler and the messages middleware, as a project serves the page.
+
+    The session is a signed cookie, which needs no table, since the suite's
+    settings install no sessions app. Each call routes one view, at
+    ``/page/``, through a URLconf of its own.
+    """
+    settings.INSTALLED_APPS = [*settings.INSTALLED_APPS, "django.contrib.messages"]
+    settings.MIDDLEWARE = MESSAGES_STACK
+    settings.SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
+
+    def posted(view: Any, user: Any, data: Mapping[str, Any], **headers: str) -> Any:
+        urls = types.ModuleType("one_page_urls")
+        urls.urlpatterns = [path("page/", view), *urlpatterns]  # ty: ignore[unresolved-attribute]
+        settings.ROOT_URLCONF = urls
+        client = Client()
+        client.force_login(user)
+        return client.post("/page/", data, **headers)
+
+    return posted
+
+
+def sent(response: Any) -> list[tuple[int, str]]:
+    """The messages the request stored, by level and text."""
+    return [(each.level, each.message) for each in get_messages(response.wsgi_request)]
+
+
+ADDED = "Added %(title)s."
+
+
+class TestASuccessMessage:
+    def test_a_success_stores_the_message(self, ada: Any, stack: Any) -> None:
+        response = stack(form_view(entry_spec(), success_message=ADDED), ada, {"title": "Hi"})
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert sent(response) == [(messages.SUCCESS, "Added Hi.")]
+
+    def test_each_success_stores_the_message(
+        self, ada: Any, stack: Any, result_fragment: str
+    ) -> None:
+        # The fragment's two answers: ``HX-Redirect``, and the result in place.
+        redirected = stack(
+            fragmented(entry_spec(), success_message=ADDED), ada, {"title": "Hi"}, **HTMX
+        )
+        assert hx_headers(redirected) == {"HX-Redirect": "/done/"}
+        assert sent(redirected) == [(messages.SUCCESS, "Added Hi.")]
+        in_place = fragmented(
+            entry_spec(returns=7),
+            template_name=None,
+            fragment_template_name=result_fragment,
+            success_message=ADDED,
+        )
+        answered = stack(in_place, ada, {"title": "Hi"}, **HTMX)
+        assert hx_headers(answered) == {"HX-Trigger": "spec-succeeded"}
+        assert sent(answered) == [(messages.SUCCESS, "Added Hi.")]
+
+    @pytest.mark.parametrize(
+        ("view", "data", "status"),
+        [
+            (lambda: form_view(entry_spec(), success_message=ADDED), {"title": "shut"}, 400),
+            (
+                lambda: confirm_view(confirm_spec(), success_message=ADDED),
+                {"reason": "Tidy"},
+                422,
+            ),
+            (lambda: committing(entry_spec(), success_message=ADDED), {"title": "Hi"}, 200),
+        ],
+        ids=["a-refusal", "a-confirmation", "a-post-that-does-not-commit"],
+    )
+    def test_nothing_else_sends_one(
+        self, ada: Any, stack: Any, view: Any, data: Mapping[str, Any], status: int
+    ) -> None:
+        response = stack(view(), ada, data)
+        assert response.status_code == status
+        assert sent(response) == []
+
+    @pytest.mark.parametrize("app", [False, True], ids=["no-app", "the-app-alone"])
+    def test_without_the_middleware_nothing_is_raised(
+        self, ada: Any, settings: Any, app: bool
+    ) -> None:
+        # Django's ``messages.success`` raises ``MessageFailure`` here unless
+        # told to fail silently: the app alone puts no store on the request.
+        if app:
+            settings.INSTALLED_APPS = [*settings.INSTALLED_APPS, "django.contrib.messages"]
+        spec = entry_spec()
+        response = post(form_view(spec, success_message=ADDED), ada, {"title": "Hi"})
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert received(spec)["title"] == "Hi"
+
+    def test_it_is_formatted_with_the_cleaned_data(self, ada: Any, stack: Any) -> None:
+        # ``%d`` and ``True``: the form's cleaned values, not the strings posted.
+        message = "%(title)s, %(count)d, %(urgent)s."
+        data = {"title": "Hi", "count": "3", "urgent": "on"}
+        response = stack(form_view(entry_spec(), success_message=message), ada, data)
+        assert sent(response) == [(messages.SUCCESS, "Hi, 3, True.")]
+
+    def test_an_override_reads_the_result(self, ada: Any, stack: Any) -> None:
+        class SavedAsNumber(SpecFormView):
+            def get_success_message(self, result: DispatchResult) -> str:
+                return f"Saved as number {result.value}."
+
+        view = SavedAsNumber.as_view(
+            spec=entry_spec(returns=7), template_name=TEMPLATE, success_url="/done/"
+        )
+        assert sent(stack(view, ada, {"title": "Hi"})) == [(messages.SUCCESS, "Saved as number 7.")]
+
+    def test_an_empty_message_sends_nothing(self, ada: Any, stack: Any) -> None:
+        response = stack(form_view(entry_spec()), ada, {"title": "Hi"})
+        assert response.status_code == 302
+        assert sent(response) == []

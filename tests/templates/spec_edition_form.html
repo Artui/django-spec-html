@@ -1,0 +1,5 @@
+<form method="post" hx-post="" hx-swap="outerHTML">{% csrf_token %}
+  {{ form }}
+  <button name="add">Add the edition</button>
+  <button name="refresh" formnovalidate>Show their books</button>
+</form>
