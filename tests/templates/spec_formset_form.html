@@ -1,0 +1,6 @@
+<form method="post" hx-post="" hx-swap="outerHTML">
+  {% csrf_token %}{{ formset.management_form }}{{ formset.non_form_errors }}
+  {% for form in formset %}<fieldset>{{ form }}</fieldset>{% endfor %}
+  <button name="add">Add a row</button>
+  <button name="save">Save</button>
+</form>
