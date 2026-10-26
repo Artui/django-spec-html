@@ -23,6 +23,9 @@ from django.forms.utils import ErrorDict
 from django.forms.widgets import FILE_INPUT_CONTRADICTION
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBase, HttpResponseRedirect
 from django.shortcuts import resolve_url
+from django.template import TemplateDoesNotExist
+from django.template.loader import select_template
+from django.utils.cache import patch_vary_headers
 from django.utils.decorators import classonlymethod
 from django.views import View
 from django.views.generic.base import ContextMixin, TemplateResponseMixin
@@ -53,7 +56,8 @@ from django_service_specs import (
 from django_spec_html.http.add_argument_errors import add_argument_errors
 from django_spec_html.http.request_principal import request_principal
 from django_spec_html.http.route_arguments import route_arguments
-from django_spec_html.http.utils import field_map, refusal_status
+from django_spec_html.http.utils import field_map, refusal_outcome, refusal_status
+from django_spec_html.types.outcome import Outcome
 
 _TYPED: Final = (forms.IntegerField, forms.DateField, forms.DateTimeField)
 """The fields whose input formats are wider than the wire form the shape check reads.
@@ -63,6 +67,22 @@ row covers all three numbers. Each row is held by its own test:
 test_an_integer_the_form_reads_is_not_refused,
 test_dates_in_the_forms_input_formats_are_read_as_the_form_reads_them (both
 date rows) and test_localized_numbers_are_read_as_the_form_reads_them."""
+
+
+_MODE_HEADERS: Final = ("HX-Request", "HX-Boosted", "HX-History-Restore-Request")
+"""The headers ``wants_fragment`` reads, and so the ones every answer varies on.
+
+One URL answers two bodies, so a cache keyed on fewer would hand a fragment
+to a page load, or to the history restore that needs the whole page back."""
+
+_SPEC_FORM: Final = "spec-form"
+"""The fragment a page's form is, addressed as ``<template_name>#spec-form`` by default."""
+
+_SPEC_RESULT: Final = "spec-result"
+"""The fragment a success is answered with in place, where the fragment template defines one."""
+
+_SUCCEEDED: Final = "spec-succeeded"
+"""The event ``HX-Trigger`` names on a success answered in place, for the rest of the page."""
 
 
 class SpecFormView(TemplateResponseMixin, ContextMixin, View):
@@ -163,10 +183,29 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
       ``PermissionDenied``, and a not-found result or ``ServiceNotFound``
       raises ``Http404``, for the host's own 403 and 404 pages.
 
-    The view reads no htmx header, so an htmx request is answered as any
-    other post: a success is the redirect, which the request follows, and a
-    refusal is the whole page at its 4xx status, which htmx does not swap by
-    default.
+    **Two wrappers, one outcome.** The view decides what a request ends in
+    once - a success, or the refusal's ``Outcome`` - and only then reads
+    who asked, to choose how to answer it. Every request gets the page above
+    unless ``wants_fragment`` says htmx asked for less, and then the same
+    outcome is answered as a fragment, at the same URL:
+
+    - **The form** renders ``get_fragment_template_names()`` where the page
+      renders ``template_name``, from the same context: on GET, and on every
+      refusal the page re-renders, at 200 rather than the page's 4xx, since
+      htmx swaps no 4xx by default. The default address is
+      ``<template_name>#spec-form``, a ``{% partialdef %}`` inside the page's
+      own template, which Django 6.0 resolves (below it,
+      django-template-partials does). A template with no fragment at the
+      address is Django's ``TemplateDoesNotExist`` naming it, never the page,
+      which swapped into a form's target would nest a second layout inside it.
+    - **A success** is ``fragment_success(result)``: ``HX-Redirect`` to
+      ``get_success_url(result)``, or the ``spec-result`` fragment in place.
+    - **A denial** is raised in both modes alike, for the host's handlers.
+
+    Both wrappers set ``Vary`` on the three headers the choice reads. No
+    htmx header reaches dispatch: the arguments are the form's fields and the
+    route's kwargs whichever wrapper answers, so a spec cannot tell the two
+    apart.
 
     **A re-rendered form carries the refusal and nothing else**: the page says
     what dispatch decided. The page's own form is never validated: its
@@ -192,10 +231,14 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             ``get_success_url``: a path, a ``reverse_lazy``, or a URL name.
         pool_seeds: The seeds the spec's callables are resolved with.
         unknown_arguments: What becomes of an argument no parameter declares.
+        fragment_template_name: The template an htmx request's form is
+            answered with, for a fragment in another file or under another
+            name; ``None``, the default, addresses ``<template_name>#spec-form``.
     """
 
     spec: ServiceSpec | None = None
     success_url: Any = None
+    fragment_template_name: str | None = None
     pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT
 
@@ -208,6 +251,17 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         _check_configuration(cls, initkwargs)
         return view
 
+    def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
+        """Django's ``dispatch``, every answer varying on the headers the wrapper is chosen by.
+
+        Here rather than in either wrapper, so a 405 and a success redirect
+        vary too. A denial is raised, so the host's 403 or 404 page sets its
+        own headers.
+        """
+        response = super().dispatch(request, *args, **kwargs)
+        patch_vary_headers(response, _MODE_HEADERS)
+        return response
+
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         """The page, with an unbound form showing the target row, for a principal admitted to it."""
         spec = self.served_spec()
@@ -218,7 +272,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             # No post to place it on beside the form's: the route names a
             # target its reads refuse, which a post answers at 400 too.
             raise BadRequest(str(refused.detail)) from refused
-        return self.render_to_response(self.get_context_data(form=_page_form(spec, target)))
+        return self._rendered(self.get_context_data(form=_page_form(spec, target)), status=200)
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         """Dispatch the posted form: a redirect on success, the form re-rendered on a refusal."""
@@ -256,18 +310,21 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
                 target=target,
             )
         except (DispatchError, ServiceError) as refused:
-            # At the status ``error_response`` answers it with, whoever
-            # refused: a denial raised by the operation, the target's checks
-            # having answered before dispatch, is the host's 403 or 404 page.
-            # Both statuses are held by
-            # test_the_pages_outcome_table_is_the_one_shipped.
-            status = refusal_status(refused)
-            if status in (403, 404):
+            # The outcome is decided here, once, from the one map, and the
+            # wrapper is chosen only after it. A denial raised by the
+            # operation, the target's checks having answered before dispatch,
+            # is the host's 403 or 404 page in either mode. Every row's
+            # answer is held by test_the_pages_outcome_table_is_the_one_shipped.
+            if refusal_outcome(refused) is Outcome.DENIED:
                 raise _denial(refused) from refused
-            return self._render_refused(form, _refusal_tree(refused), status=status)
+            return self._render_refused(
+                form, _refusal_tree(refused), status=refusal_status(refused)
+            )
         # Never ``not_found``: the target was found before dispatch, which
         # looks nothing up when handed it, and where the route's value was
         # refused the shape check refuses it again before any lookup.
+        if self.wants_fragment(request):
+            return self.fragment_success(result)
         return HttpResponseRedirect(self.get_success_url(result))
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
@@ -281,6 +338,80 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         Override it to read ``result``, such as the row a create returned.
         """
         return resolve_url(self.success_url)
+
+    def wants_fragment(self, request: HttpRequest) -> bool:
+        """Whether ``request`` is answered with a fragment rather than the page.
+
+        An htmx request is, unless it is boosted or a history restore: a
+        boosted link or form swaps the whole body, and a history restore after
+        a cache miss needs the whole page back, so both get the page. Read from
+        django-htmx's ``request.htmx`` where its middleware set it, and from
+        the three headers where it did not, so a host with django-htmx and one
+        without get the same answer. Override it for another rule; the headers
+        every answer varies on stay these three.
+
+        Each condition, on each path, is held by its own row:
+        ``test_read_from_the_headers`` (``htmx-false``, ``boosted``,
+        ``history-restore``) and ``test_read_from_django_htmx_where_its_middleware_ran``
+        (``not-htmx``, ``boosted``, ``history-restore``), whose headers say
+        the opposite of the details, so reading the wrong one fails it.
+        """
+        details = getattr(request, "htmx", None)
+        if details is not None:
+            return bool(details) and not details.boosted and not details.history_restore_request
+        headers = request.headers
+        return (
+            headers.get("HX-Request") == "true"
+            and headers.get("HX-Boosted") != "true"
+            and headers.get("HX-History-Restore-Request") != "true"
+        )
+
+    def get_fragment_template_names(self) -> list[str]:
+        """The templates a fragment's form renders: ``fragment_template_name``, or each page's ``#spec-form``.
+
+        The default addresses a ``{% partialdef spec-form %}`` inside the
+        page's template, so turning htmx on is a template change. The
+        ``#name`` address is Django 6.0's, or django-template-partials' below
+        it; without either, the default is a ``TemplateDoesNotExist`` naming
+        it.
+        """
+        if self.fragment_template_name is not None:
+            return [self.fragment_template_name]
+        return [_address(name, _SPEC_FORM) for name in self.get_template_names()]
+
+    def fragment_success(self, result: DispatchResult) -> HttpResponse:
+        """A success, answered to the htmx request that posted it.
+
+        Where the fragment template defines a ``spec-result`` fragment, that
+        is rendered in place at 200, from the page's context with ``result``
+        in it, and ``HX-Trigger`` names ``spec-succeeded`` for the rest of the
+        page to listen for. Otherwise ``HX-Redirect`` to
+        ``get_success_url(result)``, at 200 and never a 302: an XHR follows a
+        302 itself and would swap the next page into the form.
+
+        The answer passes back through the host's middleware like any other,
+        so a cookie it sets for the request - the session a sign-in rotates,
+        a message - is set on it. Override it to answer another way, with
+        ``HX-Location``, say, or a 204 carrying ``HX-Trigger``.
+        """
+        try:
+            template = select_template(
+                [_address(name, _SPEC_RESULT) for name in self.get_fragment_template_names()],
+                using=self.template_engine,
+            )
+        except TemplateDoesNotExist:
+            response = HttpResponse()
+            response["HX-Redirect"] = self.get_success_url(result)
+            return response
+        response = self.response_class(
+            request=self.request,
+            template=template,
+            context=self.get_context_data(result=result),
+            using=self.template_engine,
+            content_type=self.content_type,
+        )
+        response["HX-Trigger"] = _SUCCEEDED
+        return response
 
     def _render_refused(
         self, form: forms.BaseForm, detail: Mapping[Any, Any], *, status: int
@@ -304,7 +435,24 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         bound._errors = ErrorDict(renderer=form.renderer)
         bound.cleaned_data = {}
         add_argument_errors(form, detail)
-        return self.render_to_response(self.get_context_data(form=form), status=status)
+        return self._rendered(self.get_context_data(form=form), status=status)
+
+    def _rendered(self, context: dict[str, Any], *, status: int) -> HttpResponse:
+        """``context`` as the page at ``status``, or as the form's fragment at 200.
+
+        A fragment answers every outcome it renders at 200, since htmx swaps
+        no 4xx by default and a refusal answered at one would land nowhere;
+        the outcome is in the body, and in the one map.
+        """
+        if self.wants_fragment(self.request):
+            return self.response_class(
+                request=self.request,
+                template=self.get_fragment_template_names(),
+                context=context,
+                using=self.template_engine,
+                content_type=self.content_type,
+            )
+        return self.render_to_response(context, status=status)
 
     def served_spec(self) -> ServiceSpec:
         """``spec``, which ``as_view`` refused to build a view without."""
@@ -345,6 +493,11 @@ def _check_configuration(cls: type[SpecFormView], initkwargs: Mapping[str, Any])
             f"{label}.as_view() needs a success_url, where a successful post redirects, "
             "or a get_success_url that returns one."
         )
+
+
+def _address(template_name: str, fragment: str) -> str:
+    """``fragment`` inside the file ``template_name`` names, whatever fragment it names already."""
+    return f"{template_name.partition('#')[0]}#{fragment}"
 
 
 def _form_class(spec: ServiceSpec) -> type[forms.BaseForm]:

@@ -1,7 +1,8 @@
-"""The page example, posted to as a browser posts.
+"""The page example, posted to as a browser posts, and as htmx posts.
 
 ``docs/pages.md`` includes its spec and URLconf from ``docs/examples/spec_form.py``
-and its template from the suite's own. Each test resolves a path against that
+and its template from the suite's own, and its htmx template and 403 handler
+from ``tests/templates/spec_form_htmx.html`` and ``docs/examples/htmx.py``. Each test resolves a path against that
 URLconf, as Django's handler would, and posts what the rendered page sends -
 the CSRF token and the named submit button included - so the page cannot
 describe a reading, a redirect or a refusal the view does not make. Where the
@@ -12,15 +13,18 @@ from __future__ import annotations
 
 import datetime
 import re
+from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import django
 import pytest
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import PermissionDenied
+from django.core.handlers.exception import response_for_exception
 from django.http import Http404
 from django.middleware.csrf import CsrfViewMiddleware
 from django.test import RequestFactory
@@ -32,6 +36,7 @@ from django_service_specs import (
     FormValidator,
     InvalidArguments,
     NotPermitted,
+    PermissionCheck,
     PrincipalUnavailable,
     ServiceConflict,
     ServiceError,
@@ -42,6 +47,7 @@ from django_service_specs import (
 )
 
 from django_spec_html import SpecFormView, UnsupportedMediaType
+from django_spec_html.http.utils import refusal_outcome
 from tests.adapter_app.models import Author, Book, Status
 
 pytestmark = pytest.mark.django_db
@@ -50,6 +56,8 @@ ROOT = Path(__file__).resolve().parents[2]
 URLCONF = "docs.examples.spec_form"
 RESOLVER = get_resolver(URLCONF)
 FACTORY = RequestFactory()
+HTMX_URLCONF = "docs.examples.htmx"
+HTMX = {"HTTP_HX_REQUEST": "true"}
 NEEDS_A_DATE = "A published book needs its publication date."
 
 
@@ -190,21 +198,23 @@ class Anything(forms.Form):
     note = forms.CharField(required=False)
 
 
-def _outcome_table() -> dict[str, str]:
-    """The page's outcome table, as ``{class name: answer}``."""
+def _outcome_table() -> dict[str, tuple[str, str, str]]:
+    """The page's outcome table, as ``{class name: (outcome, page, fragment)}``."""
     page = (ROOT / "docs" / "pages.md").read_text()
-    table = page[page.index("| Refusal | The form view answers |") :]
-    answers: dict[str, str] = {}
+    table = page[page.index("| Refusal | Outcome | The page answers | The fragment answers |") :]
+    answers: dict[str, tuple[str, str, str]] = {}
     for line in table.splitlines()[2:]:
         if not line.startswith("|"):
             break
-        refusals, answer = line.split("|")[1:3]
+        refusals, outcome, on_the_page, as_a_fragment = (
+            cell.strip() for cell in line.split("|")[1:5]
+        )
         for name in re.findall(r"`(\w+)`", refusals):
-            answers[name] = answer.strip()
+            answers[name] = (outcome, on_the_page, as_a_fragment)
     return answers
 
 
-def _answered(exc: Exception, ada: Any) -> str:
+def _answer(exc: Exception, ada: Any, headers: Mapping[str, str]) -> str:
     """What the view does with ``exc`` raised by the service, as the table words it."""
 
     def service(**pool: Any) -> None:
@@ -213,8 +223,14 @@ def _answered(exc: Exception, ada: Any) -> str:
     spec = ServiceSpec(
         service=service, permissions=[Unrestricted()], validator=FormValidator(Anything)
     )
-    view = SpecFormView.as_view(spec=spec, template_name="spec_form.html", success_url="/")
-    request = FACTORY.post("/", data={})
+    # A fragment in a file of its own, so the column is held on every Django.
+    view = SpecFormView.as_view(
+        spec=spec,
+        template_name="spec_form.html",
+        fragment_template_name="spec_fragment.html",
+        success_url="/",
+    )
+    request = FACTORY.post("/", data={}, **headers)
     request.user = ada
     try:
         response = view(request)
@@ -222,14 +238,15 @@ def _answered(exc: Exception, ada: Any) -> str:
         return "`PermissionDenied`"
     except Http404:
         return "`Http404`"
-    return f"{response.status_code}, the form re-rendered"
+    shown = "the form fragment" if response.template_name == ["spec_fragment.html"] else "the form"
+    return f"{response.status_code}, {shown} re-rendered"
 
 
 def test_the_pages_outcome_table_is_the_one_shipped(ada: Any) -> None:
     # The service raises each, after a form every post is valid for, so every
     # refusal reaches the view the same way and each row is read against what
-    # the view does with it.
-    examples: list[Exception] = [
+    # the view does with it, as a page and as a fragment.
+    examples: list[Any] = [
         InvalidArguments({}),
         ServiceValidationError("x"),
         NotPermitted(),
@@ -242,4 +259,108 @@ def test_the_pages_outcome_table_is_the_one_shipped(ada: Any) -> None:
         UnsupportedMediaType(),
         DispatchError(),
     ]
-    assert _outcome_table() == {type(exc).__name__: _answered(exc, ada) for exc in examples}
+    assert _outcome_table() == {
+        type(exc).__name__: (
+            refusal_outcome(exc).value,
+            _answer(exc, ada, {}),
+            _answer(exc, ada, HTMX),
+        )
+        for exc in examples
+    }
+
+
+class TestHandler403:
+    """The host's 403 handler from the page, reached as Django's handler reaches it."""
+
+    @pytest.fixture(autouse=True)
+    def urlconf(self, settings: Any) -> None:
+        settings.ROOT_URLCONF = HTMX_URLCONF
+
+    @staticmethod
+    def refused(request: Any, user: Any) -> Any:
+        # A spec refusing the principal, so the view raises the PermissionDenied
+        # the handler then answers, as Django's handler would hand it over.
+        request.user = AnonymousUser() if user is None else user
+        try:
+            SpecFormView.as_view(
+                spec=ServiceSpec(
+                    service=lambda **pool: None,
+                    permissions=[NeverPermitted()],
+                    validator=FormValidator(Anything),
+                ),
+                template_name="spec_form.html",
+                success_url="/",
+            )(request)
+        except PermissionDenied as refused:
+            return response_for_exception(request, refused)
+        raise AssertionError("the spec admitted the request")
+
+    def test_a_browser_gets_the_hosts_403_page(self, ada: Any) -> None:
+        response = self.refused(FACTORY.post("/books/new/"), ada)
+        assert response.status_code == 403
+        assert not [name for name in response.headers if name.lower().startswith("hx-")]
+
+    def test_anonymous_htmx_is_sent_to_sign_in_and_back(self) -> None:
+        here = "http://testserver/books/new/"
+        request = FACTORY.post("/books/new/", HTTP_HX_CURRENT_URL=here, **HTMX)
+        response = self.refused(request, None)
+        assert response.status_code == 403
+        assert response["HX-Redirect"] == "/accounts/login/?next=http%3A//testserver/books/new/"
+
+    def test_a_signed_in_htmx_request_reloads_the_page(self, ada: Any) -> None:
+        response = self.refused(FACTORY.post("/books/new/", **HTMX), ada)
+        assert response.status_code == 403
+        assert response["HX-Refresh"] == "true"
+        assert "HX-Redirect" not in response
+
+
+class NeverPermitted(PermissionCheck):
+    message = "Not for you."
+
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        return False
+
+
+@pytest.mark.skipif(django.VERSION < (6, 0), reason="the #name address is Django 6.0's")
+class TestTurningHtmxOn:
+    """The page's own template with its form as a ``spec-form`` fragment, and a ``spec-result``."""
+
+    @pytest.fixture(autouse=True)
+    def urlconf(self, settings: Any) -> None:
+        settings.ROOT_URLCONF = HTMX_URLCONF
+
+    @staticmethod
+    def serve(request: Any, user: Any) -> Any:
+        request.user = user
+        match = get_resolver(HTMX_URLCONF).resolve(request.path_info)
+        return match.func(request, *match.args, **match.kwargs)
+
+    def test_a_browser_gets_the_whole_page(self, ada: Any) -> None:
+        response = self.serve(FACTORY.get("/books/new/"), ada).render()
+        assert b"<h1>New book</h1>" in response.content
+        assert b'hx-post="/books/new/"' in response.content
+
+    def test_htmx_gets_the_form_alone(self, ada: Any) -> None:
+        response = self.serve(FACTORY.get("/books/new/", **HTMX), ada).render()
+        assert response.status_code == 200
+        assert response.content.lstrip().startswith(b"<form")
+        assert b"<h1>" not in response.content
+
+    def test_a_refused_post_is_the_form_alone_at_200(self, ada: Any, author: Author) -> None:
+        data = posted(author, status=Status.PUBLISHED)
+        response = self.serve(FACTORY.post("/books/new/", data=data, **HTMX), ada).render()
+        assert response.status_code == 200
+        assert response.content.lstrip().startswith(b"<form")
+        assert response.content.count(NEEDS_A_DATE.encode()) == 1
+
+    def test_a_success_is_the_result_in_place(self, ada: Any, author: Author) -> None:
+        response = self.serve(FACTORY.post("/books/new/", data=posted(author), **HTMX), ada)
+        response.render()
+        assert response.status_code == 200
+        assert response["HX-Trigger"] == "spec-succeeded"
+        assert response.content.strip() == b'<p id="saved">Added The Dispossessed.</p>'
+        assert Book.objects.get().title == "The Dispossessed"
+
+    def test_a_browser_s_success_is_still_the_redirect(self, ada: Any, author: Author) -> None:
+        response = self.serve(FACTORY.post("/books/new/", data=posted(author)), ada)
+        assert (response.status_code, response.url) == (302, "/books/")
