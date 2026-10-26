@@ -12,7 +12,7 @@ from __future__ import annotations
 import datetime
 import re
 import tempfile
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from decimal import Decimal
 from typing import Any
 
@@ -29,6 +29,7 @@ from django.core.exceptions import (
 )
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.validators import MaxValueValidator
 from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.template import TemplateDoesNotExist
@@ -1826,12 +1827,25 @@ class TestThePagesPoolSeeds:
         assert headed(view.as_view(), ada, "POST", {"title": "Hi"}).status_code == 302
         assert check.tenants == ["acme", "acme"]
 
-    def test_the_class_level_check_is_asked_with_no_seed(self, ada: Any) -> None:
-        # The page asks it before anything else and hands it none, its own
-        # ``pool_seeds`` included; the JSON views hand it the call's.
-        view = form_view(entry_spec(permissions=[SeesTenant()]), pool_seeds=TENANT_SEEDS)
-        with pytest.raises(TypeError, match="missing 1 required keyword-only argument: 'tenant'"):
-            get(view, ada)
+    @pytest.mark.parametrize(
+        ("attributes", "tenant"),
+        [
+            ({"pool_seeds": TENANT_SEEDS}, "tenant-of-ada"),
+            ({"get_pool_seeds": tenant_from_the_header}, "acme"),
+        ],
+        ids=["pool_seeds", "get_pool_seeds"],
+    )
+    def test_the_class_level_check_is_asked_with_the_seed_it_names(
+        self, ada: Any, attributes: dict[str, Any], tenant: str
+    ) -> None:
+        # Asked before anything else, with the seeds the request's call is
+        # resolved with, on GET and on POST; the post's grant hands dispatch
+        # the check already made, so it is asked once per request.
+        check = SeesTenant()
+        view = paged(entry_spec(permissions=[check]), **attributes).as_view()
+        assert headed(view, ada).status_code == 200
+        assert headed(view, ada, "POST", {"title": "Hi"}).status_code == 302
+        assert check.tenants == [tenant, tenant]
 
     def test_the_hook_is_asked_once_per_request(self, ada: Any, note: Note) -> None:
         asked: list[Any] = []
@@ -2268,3 +2282,168 @@ class TestTheRefusalsCode:
         response = post(form_view(spec), ada, {"title": "shut" if exc is None else "Hi"})
         assert response.status_code in (400, 409, 422)
         assert "code" not in response.context_data
+
+
+class OwnersNoteForm(forms.ModelForm):
+    """A note's title, and an assignee among the users its constructor is told to offer."""
+
+    assignee = forms.ModelChoiceField(queryset=get_user_model().objects.none(), required=False)
+
+    class Meta:
+        model = Note
+        fields = ["title"]
+
+    def __init__(self, *args: Any, owner: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["assignee"].queryset = get_user_model().objects.filter(pk=owner.pk)
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        if cleaned.get("title") == "shut":
+            raise forms.ValidationError(CLOSED)
+        return cleaned
+
+
+class OwnersEntryForm(EntryForm):
+    """``EntryForm``, its ``count`` capped by a keyword only its constructor is handed."""
+
+    def __init__(self, *args: Any, cap: int, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["count"].max_value = cap
+        self.fields["count"].validators.append(MaxValueValidator(cap))
+
+
+class Keywords:
+    """A ``form_kwargs`` recording what each call is handed, the call's context by identity.
+
+    It names a seed, so the view must resolve it, and ``instance`` with a
+    default, so a create, whose pool has none, is asked too.
+    """
+
+    def __init__(self, returns: Callable[[Any], Mapping[str, Any]]) -> None:
+        self.returns = returns
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(
+        self, *, user: Any, tenant: Any, call_context: Any, instance: Any = None
+    ) -> Mapping[str, Any]:
+        self.calls.append(
+            {"user": user, "tenant": tenant, "instance": instance, "context": call_context}
+        )
+        return self.returns(user)
+
+
+def capped(user: Any) -> Mapping[str, Any]:
+    return {"cap": 3}
+
+
+def owned(user: Any) -> Mapping[str, Any]:
+    return {"owner": user}
+
+
+class ContextService:
+    """A service declaring the call's context by name, recording the very dict it is handed."""
+
+    def __init__(self) -> None:
+        self.contexts: list[Any] = []
+
+    def __call__(self, *, call_context: Any) -> None:
+        self.contexts.append(call_context)
+
+
+def keyed_entry_spec(keywords: Keywords, *, row: bool) -> ServiceSpec:
+    """``entry_spec``, or ``row_spec``, validated by ``OwnersEntryForm`` through ``keywords``."""
+    validator = FormValidator(OwnersEntryForm, form_kwargs=keywords)
+    return row_spec(validator=validator) if row else entry_spec(validator=validator)
+
+
+def keyed_note_spec(keywords: Keywords, service: Any = None) -> ServiceSpec:
+    """An update of the note the route names, validated by ``OwnersNoteForm`` through ``keywords``."""
+    return ServiceSpec(
+        service=service or Record(),
+        permissions=OPEN,
+        validator=FormValidator(OwnersNoteForm, form_kwargs=keywords),
+        instance_selector_spec=SelectorSpec(
+            kind=SelectorKind.RETRIEVE, selector=note_by_pk, reads=PK
+        ),
+    )
+
+
+class TestTheFormsKeywords:
+    """The page's form is built with what the Validator's ``form_kwargs`` answers, as dispatch's is."""
+
+    @pytest.mark.parametrize("row", [False, True], ids=["a-create", "a-plain-form-on-a-row"])
+    def test_a_form_whose_init_needs_a_keyword_is_served(
+        self, ada: Any, note: Note, row: bool
+    ) -> None:
+        view = form_view(keyed_entry_spec(Keywords(capped), row=row), pool_seeds=TENANT_SEEDS)
+        route = {"pk": note.pk} if row else {}
+        page = get(view, ada, **route)
+        assert page.status_code == 200
+        assert page.context_data["form"].fields["count"].max_value == 3
+        # The cap only the keyword sets refuses the post, once, in its words.
+        refusal = post(view, ada, {"title": "Hi", "count": "4"}, **route)
+        assert (refusal.status_code, refused(refusal)) == (
+            400,
+            {"count": ["Ensure this value is less than or equal to 3."]},
+        )
+        assert post(view, ada, {"title": "Hi", "count": "2"}, **route).status_code == 302
+
+    def test_a_model_form_whose_init_needs_a_keyword_is_served(self, ada: Any, note: Note) -> None:
+        other = make_user("grace")
+        view = form_view(keyed_note_spec(Keywords(owned)), pool_seeds=TENANT_SEEDS)
+        page = get(view, ada, pk=note.pk)
+        assert page.status_code == 200
+        assert list(page.context_data["form"].fields["assignee"].queryset) == [ada]
+        refusal = post(view, ada, {"title": "Hi", "assignee": other.pk}, pk=note.pk)
+        assert refusal.status_code == 400
+        assert list(refused(refusal)) == ["assignee"]
+        ok = post(view, ada, {"title": "Hi", "assignee": ada.pk}, pk=note.pk)
+        assert ok.status_code == 302
+
+    def test_the_page_and_the_validator_are_handed_the_same_keywords(
+        self, ada: Any, note: Note
+    ) -> None:
+        keywords = Keywords(owned)
+        service = ContextService()
+        view = form_view(keyed_note_spec(keywords, service), pool_seeds=TENANT_SEEDS)
+        page = get(view, ada, pk=note.pk)
+        # A post the Validator's clean() refuses, then one it takes: each asks
+        # ``form_kwargs`` twice, the page's form first and the Validator's after.
+        assert post(view, ada, {"title": "shut"}, pk=note.pk).status_code == 400
+        assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
+        calls = keywords.calls
+        assert len(calls) == 5
+        assert {(each["user"], each["tenant"], each["instance"]) for each in calls} == {
+            (ada, "tenant-of-ada", note)
+        }
+        # The row itself on both sides, never the copy the page's ModelForm edits.
+        assert calls[1]["instance"] is calls[2]["instance"]
+        assert calls[3]["instance"] is calls[4]["instance"]
+        assert page.context_data["form"].instance is not calls[0]["instance"]
+        # One call context per request, the one dispatch is handed too.
+        assert calls[1]["context"] is calls[2]["context"]
+        assert calls[3]["context"] is calls[4]["context"] is service.contexts[0]
+        assert calls[1]["context"] is not calls[3]["context"]
+
+    def test_a_post_whose_route_is_refused_is_built_as_no_row(self, ada: Any, note: Note) -> None:
+        # The target is never found, so the page's form is asked about none,
+        # rather than the marker of a target not yet looked for.
+        keywords = Keywords(owned)
+        view = form_view(keyed_note_spec(keywords), pool_seeds=TENANT_SEEDS)
+        response = post(view, ada, {"title": "Hi"}, pk="abc")
+        assert (response.status_code, refused(response)) == (400, {"__all__": [f"pk: {WHOLE}"]})
+        assert [each["instance"] for each in keywords.calls] == [None]
+
+    def test_an_initial_form_kwargs_answers_sits_under_the_row_s_values(
+        self, ada: Any, note: Note
+    ) -> None:
+        # A plain form on a row takes the row's values as its ``initial``, so
+        # one ``form_kwargs`` answers too is merged under them rather than
+        # passed twice: the disabled field the row never fills keeps it.
+        def initial(user: Any) -> Mapping[str, Any]:
+            return {"cap": 3, "initial": {"code": "K-9", "title": "Not the row's"}}
+
+        view = form_view(keyed_entry_spec(Keywords(initial), row=True), pool_seeds=TENANT_SEEDS)
+        page = get(view, ada, pk=note.pk)
+        assert page.context_data["form"].initial == {"code": "K-9", "title": "One"}

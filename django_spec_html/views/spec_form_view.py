@@ -64,6 +64,7 @@ from django_service_specs import (
     coerce_flat,
     dispatch,
     enforce_affordances,
+    form_keywords,
     resolve_target,
     unmet_operation_affordance,
 )
@@ -237,13 +238,24 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     ``SpecView``**'s**, checked by the same code in ``http/utils.py``:
     ``route_kwargs`` says which URL kwargs fill which parameters;
     ``get_pool_seeds(request)``, asked once per request, answers the seeds
-    the target's lookup and its object-level or scope check, the affordances
-    and dispatch are handed; and ``get_server_arguments(request)`` answers the binding, laid
-    over the route's arguments before the target is found and over the
-    post's before dispatch. A field of the page's form the binding binds
-    renders disabled with the server's value, and one it withholds disabled
-    and empty, so the post never reads it. The class-level check alone is
-    asked with no seed, where ``SpecView`` hands it the call's.
+    the class-level check, the target's lookup and its object-level or scope
+    check, the form's ``form_kwargs``, the affordances and dispatch are
+    handed, each resolving only the seeds it names; and
+    ``get_server_arguments(request)`` answers the binding, laid over the
+    route's arguments before the target is found and over the post's before
+    dispatch. A field of the page's form the binding binds renders disabled
+    with the server's value, and one it withholds disabled and empty, so the
+    post never reads it. **A named seed is resolved again at each step that
+    names it**, since a ``Grant`` carries no values: a resolver answering a
+    fresh object answers each step a different one.
+
+    **The page's form is the Validator's**, built with what its
+    ``form_kwargs`` answers, through the kernel's ``form_keywords``: on GET,
+    on a refused post and for its own validation below, with the principal,
+    the request's seeds, the row the post acts on and the request's one call
+    context, the very dict dispatch is then handed. So a form whose
+    ``__init__`` takes a keyword - a queryset scoped by a tenant - is served,
+    and the page's form offers the choices the Validator's accepts.
 
     **GET asks the spec's affordances** once the target is found: the
     callable conditions always, through the kernel's
@@ -348,7 +360,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         # that has none, so a template's ``{% if unavailable %}`` reads one
         # context on every answer: test_every_condition_met_leaves_it_out.
         context = {} if unavailable is None else {"unavailable": unavailable}
-        form = _page_form(spec, target, served.server)
+        form = _page_form(spec, principal, target, served)
         return self._rendered(self.get_context_data(form=form, **context), status=200)
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
@@ -375,7 +387,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         target: Any = UNSET
         with suppress(InvalidArguments):
             target, grant = _found(spec, principal, grant, kwargs, served)
-        form = _page_form(spec, target, served.server, data=request.POST, files=request.FILES)
+        form = _page_form(spec, principal, target, served, data=request.POST, files=request.FILES)
         try:
             read = _form_arguments(form, spec.parameters(), kwargs, served)
             result = dispatch(
@@ -386,6 +398,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
                 pool_seeds=served.seeds,
                 unknown_arguments=self.unknown_arguments,
                 target=target,
+                call_context=served.call_context,
             )
         except (DispatchError, ServiceError) as refused:
             # The outcome is decided here, once, from the one map, and the
@@ -424,8 +437,9 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         """The seeds this request's call is resolved with: ``pool_seeds`` unless overridden.
 
         Read once per request and handed to every step that resolves a spec
-        callable: the target's lookup and its object-level or scope check,
-        the affordances the page asks about, and dispatch. Seed what the
+        callable: the class-level check, the target's lookup and its
+        object-level or scope check, the form's ``form_kwargs``, the
+        affordances the page asks about, and dispatch. Seed what the
         request carries rather than the request itself, as on ``SpecView``:
         a spec callable requiring a ``request`` raises ``TypeError`` on every
         reader that has none.
@@ -536,7 +550,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         label = type(self).__name__
         server = checked_binding(label, self.get_server_arguments(request), self.server_arguments)
         seeds = checked_seeds(label, self.get_pool_seeds(request), self.pool_seeds, server)
-        return _Served(route_kwargs=self.route_kwargs, server=server, seeds=seeds)
+        return _Served(route_kwargs=self.route_kwargs, server=server, seeds=seeds, call_context={})
 
     def _render_refused(
         self, form: forms.BaseForm, detail: Mapping[Any, Any], *, status: int, **context: Any
@@ -591,6 +605,8 @@ class _Served:
     route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None
     server: ServerArguments | None
     seeds: PoolSeeds
+    call_context: dict[str, Any]
+    """The request's one call context, handed to the form's keywords and to dispatch as this very dict."""
 
 
 def _check_configuration(cls: type[SpecFormView], initkwargs: Mapping[str, Any]) -> None:
@@ -673,13 +689,15 @@ def _admitted(
     filled it in. A route capturing a name the server answers for is the
     host's too, refused by the rule ``request_arguments`` refuses it by. Then
     the principal the spec's class-level check admits, so neither the page
-    nor anything the post reaches is offered to one it refuses.
+    nor anything the post reaches is offered to one it refuses. The check is
+    asked with the request's seeds, resolving those it names, as dispatch
+    asks it (test_the_class_level_check_is_asked_with_the_seed_it_names).
     """
     route_arguments(spec.parameters(), url_kwargs, route_kwargs=served.route_kwargs)
     refuse_server_owned(url_kwargs, served.route_kwargs, server_names(served.server))
     try:
         principal = request_principal(request)
-        return principal, authorize(spec, principal)
+        return principal, authorize(spec, principal, pool_seeds=served.seeds)
     except (NotPermitted, PrincipalUnavailable) as refused:
         raise _denial(refused) from refused
 
@@ -801,9 +819,19 @@ def _refusal_tree(refused: DispatchError | ServiceError) -> Mapping[Any, Any]:
 
 
 def _page_form(
-    spec: ServiceSpec, target: Any, server: ServerArguments | None, **bound: Any
+    spec: ServiceSpec, principal: Any, target: Any, served: _Served, **bound: Any
 ) -> forms.BaseForm:
-    """The page's form, as ``_built_form`` builds it, with every field ``server`` answers for held.
+    """The page's form, as ``_built_form`` builds it, with every field the binding answers for held.
+
+    Built with what the Validator's ``form_kwargs`` answers, through the
+    kernel's ``form_keywords``, so the page's form and the one the Validator
+    binds are one form: the same principal, the request's seeds, the row
+    itself (never the copy a ``ModelForm`` edits) and the request's one call
+    context, the dict dispatch is then handed
+    (test_the_page_and_the_validator_are_handed_the_same_keywords). A post
+    whose target was never found, its route refused, is asked about no row:
+    the marker of a target not yet looked for is the page's, and is never
+    handed on (test_a_post_whose_route_is_refused_is_built_as_no_row).
 
     A field the binding binds is disabled and shows the server's value; one
     it withholds is disabled and shows none. A disabled field shows its
@@ -818,7 +846,15 @@ def _page_form(
     test_a_refused_post_shows_the_server_s_value_never_the_client_s and
     test_a_withheld_field_renders_disabled_with_no_value.
     """
-    form = _built_form(spec, target, **bound)
+    keywords = form_keywords(
+        spec,
+        principal,
+        pool_seeds=served.seeds,
+        target=None if target is UNSET else target,
+        call_context=served.call_context,
+    )
+    form = _built_form(spec, target, keywords, **bound)
+    server = served.server
     owned = server_names(server)
     values: Mapping[str, Any] = {} if server is None else server.values
     for name in [name for name in form.fields if name in owned]:
@@ -828,8 +864,17 @@ def _page_form(
     return form
 
 
-def _built_form(spec: ServiceSpec, target: Any, **bound: Any) -> forms.BaseForm:
+def _built_form(
+    spec: ServiceSpec, target: Any, keywords: Mapping[str, Any], **bound: Any
+) -> forms.BaseForm:
     """The page's form, bound by ``bound`` if given, showing ``target``'s values where it is a row.
+
+    ``keywords`` are what ``form_kwargs`` answered, passed beside ``bound`` as
+    the Validator passes them beside its own. An ``initial`` among them, on a
+    form taking the row's values as its own ``initial``, is merged under
+    those values rather than passed twice, so a field the row does not fill
+    keeps it
+    (test_an_initial_form_kwargs_answers_sits_under_the_row_s_values).
 
     A ``ModelForm`` of the row's model is built on a copy of it, as
     ``FormValidator`` binds one, so its own ``__init__`` sees the row it
@@ -846,7 +891,7 @@ def _built_form(spec: ServiceSpec, target: Any, **bound: Any) -> forms.BaseForm:
     """
     form_class = _form_class(spec)
     if not isinstance(target, models.Model):
-        return form_class(**bound)
+        return form_class(**bound, **keywords)
     if issubclass(form_class, forms.BaseModelForm) and isinstance(target, form_class._meta.model):
         # A copy, as for the Validator: a post builds this form before
         # dispatch, on the very row it then hands dispatch as its target, so
@@ -854,11 +899,13 @@ def _built_form(spec: ServiceSpec, target: Any, **bound: Any) -> forms.BaseForm:
         # default filled in - would reach the Validator and the service as
         # the row's stored values
         # (test_the_page_form_s_writes_never_reach_the_row_dispatch_is_handed).
-        return form_class(**bound, instance=copy.copy(target))
+        return form_class(**bound, **keywords, instance=copy.copy(target))
     # ``base_fields`` is set by the metaclass, which the stubs do not declare.
     fields: dict[str, forms.Field] = form_class.base_fields  # ty: ignore[unresolved-attribute]
     names = [name for name, field in fields.items() if not field.disabled]
-    return form_class(**bound, initial=model_to_dict(target, fields=names))
+    own = {name: value for name, value in keywords.items() if name != "initial"}
+    initial = {**keywords.get("initial", {}), **model_to_dict(target, fields=names)}
+    return form_class(**bound, **own, initial=initial)
 
 
 def _form_arguments(
