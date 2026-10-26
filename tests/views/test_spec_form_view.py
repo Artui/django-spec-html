@@ -3509,6 +3509,16 @@ class TestTheConfirmationPage:
         assert not shows(response, "confirmed")
         assert b'name="reason" value="Tidy"' in response.content
 
+    def test_its_fields_are_in_the_schema_s_order(self, ada: Any) -> None:
+        # The reverse of the form's, so the order read is the schema's.
+        schema = {"confirmed": {"type": "boolean"}, "reason": {"type": "string"}}
+        response = post(confirm_view(confirm_spec(Confirming(schema=schema))), ada, {})
+        assert shows(response, "confirmed")
+        assert [field.name for field in response.context_data["requested_input"]["fields"]] == [
+            "confirmed",
+            "reason",
+        ]
+
     def test_the_confirmation_counts_the_set_again(self, ada: Any) -> None:
         # The count is a time of check: the page that asks says what it found
         # when the post that asked was made, not what the page's GET counted.
@@ -3610,6 +3620,7 @@ class TestTheConfirmationFragment:
 
         page = post(view(), ada, {"reason": "Tidy"})
         fragment = hx_post(view(), ada, {"reason": "Tidy"})
+        assert "requested_input" in page.context_data
         assert set(fragment.context_data) == set(page.context_data)
         assert refused(fragment) == refused(page)
 
@@ -3659,6 +3670,15 @@ class TestAskedFields:
         assert str(raised.value) == (
             "Confirm.asked_fields names 'title', which EntryForm requires: a field held back "
             "until a question asks for it is absent from every other post, so it must be optional."
+        )
+
+    def test_a_disabled_field_is_refused(self) -> None:
+        # Never read from a post, so nobody could answer it either.
+        with pytest.raises(ImproperlyConfigured) as raised:
+            confirm_view(entry_spec(), asked_fields=("code",))
+        assert str(raised.value) == (
+            "Confirm.asked_fields names 'code', which EntryForm disables: "
+            "nobody posting the form could answer it."
         )
 
     def test_a_field_the_server_answers_for_is_refused(self) -> None:

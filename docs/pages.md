@@ -359,7 +359,8 @@ refusal renders, so `{{ form }}`, or a template rendering fields one by one,
 shows no box, and a box never shown posts nothing: the service reads
 `False` and asks. `as_view()` refuses `asked_fields` unless it is a tuple
 of the form's own fields, each optional, since a field held back is absent
-from every post no question asked for, and none a `server_arguments`
+from every post no question asked for, none the form disables, since a
+disabled field is never read from a post, and none a `server_arguments`
 binding answers for. A held field a refusal's error names is shown with its
 error.
 

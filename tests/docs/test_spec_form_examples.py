@@ -652,6 +652,8 @@ class TestTheConfirmationPage:
         assert response.status_code == 422
         assert content.count(ASKED.format(count=2)) == 1
         assert 'name="confirmed"' in content
+        # The template's own reading of the question, from ``requested_input``.
+        assert ">Discard them</button>" in content
         assert "Yes, discard them" in content
         assert 'name="reason" value="Tidy"' in content
         assert Book.objects.filter(status=Status.DRAFT).count() == 2
@@ -664,6 +666,7 @@ class TestTheConfirmationPage:
         content = response.content.decode()
         assert "3 drafts selected, counted at" in content
         assert ASKED.format(count=3) in content
+        assert response.context_data["requested_input"]["message"] == ASKED.format(count=3)
 
     def test_the_confirming_post_deletes_them(self, ada: Any) -> None:
         data = discarding(confirmed="on")
@@ -682,6 +685,7 @@ class TestTheConfirmationPage:
         assert response.content.lstrip().startswith(b"<form")
         assert b"<h1>" not in response.content
         assert b'name="confirmed"' in response.content
+        assert b">Discard them</button>" in response.content
         # In place: no header sends the answer anywhere but the form's target.
         assert not [name for name in response.headers if name.lower().startswith("hx-")]
         assert Book.objects.filter(status=Status.DRAFT).count() == 2
@@ -735,6 +739,7 @@ class TestAConfirmationInADialog:
         asked = serve(FACTORY.post(IN_A_DIALOG, data=discarding()), ada).render()
         assert asked.status_code == 422
         assert asked.content.count(b'id="confirm-discard"') == 1
+        assert b'<dialog id="confirm-discard" hx-swap-oob="true" open>' in asked.content
 
     def test_what_the_dialog_posts_deletes_them(self, ada: Any) -> None:
         # The ticked box and the button, the form's own fields beside them.

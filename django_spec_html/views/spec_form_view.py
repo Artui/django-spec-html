@@ -397,7 +397,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             counts them all.
         asked_fields: The fields of the form held back until a post's
             ``AdditionalInputRequired`` asks for them by name: a tuple of
-            optional fields the server does not answer for, checked at
+            optional, enabled fields the server does not answer for, checked at
             ``as_view()``. Empty by default, so every field is shown.
     """
 
@@ -931,7 +931,9 @@ def _check_asked_fields(
 
     A tuple, as ``route_kwargs``' names are, so a bare string is not read as
     its letters (test_anything_but_the_form_s_field_names_is_refused). Each
-    name is a field the form class declares; one that is optional, since a
+    name is a field the form class declares; one it does not disable, since
+    a disabled field is never read from a post (test_a_disabled_field_is_refused);
+    one that is optional, since a
     field held back is absent from every post no question asked for, and a
     required one would refuse them all (test_a_required_field_is_refused);
     and one the server does not answer for, whose field the page disables, so
@@ -950,6 +952,11 @@ def _check_asked_fields(
             raise ImproperlyConfigured(
                 f"{label}.asked_fields names {name!r}, which {form_class.__name__} does not "
                 "declare."
+            )
+        if fields[name].disabled:
+            raise ImproperlyConfigured(
+                f"{label}.asked_fields names {name!r}, which {form_class.__name__} disables: "
+                "nobody posting the form could answer it."
             )
         if fields[name].required:
             raise ImproperlyConfigured(
