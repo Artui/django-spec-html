@@ -53,10 +53,13 @@ visitor above gets Django's own `PermissionDenied`.
   up, so after the spec's class-level check the page asks the scope check of
   `None`, as dispatch asks it of every `many` call, and a principal the post
   would refuse is never offered the page. A route value the spec's `reads`
-  refuse is a 400, as on every page. On a post the page asks nothing itself:
-  dispatch asks the scope check, once, after the call's top-level shape
-  check, so a post refused at its top level - a route value - is answered
-  with the formset again before the scope check is asked.
+  refuse is a 400, as on every page. A post asks it **once**: dispatch asks
+  it, and where the page's own reading refuses the post first - its
+  management form, a row's coercion - the page asks it before answering, so
+  a principal it refuses is denied rather than shown the formset, as the
+  single page denies one before reading its form. A route value the `reads`
+  refuse leaves it unasked, as on the single page: there are no arguments to
+  ask it with.
 
 - **`extra` blank forms**, 1 by default, after the spec's `many_min_length`
   forms, which a person must fill in. The page above offers three.

@@ -43,6 +43,7 @@ from django_service_specs import (
 
 from django_spec_html.views.spec_form_set_view import SpecFormSetView
 from django_spec_html.views.spec_form_view import SpecFormView
+from django_spec_html.views.utils import SpecPageBase
 from tests.adapter_app.models import Author
 from tests.dispatch.utils import OPEN, Record, Refuse, Titled, make_user
 from tests.http.utils import FACTORY, signed_in
@@ -359,11 +360,39 @@ class TestGet:
         assert response.status_code == 302
         assert check.scopes == [None]
 
+    @pytest.mark.parametrize(
+        ("form_class", "data"),
+        [
+            pytest.param(AuthoredRow, posted({"author": "x"}), id="a-row-s-coercion"),
+            pytest.param(BookRow, {"save": "pressed"}, id="the-management-form"),
+        ],
+    )
+    def test_a_post_the_page_s_reading_refuses_asks_the_scope_check_first(
+        self, ada: Any, form_class: type[forms.BaseForm], data: dict[str, str]
+    ) -> None:
+        # Refused before dispatch, which would have asked it: a principal the
+        # scope check refuses is denied, never shown the formset, as the
+        # single page denies one before reading its form.
+        check = Scoped(admits=False)
+        view = formset_view(many_spec(form_class, permissions=[check]))
+        with pytest.raises(PermissionDenied, match="No batch may be added here"):
+            post(view, ada, data)
+        assert check.scopes == [None]
+
+    def test_a_post_the_page_s_reading_refuses_asks_the_scope_check_once(self, ada: Any) -> None:
+        check = Scoped()
+        response = post(
+            formset_view(many_spec(AuthoredRow, permissions=[check])), ada, posted({"author": "x"})
+        )
+        assert response.status_code == 400
+        assert check.scopes == [None]
+
     def test_a_post_refused_at_its_top_level_is_answered_before_the_scope_check(
         self, ada: Any
     ) -> None:
-        # docs/formsets.md states this order: the page reads the route before
-        # dispatch, and dispatch asks the scope check only past that read.
+        # As on the single page, whose route value its reads refuse is
+        # answered at 400 with the scope check unasked: there are no
+        # arguments to ask it with.
         check = Scoped(admits=False)
         spec = many_spec(
             permissions=[check],
@@ -578,6 +607,21 @@ class TestSplittingTheRefusal:
         assert response.status_code == 400
         assert row_errors(response) == [{"__all__": [UNLUCKY]}]
 
+    def test_a_route_value_and_a_row_s_coercion_are_refused_in_one_post(self, ada: Any) -> None:
+        # On a partial spec, whose forms carry the refusal alone, so the
+        # row's refusal is seen only if the one raised still carries it: the
+        # scope check asked beside a refused reading reads the route again
+        # and must not raise its own refusal in its place.
+        spec = many_spec(
+            AuthoredRow,
+            partial=True,
+            reads=Parameters.of(Parameter("shelf", "integer", required=True)),
+        )
+        response = post(formset_view(spec), ada, posted({"author": "x"}), url_kwargs={"shelf": "x"})
+        assert response.status_code == 400
+        assert non_form(response) == ["shelf: Enter a whole number."]
+        assert [list(each) for each in row_errors(response)] == [["author"]]
+
     def test_a_conflict_carries_its_message_alone(self, ada: Any) -> None:
         def taken(**pool: Any) -> None:
             raise ServiceConflict("Those titles are taken.")
@@ -702,6 +746,24 @@ def sent(response: Any) -> list[str]:
 
 
 class TestASuccess:
+    def test_the_single_page_s_formatting_would_raise_once_the_write_ran(self, ada: Any) -> None:
+        # Why this page formats with a count: the base's, a name over the
+        # cleaned data, cannot read a many call's list, and fails only after
+        # the service has run.
+        class FormattedAsTheSinglePage(SpecFormSetView):
+            get_success_message = SpecPageBase.get_success_message
+
+        spec = many_spec()
+        view = FormattedAsTheSinglePage.as_view(
+            spec=spec,
+            template_name=TEMPLATE,
+            success_url="/done/",
+            success_message="%(title)s was added.",
+        )
+        with pytest.raises(TypeError):
+            post(view, ada, posted({"title": "One"}))
+        assert len(spec.service.calls) == 1
+
     def test_the_default_message_is_formatted_with_the_rows_count(
         self, ada: Any, stack: Callable[..., Any]
     ) -> None:

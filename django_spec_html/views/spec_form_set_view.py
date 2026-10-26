@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
+from contextlib import suppress
 from typing import Any, cast
 
 from django import forms
@@ -366,8 +367,10 @@ class SpecFormSetView(SpecPageBase):
         holds, so ``"%(count)d books were added."`` says how many
         (test_the_default_message_is_formatted_with_the_rows_count). A
         ``many`` call's cleaned data is a list, which ``%`` with a name
-        cannot read, so the single page's default would raise once the write
-        had committed. Override it to read the rows, under ``result.data``,
+        cannot read, so the single page's formatting would raise once the
+        write had run
+        (test_the_single_page_s_formatting_would_raise_once_the_write_ran).
+        Override it to read the rows, under ``result.data``,
         or the result, under ``result.value``.
         """
         return self.success_message % {"count": len(result.data)}
@@ -379,8 +382,9 @@ class SpecFormSetView(SpecPageBase):
     # ``dispatch`` refuses ``target=`` on one, ``None`` included. The parent
     # adds that guard to ``_found`` - return ``UNSET`` and the grant for a
     # ``many`` spec once the route is coerced - and the scope check of
-    # nothing to ``_page`` for one, and then deletes both overrides and
-    # ``_no_target``; this file's tests hold the behaviour either way.
+    # nothing for one to ``_page``, and to ``post`` where the page's own
+    # reading refuses, and then deletes both overrides and ``_no_target``;
+    # this file's tests hold the behaviour either way.
 
     def _page(
         self, request: HttpRequest, url_kwargs: Mapping[str, Any], **bound: Any
@@ -409,7 +413,9 @@ class SpecFormSetView(SpecPageBase):
         nothing on every ``many`` call and cannot be told it ran: a grant
         saying the target was checked is honoured only beside a ``target=``,
         which a ``many`` call refuses. Asked here too, it would run twice
-        (test_the_scope_check_is_asked_once_a_post).
+        (test_the_scope_check_is_asked_once_a_post). It is asked here only
+        when the page's own reading refuses the post, since dispatch is then
+        never called.
         """
         if not self.commits(request):
             return self._page(request, kwargs, data=request.POST, files=request.FILES)
@@ -419,7 +425,23 @@ class SpecFormSetView(SpecPageBase):
         target: Any = UNSET
         form = self._form(spec, principal, target, served, data=request.POST, files=request.FILES)
         try:
-            read = self._arguments(form, spec, kwargs, served)
+            try:
+                read = self._arguments(form, spec, kwargs, served)
+            except InvalidArguments:
+                # Refused by the page's own reading - the management form, a
+                # row's coercion - dispatch never runs, and with it the scope
+                # check, so it is asked here first, and only here: a
+                # principal it refuses is denied rather than shown the
+                # formset, as the single page denies one before reading
+                # (test_a_post_the_page_s_reading_refuses_asks_the_scope_check_first).
+                # A route value its reads refuse leaves it unasked, as on
+                # the single page
+                # (test_a_post_refused_at_its_top_level_is_answered_before_the_scope_check),
+                # and the refusal raised is the reading's, never the route's alone
+                # (test_a_route_value_and_a_row_s_coercion_are_refused_in_one_post).
+                with suppress(InvalidArguments):
+                    _no_target(spec, principal, grant, kwargs, served)
+                raise
             result = dispatch(
                 spec,
                 principal=principal,
