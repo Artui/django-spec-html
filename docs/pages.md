@@ -177,7 +177,9 @@ title and no date is told both. The page's form is validated as the Validator
 validates its own, under the kernel's `clean_held_to_their_columns`, so a
 value no column holds - a key past 64 bits - is refused in the field's own
 words and never reaches the database driver, whose SQLite raises
-`OverflowError` for it. Any other refusal - a conflict, a service's own rule,
+`OverflowError` for it. A post whose route value the target's reads refuse
+never found its row, so its form is not judged as one, and carries the
+refusal alone. Any other refusal - a conflict, a service's own rule,
 an unavailable action - is no verdict on the arguments, and the re-rendered
 form carries it alone. The statuses are
 [`error_response`](http.md#refusals)'s, so a client reading a refused post - Turbo,
@@ -212,7 +214,8 @@ A `partial` spec gets the same page, built on the same form. **The page's
 form renders no HTML `required` attribute**, so the browser sends a post that
 leaves a field blank, and **a blank field is absent**, as it is on every page:
 on a partial call, a field the operation leaves as it is. A post with every
-field blank dispatches with no arguments, and the page does not refuse it.
+field blank dispatches with no arguments but what a checkbox or a
+multi-select always sends, and the page does not refuse it.
 
 ```python
 --8<--

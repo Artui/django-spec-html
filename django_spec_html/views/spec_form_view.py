@@ -279,14 +279,17 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     rather than the next. It is validated as the Validator validates its own,
     under the kernel's ``clean_held_to_their_columns``, so a value no column
     holds - a key past 64 bits - is refused in the field's words and never
-    reaches the database driver. Any other refusal is no verdict on the
+    reaches the database driver. A post whose route the target's reads
+    refuse never found its row, so its form is not judged as one and carries
+    the refusal alone. Any other refusal is no verdict on the
     arguments - a conflict, a service's own rule, an unavailable action - and
     the page's form carries it alone, validated no further.
 
     **A partial spec's page** renders no HTML ``required`` attribute, so the
     browser sends a post that leaves fields blank, and a blank field is absent:
     on a partial call, one the operation leaves as it is. A post with every
-    field blank dispatches with no arguments. Beside a shape-check refusal, a
+    field blank dispatches with no arguments but what a checkbox or a
+    multi-select always sends, and is not refused. Beside a shape-check refusal, a
     partial page's form carries the refusal alone: its Validator takes the
     fields a post leaves out off its own form, and the page's form, validated
     whole, would call each one required.
@@ -429,8 +432,14 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             # test_a_shape_refusal_shows_no_word_about_a_field_left_blank (a
             # whole call: a partial one's Validator takes the fields a post
             # leaves blank off its form, and the page's form validated whole
-            # would call each one required).
-            merged = isinstance(refused, InvalidArguments) and not spec.partial
+            # would call each one required), and
+            # test_an_update_page_s_own_unchanged_value_is_never_taken[a-refused-route]
+            # (a found target: with the route refused, the page's form is built
+            # as no row, and validated it would judge the post as a create,
+            # the row's own unique value taken by another).
+            merged = (
+                isinstance(refused, InvalidArguments) and not spec.partial and target is not UNSET
+            )
             return self._render_refused(
                 form,
                 _refusal_tree(refused),

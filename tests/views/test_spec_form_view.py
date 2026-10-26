@@ -898,7 +898,7 @@ class TestRefusals:
         assert validated(spec) == 0
 
     def test_a_blank_required_field_and_a_clean_violation_show_in_one_post(self, ada: Any) -> None:
-        # The review's row: the shape check answers the blank title, so the
+        # The shape check answers the blank title, so the
         # Validator never runs (none of its calls), and the clean() rule the
         # colour breaks is the page's own form's, in the same post.
         spec = entry_spec(validator=Watched(RedIsClosed))
@@ -933,6 +933,32 @@ class TestRefusals:
                 "username": ["A user with that username already exists."],
             },
         )
+        assert validated(spec) == 0
+
+    @pytest.mark.parametrize("pk", ["own", "abc"], ids=["the-row", "a-refused-route"])
+    def test_an_update_page_s_own_unchanged_value_is_never_taken(self, ada: Any, pk: str) -> None:
+        # The page's ModelForm is validated on a copy of her row, so its
+        # uniqueness check leaves her own username out, as the Validator's
+        # does. A route the target's reads refuse finds no row, so the form is
+        # not judged as a create either: the route's refusal, found while
+        # the post is read and before dispatch's shape check, is all that
+        # page shows.
+        spec = ServiceSpec(
+            service=Record(),
+            permissions=OPEN,
+            validator=Watched(SignInForm),
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=user_by_pk, reads=PK
+            ),
+        )
+        route = ada.pk if pk == "own" else pk
+        response = post(form_view(spec), ada, {"username": "ada", "last_login": "never"}, pk=route)
+        expected = (
+            {"last_login": ["Enter a valid date/time."]}
+            if pk == "own"
+            else {"__all__": [f"pk: {WHOLE}"]}
+        )
+        assert (response.status_code, refused(response)) == (400, expected)
         assert validated(spec) == 0
 
     @pytest.mark.parametrize(
