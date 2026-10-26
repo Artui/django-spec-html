@@ -2854,7 +2854,10 @@ class TestTheRequestAndTheView:
         # the seed against the call's context, as dispatch's own pool does.
         asked: list[Any] = []
 
-        def asker(*, request: Any) -> Any:
+        def asker(*, request: Any, view: Any) -> Any:
+            # The page is the view, serving this very request.
+            assert isinstance(view, Seeded)
+            assert view.request is request
             asked.append(request)
             return request
 

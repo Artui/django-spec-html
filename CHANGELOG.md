@@ -26,8 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **The kernel refuses a spec that declares `request` or `view` itself**, now
-  that the two are the call's: a parameter, a `kwargs` provider key or an
-  `extra_kwargs` key of either name raises `ImproperlyConfigured` at dispatch.
+  that the two are the call's: a parameter or a `kwargs` provider key of
+  either name raises `ImproperlyConfigured` on the first request, a page's GET
+  included; `as_view()` does not refuse it.
   A Validator field of either name is not refused; it validates into `data`,
   and a service naming `request` or `view` beside it is handed the call's
   object, where this package used to hand it the submitted value. Read the

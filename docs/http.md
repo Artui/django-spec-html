@@ -47,7 +47,9 @@ context holds `request`, the request it was handed, and `view`, which is the
 `view=` a host's own view passes as itself and `None` where it passes nothing,
 so a spec callable naming either is handed it
 ([what the request carries](#what-the-request-carries)). `SpecView` and
-`AsyncSpecView` pass themselves:
+`AsyncSpecView` pass themselves.
+
+The answer:
 
 - **A not-found result** is 404, `{"detail": "Not found."}`.
 - **A success** is the presented value, bare, with no envelope around it. The
@@ -288,7 +290,14 @@ docs/examples/http.py:request
   request, which is MCP, the agent tools, the CLI and a task, the same
   callable is handed `None`, so a spec reading `request.team` is written for
   one transport. A spec reading `team` is one definition every transport
-  can seed.
+  can seed, and the request reaches a callable with no hook at all:
+
+  ```python
+  --8<--
+  docs/examples/http.py:call_context
+  --8<--
+  ```
+
 - **`get_server_arguments(request)`** answers the kernel's
   [`ServerArguments`][django_service_specs.types.server_arguments.ServerArguments]:
   values the server answers for, which outrank whatever the client sent,

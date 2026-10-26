@@ -14,6 +14,7 @@ from typing import Any
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.urls import path
+from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django_service_specs import (
     DataclassPresenter,
@@ -162,6 +163,34 @@ class TeamNotes(SpecView):
 # --8<-- [end:request]
 
 
+# --8<-- [start:call_context]
+def my_notes(*, request: HttpRequest | None) -> QuerySet[Note]:
+    # Handed the request serving this call, read off its context, and ``None``
+    # on a transport with no request: written for one transport, since
+    # ``user`` is the definition every transport can seed.
+    if request is None:
+        return Note.objects.none()
+    return Note.objects.filter(owner=request.user).order_by("title")
+
+
+my_notes_spec = SelectorSpec(
+    kind=SelectorKind.LIST,
+    selector=my_notes,
+    permissions=[IsSignedIn()],
+    presenter=DataclassPresenter(NoteOut),
+)
+
+
+class MyNotes(View):
+    def get(self, request: HttpRequest) -> HttpResponse:
+        # A host's own view passes itself, so a callable naming ``view`` is
+        # handed it; a function view passes nothing, and it is handed None.
+        return dispatch_request(my_notes_spec, request, view=self)
+
+
+# --8<-- [end:call_context]
+
+
 # --8<-- [start:urls]
 urlpatterns = [
     # A read answers GET and HEAD, and its query string is its arguments:
@@ -176,6 +205,8 @@ urlpatterns = [
     path("notes/<int:pk>/arename-by-hand/", arename_note),
     # The view above: the team from the route, as a seed rather than an argument.
     path("teams/<slug:team>/notes/", TeamNotes.as_view()),
+    # A host's own view, handing itself to the call as ``view``.
+    path("my-notes/", MyNotes.as_view()),
 ]
 # --8<-- [end:urls]
 
