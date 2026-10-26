@@ -164,18 +164,75 @@ package's `Outcome`, by value; a success is `ok`.
 
 The first two rows place the refusal on the form, and a service's string or
 list detail is about the whole form. Every other re-rendered refusal is its
-message, among the form's non-field errors. **The re-rendered form carries
-the refusal and nothing else**, so the page says what dispatch decided. The
-page's own form is never validated: its errors start empty and the refusal is
-placed on it, so nothing the Validator did not decide reaches it, and a value
-the Validator refused because no column holds it - a key past 64 bits - never
-reaches the database through the page's own checks. So after a shape-check
+message, among the form's non-field errors.
+
+**A refusal of the arguments shows every error in one post.** Beside an
+`InvalidArguments`, the page's own form - built as the Validator's is, with
+[the same keywords](#a-form-that-takes-keywords) - is validated too, and the
+refusal is placed beside what it found, never twice. So after a shape-check
 refusal - a required field left blank, a date that does not parse - the
-form's further checks, such as a length, `clean()` or uniqueness, answer the
-next post rather than this one. The statuses are
+form's further checks, such as a length, `clean()` or uniqueness, answer in
+the same post rather than the next one: a book posted as published with no
+title and no date is told both. The page's form is validated as the Validator
+validates its own, under the kernel's `clean_held_to_their_columns`, so a
+value no column holds - a key past 64 bits - is refused in the field's own
+words and never reaches the database driver, whose SQLite raises
+`OverflowError` for it. A post whose route value the target's reads refuse
+never found its row, so its form is not judged as one, and carries the
+refusal alone. Any other refusal - a conflict, a service's own rule,
+an unavailable action - is no verdict on the arguments, and the re-rendered
+form carries it alone. The statuses are
 [`error_response`](http.md#refusals)'s, so a client reading a refused post - Turbo,
 which will not render a failed post answered 200 - reads its outcome from the
 status.
+
+## A form that takes keywords
+
+A form whose `__init__` takes a keyword of its own - a queryset scoped by the
+principal or by a tenant - is handed it by the `FormValidator`'s
+[`form_kwargs`](https://artui.github.io/django-service-specs/forms/), and the
+page builds its own form with the same answer, through the kernel's
+`form_keywords`: the same principal, the request's [seeds](#what-the-request-carries),
+the row the post acts on (the row itself, never the copy a `ModelForm` edits)
+and one call context per request, the very dict dispatch is then handed. On
+GET, on a refused post and for the post's own validation, the page's form is
+the Validator's, so the page offers the choices the Validator accepts:
+
+```python
+--8<--
+docs/examples/spec_form.py:keywords
+--8<--
+```
+
+The URLconf routes it as `books/shelve/`. A signed-in user who is not staff is
+offered only the authors already on the shelves, and a post naming another is
+refused on the author field; staff are offered every author.
+
+## A partial page
+
+A `partial` spec gets the same page, built on the same form. **The page's
+form renders no HTML `required` attribute**, so the browser sends a post that
+leaves a field blank, and **a blank field is absent**, as it is on every page:
+on a partial call, a field the operation leaves as it is. A post with every
+field blank dispatches with no arguments but what a checkbox or a
+multi-select always sends, and the page does not refuse it.
+
+```python
+--8<--
+docs/examples/spec_form.py:partial
+--8<--
+```
+
+The URLconf routes it as `books/<int:pk>/change/`: a post with the title left
+blank and a new price changes the price and keeps the title.
+
+A blank field cannot clear a value there, since blank means "leave it": a
+partial operation that clears a value needs a field of its own that says so,
+as an optional file's clear checkbox does. A checkbox and a multi-select are
+always sent, ticked or not, so each is written as posted. And beside a
+shape-check refusal, a partial page's form carries the refusal alone: its
+Validator takes the fields a post leaves out off its own form, and the page's
+form, validated whole, would call each blank field required.
 
 `as_view()` refuses, when the URLconf is imported, a view with no
 `ServiceSpec`, a spec whose Validator is not a `FormValidator`, a `many`
@@ -199,12 +256,13 @@ do, with the same attributes and hooks, checked by the same code:
   seeds this request's call is resolved with. It is asked once per request,
   and every step that resolves a spec callable is handed what it answered:
   the target's lookup and its object-level or scope check, the affordances
-  [below](#an-operation-that-is-unavailable), and dispatch. Seed what the
-  request carries, never the request itself. **The class-level check is the
-  exception**: the page asks `has_permission` before it reads anything else,
-  and asks it with no seed at all, its own `pool_seeds` included, so a check
-  naming a seed raises `TypeError` on the page. The JSON views hand that check
-  its seeds.
+  [below](#an-operation-that-is-unavailable), the form's
+  [`form_kwargs`](#a-form-that-takes-keywords), and dispatch. Seed what the
+  request carries, never the request itself. **The class-level check is asked
+  with them too**: the page asks `has_permission` before it reads anything
+  else, through the kernel's `authorize`, which resolves the seeds the check
+  names, so a check reading a tenant admits the principal on the page as
+  dispatch would.
 - **`get_server_arguments(request)`**, `server_arguments` unless overridden,
   answers the kernel's
   [`ServerArguments`][django_service_specs.types.server_arguments.ServerArguments],
@@ -219,6 +277,22 @@ do, with the same attributes and hooks, checked by the same code:
   found, so a target selector reading a bound parameter finds the row by the
   server's value. Anything else a template shows - the row's own fields, say -
   is what it is.
+
+**A named seed is resolved again at each step that names it**, because the
+`Grant` a step hands on carries no values. On a POST, the class-level check,
+the target's lookup and dispatch each resolve it, and the form's keywords too
+where `form_kwargs` names it; on a GET, the affordances' pool takes
+dispatch's place. So a resolver answering a fresh object answers each step a
+different one. Write seed resolvers that answer the same each time.
+
+**One call context per request.** The page creates one plain dict for each
+request and hands that same object to every kernel call it makes: the
+class-level check, the target's lookup and its object-level or scope check,
+the affordances, the form's `form_kwargs` and dispatch. So a check, a
+condition, `form_kwargs` or the service declaring
+[`call_context`](https://artui.github.io/django-service-specs/dispatching/)
+reads what an earlier stage of the same request put there, and each request
+gets a dict of its own.
 
 The checks are the JSON views': `as_view()` refuses an `async def` hook,
 checks `server_arguments` with the kernel's `check_server_arguments` against
@@ -235,9 +309,11 @@ docs/examples/spec_form.py:request
 --8<--
 ```
 
-The URLconf routes it as `branches/<branch>/books/new/`. Its status renders
-disabled with `draft` selected, and a posted status is dropped: every book it
-adds is a draft.
+The URLconf routes it as `branches/<branch>/books/new/`. `AtABranch`, a
+class-level check, names the `branch` seed, so a branch it does not know is
+`PermissionDenied` on GET and on POST before the form is built. Its status
+renders disabled with `draft` selected, and a posted status is dropped: every
+book it adds is a draft.
 
 ## An operation that is unavailable
 
@@ -263,8 +339,10 @@ whose post the spec would refuse at 409:
 **Every callable condition is asked twice on a GET with a row**: once alone,
 then again with the row's conditions, since the kernel's `enforce_affordances`
 asks them all as dispatch does. Each seed is resolved twice as well, once for
-the target's lookup and once for the affordances' pool. Write conditions and
-seed resolvers that may be asked more than once and answer the same.
+the target's lookup and once for the affordances' pool, and once more for
+each of the class-level check and the form's `form_kwargs` that
+[names it](#what-the-request-carries). Write conditions and seed resolvers
+that may be asked more than once and answer the same.
 
 The callable conditions are asked first, without a row, so where both kinds
 are unmet and the row's is declared first, the page names the callable while

@@ -9,10 +9,11 @@ The module is its own URLconf, since ``resolve_url`` reads the project's.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import re
 import tempfile
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from decimal import Decimal
 from typing import Any
 
@@ -29,6 +30,7 @@ from django.core.exceptions import (
 )
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.validators import MaxValueValidator
 from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.template import TemplateDoesNotExist
@@ -36,6 +38,7 @@ from django.urls import path, reverse_lazy
 from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy
 from django_service_specs import (
+    DEFAULT_POOL_SEEDS,
     ActionUnavailable,
     AdditionalInputRequired,
     Affordance,
@@ -58,6 +61,7 @@ from django_service_specs import (
     ServiceValidationError,
     UnknownArguments,
     ValidationContext,
+    update_from_input,
 )
 
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
@@ -190,6 +194,41 @@ class NoteTitleForm(forms.Form):
 
     title = forms.CharField()
     remark = forms.CharField(required=False, initial="none")
+
+
+RED_CLOSED = "Red is closed."
+
+
+class RedIsClosed(forms.Form):
+    """A required title, and a ``clean()`` rule over an optional colour."""
+
+    title = forms.CharField()
+    colour = forms.ChoiceField(choices=[("red", "Red"), ("blue", "Blue")], required=False)
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        if cleaned.get("colour") == "red":
+            raise forms.ValidationError(RED_CLOSED)
+        return cleaned
+
+
+class SignInForm(forms.ModelForm):
+    """A user's unique username, beside a date-time the shape check reads."""
+
+    class Meta:
+        model = get_user_model()
+        fields = ["username", "last_login"]
+
+
+class Counting(forms.Form):
+    """Counts each ``clean()``, on the class, across every instance a post builds."""
+
+    cleans = 0
+    title = forms.CharField()
+
+    def clean(self) -> dict[str, Any]:
+        type(self).cleans += 1
+        return super().clean() or {}
 
 
 class NoCreating(PermissionCheck):
@@ -847,14 +886,102 @@ class TestRefusals:
         assert (response.status_code, refused(response)) == (400, {"__all__": [CLOSED]})
         assert validated(spec) == 1
 
-    def test_the_page_form_s_own_checks_add_nothing_to_dispatch_s_refusal(self, ada: Any) -> None:
+    def test_after_a_shape_refusal_the_form_s_own_checks_answer_too(self, ada: Any) -> None:
         # The shape check refuses the count before the Validator runs, so the
-        # form's ``clean()`` never decided anything: the page shows what
-        # dispatch did, and not what the page's form would have said.
+        # page's own form, built as the Validator's is, adds what its
+        # ``clean()`` finds, and its own word for the count adds nothing.
         spec = entry_spec()
         response = post(form_view(spec), ada, {"title": "shut", "count": "x"})
-        assert (response.status_code, refused(response)) == (400, {"count": [WHOLE]})
+        assert (response.status_code, refused(response)) == (
+            400,
+            {"count": [WHOLE], "__all__": [CLOSED]},
+        )
         assert validated(spec) == 0
+
+    def test_a_blank_required_field_and_a_clean_violation_show_in_one_post(self, ada: Any) -> None:
+        # The shape check answers the blank title, so the
+        # Validator never runs (none of its calls), and the clean() rule the
+        # colour breaks is the page's own form's, in the same post.
+        spec = entry_spec(validator=Watched(RedIsClosed))
+        response = post(form_view(spec), ada, {"title": "", "colour": "red"}).render()
+        assert (response.status_code, refused(response)) == (
+            400,
+            {"title": [REQUIRED], "__all__": [RED_CLOSED]},
+        )
+        assert validated(spec) == 0
+        assert response.content.count(REQUIRED.encode()) == 1
+        assert response.content.count(RED_CLOSED.encode()) == 1
+
+    def test_a_uniqueness_rule_shows_beside_a_shape_refusal(self, ada: Any) -> None:
+        # The date-time is the shape check's, so the Validator never runs, and
+        # the username another user holds is the page's own ModelForm's.
+        make_user("grace")
+        spec = ServiceSpec(
+            service=Record(),
+            permissions=OPEN,
+            validator=Watched(SignInForm),
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=user_by_pk, reads=PK
+            ),
+        )
+        response = post(
+            form_view(spec), ada, {"username": "grace", "last_login": "never"}, pk=ada.pk
+        )
+        assert (response.status_code, refused(response)) == (
+            400,
+            {
+                "last_login": ["Enter a valid date/time."],
+                "username": ["A user with that username already exists."],
+            },
+        )
+        assert validated(spec) == 0
+
+    @pytest.mark.parametrize("pk", ["own", "abc"], ids=["the-row", "a-refused-route"])
+    def test_an_update_page_s_own_unchanged_value_is_never_taken(self, ada: Any, pk: str) -> None:
+        # The page's ModelForm is validated on a copy of her row, so its
+        # uniqueness check leaves her own username out, as the Validator's
+        # does. A route the target's reads refuse finds no row, so the form is
+        # not judged as a create either: the route's refusal, found while
+        # the post is read and before dispatch's shape check, is all that
+        # page shows.
+        spec = ServiceSpec(
+            service=Record(),
+            permissions=OPEN,
+            validator=Watched(SignInForm),
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=user_by_pk, reads=PK
+            ),
+        )
+        route = ada.pk if pk == "own" else pk
+        response = post(form_view(spec), ada, {"username": "ada", "last_login": "never"}, pk=route)
+        expected = (
+            {"last_login": ["Enter a valid date/time."]}
+            if pk == "own"
+            else {"__all__": [f"pk: {WHOLE}"]}
+        )
+        assert (response.status_code, refused(response)) == (400, expected)
+        assert validated(spec) == 0
+
+    @pytest.mark.parametrize(
+        "exc",
+        [ServiceConflict("Busy."), ServiceValidationError("Busy."), ServiceError("Busy.")],
+        ids=["conflict", "service-validation", "service-error"],
+    )
+    def test_a_refusal_after_the_validator_took_the_form_validates_it_no_further(
+        self, ada: Any, exc: Exception
+    ) -> None:
+        # The Validator's form, built as the page's is, took the post, so the
+        # page's form would find nothing it did not: its clean() runs once,
+        # the Validator's, and the refusal is all the page shows.
+        Counting.cleans = 0
+
+        def service(**pool: Any) -> None:
+            raise exc
+
+        spec = ServiceSpec(service=service, permissions=OPEN, validator=FormValidator(Counting))
+        response = post(form_view(spec), ada, {"title": "Hi"})
+        assert refused(response) == {"__all__": ["Busy."]}
+        assert Counting.cleans == 1
 
     def test_a_validator_refusal_appears_once(self, ada: Any) -> None:
         spec = entry_spec()
@@ -1005,11 +1132,12 @@ def ranges(request: pytest.FixtureRequest) -> None:
 
 @pytest.mark.usefixtures("ranges")
 class TestAValuePastItsColumn:
-    """A post the Validator refuses for a value no column holds re-renders the page.
+    """A post refused for a value no column holds re-renders the page.
 
-    The page's own form is never validated again to show the refusal: it has
-    none of the Validator's guards, and its own validation would hand the
-    value to the database driver, which raises ``OverflowError``.
+    The page's own form is validated beside an argument refusal under the
+    kernel's ``clean_held_to_their_columns``, the Validator's own guards:
+    validated without them, it would hand the value to the database driver,
+    which raises ``OverflowError``.
     """
 
     def test_a_model_form_s_integer_past_its_column_is_refused_on_the_page(self, ada: Any) -> None:
@@ -1035,12 +1163,22 @@ class TestAValuePastItsColumn:
         self, ada: Any
     ) -> None:
         # The shape check refuses the missing title before the Validator runs,
-        # so nothing has judged the key: the page shows the refusal alone.
+        # so the page's own form judges the key, held to its column as the
+        # Validator's is: refused in the field's words, never handed to the
+        # driver, which raises ``OverflowError`` for it.
         spec = ServiceSpec(
             service=Record(), permissions=OPEN, validator=FormValidator(AssigneesForm)
         )
         response = post(form_view(spec), ada, {"assignees": [2**63]})
-        assert (response.status_code, refused(response)) == (400, {"title": [REQUIRED]})
+        assert (response.status_code, refused(response)) == (
+            400,
+            {
+                "title": [REQUIRED],
+                "assignees": [
+                    f"Select a valid choice. {2**63} is not one of the available choices."
+                ],
+            },
+        )
 
     def test_a_list_s_key_past_its_column_is_refused_on_the_page(self, ada: Any) -> None:
         spec = ServiceSpec(
@@ -1826,12 +1964,25 @@ class TestThePagesPoolSeeds:
         assert headed(view.as_view(), ada, "POST", {"title": "Hi"}).status_code == 302
         assert check.tenants == ["acme", "acme"]
 
-    def test_the_class_level_check_is_asked_with_no_seed(self, ada: Any) -> None:
-        # The page asks it before anything else and hands it none, its own
-        # ``pool_seeds`` included; the JSON views hand it the call's.
-        view = form_view(entry_spec(permissions=[SeesTenant()]), pool_seeds=TENANT_SEEDS)
-        with pytest.raises(TypeError, match="missing 1 required keyword-only argument: 'tenant'"):
-            get(view, ada)
+    @pytest.mark.parametrize(
+        ("attributes", "tenant"),
+        [
+            ({"pool_seeds": TENANT_SEEDS}, "tenant-of-ada"),
+            ({"get_pool_seeds": tenant_from_the_header}, "acme"),
+        ],
+        ids=["pool_seeds", "get_pool_seeds"],
+    )
+    def test_the_class_level_check_is_asked_with_the_seed_it_names(
+        self, ada: Any, attributes: dict[str, Any], tenant: str
+    ) -> None:
+        # Asked before anything else, with the seeds the request's call is
+        # resolved with, on GET and on POST; the post's grant hands dispatch
+        # the check already made, so it is asked once per request.
+        check = SeesTenant()
+        view = paged(entry_spec(permissions=[check]), **attributes).as_view()
+        assert headed(view, ada).status_code == 200
+        assert headed(view, ada, "POST", {"title": "Hi"}).status_code == 302
+        assert check.tenants == [tenant, tenant]
 
     def test_the_hook_is_asked_once_per_request(self, ada: Any, note: Note) -> None:
         asked: list[Any] = []
@@ -2268,3 +2419,365 @@ class TestTheRefusalsCode:
         response = post(form_view(spec), ada, {"title": "shut" if exc is None else "Hi"})
         assert response.status_code in (400, 409, 422)
         assert "code" not in response.context_data
+
+
+class OwnersNoteForm(forms.ModelForm):
+    """A note's title, and an assignee among the users its constructor is told to offer."""
+
+    assignee = forms.ModelChoiceField(queryset=get_user_model().objects.none(), required=False)
+
+    class Meta:
+        model = Note
+        fields = ["title"]
+
+    def __init__(self, *args: Any, owner: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["assignee"].queryset = get_user_model().objects.filter(pk=owner.pk)
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        if cleaned.get("title") == "shut":
+            raise forms.ValidationError(CLOSED)
+        return cleaned
+
+
+class OwnersEntryForm(EntryForm):
+    """``EntryForm``, its ``count`` capped by a keyword only its constructor is handed."""
+
+    def __init__(self, *args: Any, cap: int, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["count"].max_value = cap
+        self.fields["count"].validators.append(MaxValueValidator(cap))
+
+
+class Keywords:
+    """A ``form_kwargs`` recording what each call is handed, the call's context by identity.
+
+    It names a seed, so the view must resolve it, and ``instance`` with a
+    default, so a create, whose pool has none, is asked too.
+    """
+
+    def __init__(self, returns: Callable[[Any], Mapping[str, Any]]) -> None:
+        self.returns = returns
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(
+        self, *, user: Any, tenant: Any, call_context: Any, instance: Any = None
+    ) -> Mapping[str, Any]:
+        self.calls.append(
+            {"user": user, "tenant": tenant, "instance": instance, "context": call_context}
+        )
+        return self.returns(user)
+
+
+def capped(user: Any) -> Mapping[str, Any]:
+    return {"cap": 3}
+
+
+def owned(user: Any) -> Mapping[str, Any]:
+    return {"owner": user}
+
+
+class ContextService:
+    """A service declaring the call's context by name, recording the very dict it is handed."""
+
+    def __init__(self) -> None:
+        self.contexts: list[Any] = []
+
+    def __call__(self, *, call_context: Any) -> None:
+        self.contexts.append(call_context)
+
+
+def keyed_entry_spec(keywords: Keywords, *, row: bool) -> ServiceSpec:
+    """``entry_spec``, or ``row_spec``, validated by ``OwnersEntryForm`` through ``keywords``."""
+    validator = FormValidator(OwnersEntryForm, form_kwargs=keywords)
+    return row_spec(validator=validator) if row else entry_spec(validator=validator)
+
+
+def keyed_note_spec(keywords: Keywords, service: Any = None) -> ServiceSpec:
+    """An update of the note the route names, validated by ``OwnersNoteForm`` through ``keywords``."""
+    return ServiceSpec(
+        service=service or Record(),
+        permissions=OPEN,
+        validator=FormValidator(OwnersNoteForm, form_kwargs=keywords),
+        instance_selector_spec=SelectorSpec(
+            kind=SelectorKind.RETRIEVE, selector=note_by_pk, reads=PK
+        ),
+    )
+
+
+class TestTheFormsKeywords:
+    """The page's form is built with what the Validator's ``form_kwargs`` answers, as dispatch's is."""
+
+    @pytest.mark.parametrize("row", [False, True], ids=["a-create", "a-plain-form-on-a-row"])
+    def test_a_form_whose_init_needs_a_keyword_is_served(
+        self, ada: Any, note: Note, row: bool
+    ) -> None:
+        view = form_view(keyed_entry_spec(Keywords(capped), row=row), pool_seeds=TENANT_SEEDS)
+        route = {"pk": note.pk} if row else {}
+        page = get(view, ada, **route)
+        assert page.status_code == 200
+        assert page.context_data["form"].fields["count"].max_value == 3
+        # The cap only the keyword sets refuses the post, once, in its words.
+        refusal = post(view, ada, {"title": "Hi", "count": "4"}, **route)
+        assert (refusal.status_code, refused(refusal)) == (
+            400,
+            {"count": ["Ensure this value is less than or equal to 3."]},
+        )
+        assert post(view, ada, {"title": "Hi", "count": "2"}, **route).status_code == 302
+
+    def test_a_model_form_whose_init_needs_a_keyword_is_served(self, ada: Any, note: Note) -> None:
+        other = make_user("grace")
+        view = form_view(keyed_note_spec(Keywords(owned)), pool_seeds=TENANT_SEEDS)
+        page = get(view, ada, pk=note.pk)
+        assert page.status_code == 200
+        assert list(page.context_data["form"].fields["assignee"].queryset) == [ada]
+        refusal = post(view, ada, {"title": "Hi", "assignee": other.pk}, pk=note.pk)
+        assert refusal.status_code == 400
+        assert list(refused(refusal)) == ["assignee"]
+        ok = post(view, ada, {"title": "Hi", "assignee": ada.pk}, pk=note.pk)
+        assert ok.status_code == 302
+
+    def test_the_page_and_the_validator_are_handed_the_same_keywords(
+        self, ada: Any, note: Note
+    ) -> None:
+        keywords = Keywords(owned)
+        service = ContextService()
+        view = form_view(keyed_note_spec(keywords, service), pool_seeds=TENANT_SEEDS)
+        page = get(view, ada, pk=note.pk)
+        # A post the Validator's clean() refuses, then one it takes: each asks
+        # ``form_kwargs`` twice, the page's form first and the Validator's after.
+        assert post(view, ada, {"title": "shut"}, pk=note.pk).status_code == 400
+        assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
+        calls = keywords.calls
+        assert len(calls) == 5
+        assert {(each["user"], each["tenant"], each["instance"]) for each in calls} == {
+            (ada, "tenant-of-ada", note)
+        }
+        # The row itself on both sides, never the copy the page's ModelForm edits.
+        assert calls[1]["instance"] is calls[2]["instance"]
+        assert calls[3]["instance"] is calls[4]["instance"]
+        assert page.context_data["form"].instance is not calls[0]["instance"]
+        # One call context per request, the one dispatch is handed too.
+        assert calls[1]["context"] is calls[2]["context"]
+        assert calls[3]["context"] is calls[4]["context"] is service.contexts[0]
+        assert calls[1]["context"] is not calls[3]["context"]
+
+    def test_a_post_whose_route_is_refused_is_built_as_no_row(self, ada: Any, note: Note) -> None:
+        # The target is never found, so the page's form is asked about none,
+        # rather than the marker of a target not yet looked for.
+        keywords = Keywords(owned)
+        view = form_view(keyed_note_spec(keywords), pool_seeds=TENANT_SEEDS)
+        response = post(view, ada, {"title": "Hi"}, pk="abc")
+        assert (response.status_code, refused(response)) == (400, {"__all__": [f"pk: {WHOLE}"]})
+        assert [each["instance"] for each in keywords.calls] == [None]
+
+    def test_an_initial_form_kwargs_answers_sits_under_the_row_s_values(
+        self, ada: Any, note: Note
+    ) -> None:
+        # A plain form on a row takes the row's values as its ``initial``, so
+        # one ``form_kwargs`` answers too is merged under them rather than
+        # passed twice: the disabled field the row never fills keeps it.
+        def initial(user: Any) -> Mapping[str, Any]:
+            return {"cap": 3, "initial": {"code": "K-9", "title": "Not the row's"}}
+
+        view = form_view(keyed_entry_spec(Keywords(initial), row=True), pool_seeds=TENANT_SEEDS)
+        page = get(view, ada, pk=note.pk)
+        assert page.context_data["form"].initial == {"code": "K-9", "title": "One"}
+
+
+def saved(*, instance: Any, data: dict[str, Any]) -> Any:
+    """An update writing what the Validator returned, and nothing it did not, onto the row."""
+    return update_from_input(instance, data)
+
+
+def partial_user_spec() -> ServiceSpec:
+    """``user_spec`` as a partial update, saving what was sent onto the user."""
+    return ServiceSpec(
+        service=saved,
+        permissions=OPEN,
+        validator=FormValidator(UserForm),
+        instance_selector_spec=SelectorSpec(
+            kind=SelectorKind.RETRIEVE, selector=user_by_pk, reads=PK
+        ),
+        partial=True,
+    )
+
+
+def partial_spec() -> ServiceSpec:
+    """A partial write validated by ``NoteTitleForm``, its title required on a whole call.
+
+    No checkbox or multi-select: the browser posts those whatever is ticked,
+    so neither is ever a field the post leaves out.
+    """
+    return entry_spec(validator=Watched(NoteTitleForm), partial=True)
+
+
+class TestAPartialPage:
+    """A ``partial`` spec's page: every field optional to the browser, and a blank one left alone."""
+
+    def test_a_partial_page_renders_no_required_attribute(self, ada: Any) -> None:
+        response = get(form_view(partial_spec()), ada).render()
+        assert b"required" not in field_tag(response, "title")
+        # The class is left as it was: only this form's own attribute changes.
+        assert NoteTitleForm.use_required_attribute is True
+
+    def test_a_whole_page_still_renders_it(self, ada: Any) -> None:
+        response = get(form_view(entry_spec(validator=Watched(NoteTitleForm))), ada).render()
+        assert b"required" in field_tag(response, "title")
+
+    def test_a_refused_partial_post_renders_no_required_attribute_either(self, ada: Any) -> None:
+        def busy(**pool: Any) -> None:
+            raise ServiceConflict("Busy.")
+
+        spec = ServiceSpec(
+            service=busy, permissions=OPEN, validator=Watched(NoteTitleForm), partial=True
+        )
+        response = post(form_view(spec), ada, {"remark": "Later"}).render()
+        assert response.status_code == 409
+        assert b"required" not in field_tag(response, "title")
+
+    def test_a_subset_is_posted_and_only_it_is_validated(self, ada: Any) -> None:
+        spec = partial_spec()
+        assert post(form_view(spec), ada, {"remark": "Later"}).status_code == 302
+        assert received(spec) == {"remark": "Later"}
+
+    def test_a_blank_field_leaves_the_row_s_value_as_it_was(self, ada: Any) -> None:
+        ada.first_name = "Ada"
+        ada.save()
+        response = post(
+            form_view(partial_user_spec()),
+            ada,
+            {"username": "countess", "first_name": ""},
+            pk=ada.pk,
+        )
+        assert response.status_code == 302
+        ada.refresh_from_db()
+        assert (ada.username, ada.first_name) == ("countess", "Ada")
+
+    def test_a_post_with_every_field_blank_dispatches(self, ada: Any) -> None:
+        spec = partial_spec()
+        response = post(form_view(spec), ada, {"title": "", "remark": "", "save": "Save"})
+        assert response.status_code == 302
+        assert received(spec) == {}
+
+    def test_a_shape_refusal_shows_no_word_about_a_field_left_blank(self, ada: Any) -> None:
+        # A blank field on a partial page is one the post leaves alone, so
+        # nothing beside the refusal says it is required.
+        spec = entry_spec(partial=True)
+        response = post(form_view(spec), ada, {"title": "", "count": "x"})
+        assert (response.status_code, refused(response)) == (400, {"count": [WHOLE]})
+        assert validated(spec) == 0
+
+    def test_a_checkbox_and_a_multi_select_are_always_sent(self, ada: Any) -> None:
+        # The browser posts neither when unticked or empty, and the form reads
+        # each as a value all the same, so neither is a field left out.
+        spec = entry_spec(partial=True)
+        assert post(form_view(spec), ada, {}).status_code == 302
+        assert received(spec) == {"urgent": False, "tags": []}
+
+    def test_a_ticked_clear_checkbox_clears_the_file(self, ada: Any) -> None:
+        spec = entry_spec(validator=Watched(CoverForm), partial=True)
+        response = post(form_view(spec), ada, {"cover-clear": "on"})
+        assert response.status_code == 302
+        assert received(spec) == {"cover": False}
+
+
+class TestASeedResolvedAtEachStep:
+    """A ``Grant`` carries no values, so each step naming a seed resolves it again."""
+
+    @pytest.mark.parametrize(
+        ("form_kwargs", "on_get", "on_post"),
+        [
+            (None, 3, 3),
+            (lambda *, tenant: {}, 4, 4),
+        ],
+        ids=["the-check-names-it", "the-check-and-the-form-name-it"],
+    )
+    def test_a_named_seed_is_resolved_at_each_step_that_names_it(
+        self, ada: Any, note: Note, form_kwargs: Any, on_get: int, on_post: int
+    ) -> None:
+        # GET: the class-level check, the target's lookup, the affordances'
+        # pool and the form's keywords; POST: the check, the lookup, the
+        # form's keywords and dispatch. A resolver answering a fresh object
+        # answers each step a different one.
+        resolved: list[object] = []
+
+        def fresh() -> object:
+            resolved.append(object())
+            return resolved[-1]
+
+        spec = row_spec(
+            permissions=[SeesTenant()],
+            validator=FormValidator(NoteTitleForm, form_kwargs=form_kwargs),
+        )
+        view = form_view(spec, pool_seeds=DEFAULT_POOL_SEEDS.extend(tenant=fresh))
+        assert get(view, ada, pk=note.pk).status_code == 200
+        assert len(resolved) == on_get
+        resolved.clear()
+        assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
+        assert len(resolved) == on_post
+        assert len({id(each) for each in resolved}) == on_post
+
+
+class SeesTheContext(PermissionCheck):
+    """Admits every principal and row, recording the call context each question is handed."""
+
+    def __init__(self) -> None:
+        self.contexts: list[tuple[str, Any]] = []
+
+    def has_permission(self, principal: Any, spec: Any, *, call_context: Any) -> bool:
+        self.contexts.append(("class", call_context))
+        return True
+
+    def has_object_permission(
+        self, principal: Any, spec: Any, obj: Any, *, call_context: Any
+    ) -> bool:
+        self.contexts.append(("object", call_context))
+        return True
+
+
+class TestOneCallContextPerRequest:
+    """Every kernel call the page makes for a request is handed the same dict."""
+
+    def test_the_checks_the_affordances_the_form_and_the_service_share_one_dict(
+        self, ada: Any, note: Note
+    ) -> None:
+        check = SeesTheContext()
+        asked: list[tuple[str, Any]] = []
+
+        def open_now(*, call_context: Any) -> bool:
+            asked.append(("affordance", call_context))
+            return True
+
+        def keywords(*, call_context: Any) -> Mapping[str, Any]:
+            asked.append(("form", call_context))
+            return {}
+
+        service = ContextService()
+        spec = row_spec(
+            permissions=[check],
+            validator=FormValidator(NoteTitleForm, form_kwargs=keywords),
+            affordances=[Affordance(code="open", reason="Open.", when=open_now)],
+        )
+        spec = dataclasses.replace(spec, service=service)
+        view = form_view(spec)
+        assert get(view, ada, pk=note.pk).status_code == 200
+        on_get = check.contexts + asked
+        # The class-level check, the row's check, both affordance questions
+        # and the form's keywords.
+        assert [name for name, _ in on_get] == [
+            "class",
+            "object",
+            "affordance",
+            "affordance",
+            "form",
+        ]
+        assert len({id(context) for _, context in on_get}) == 1
+        check.contexts.clear()
+        asked.clear()
+        assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
+        on_post = [*check.contexts, *asked, ("service", service.contexts[0])]
+        assert {name for name, _ in on_post} == {"class", "object", "form", "affordance", "service"}
+        assert len({id(context) for _, context in on_post}) == 1
+        assert on_get[0][1] is not on_post[0][1]
