@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import Any
 
 from django.core.exceptions import ImproperlyConfigured
-from django.http import HttpResponse, HttpResponseBase
-from django.utils.decorators import classonlymethod
+from django.http import HttpResponse
 from django_service_specs import (
     AdditionalInputRequired,
     DispatchError,
@@ -126,27 +125,6 @@ class SpecConfirmView(SpecPageBase):
             ``get_success_message`` with the target.
     """
 
-    @classonlymethod
-    def as_view(cls, **initkwargs: Any) -> Callable[..., HttpResponseBase]:
-        """The page base's ``as_view``, then every parameter the call demands checked as supplied.
-
-        After the base's checks rather than in ``_check_page``, which the base
-        asks before ``route_kwargs`` and ``server_arguments`` are checked, so
-        a bare-string ``route_kwargs`` is still refused as one
-        (test_a_bare_string_route_kwargs_is_refused_as_a_string) and a
-        withheld name in the kernel's words
-        (test_withholding_it_is_refused_by_the_kernel_s_own_check).
-        """
-        view = super().as_view(**initkwargs)
-        _check_supplied(
-            cls.__name__,
-            initkwargs.get("spec", cls.spec),
-            initkwargs.get("route_kwargs", cls.route_kwargs),
-            initkwargs.get("server_arguments", cls.server_arguments),
-            initkwargs.get("pool_seeds", cls.pool_seeds),
-        )
-        return view
-
     @classmethod
     def _check_spec(cls, label: str, spec: ServiceSpec) -> None:
         """Refuse a spec with a Validator, pointing a ``FormValidator``'s at ``SpecFormView``.
@@ -170,12 +148,22 @@ class SpecConfirmView(SpecPageBase):
 
     @classmethod
     def _check_page(cls, label: str, spec: ServiceSpec, initkwargs: Mapping[str, Any]) -> None:
-        """Nothing to read against a form: there is none, so ``commit_button`` clashes with no field.
+        """That the call can be made without a post: every parameter it demands is supplied.
 
-        What a page with no form must check of its attributes is that the
-        call can be made without a post, which ``as_view`` asks once the
-        request hooks are checked.
+        Asked once the base has checked ``route_kwargs`` and
+        ``server_arguments``, so a bare-string ``route_kwargs`` is still
+        refused as one (test_a_bare_string_route_kwargs_is_refused_as_a_string)
+        and a withheld name in the kernel's words
+        (test_withholding_it_is_refused_by_the_kernel_s_own_check). There is
+        no form, so ``commit_button`` clashes with no field.
         """
+        _check_supplied(
+            label,
+            spec,
+            initkwargs.get("route_kwargs", cls.route_kwargs),
+            initkwargs.get("server_arguments", cls.server_arguments),
+            initkwargs.get("pool_seeds", cls.pool_seeds),
+        )
 
     def _form(
         self, spec: ServiceSpec, principal: Any, target: Any, served: Served, **bound: Any

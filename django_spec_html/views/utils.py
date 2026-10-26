@@ -172,7 +172,9 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         ``route_kwargs`` naming only parameters the spec declares and no bare
         string, ``server_arguments`` through the kernel's
         ``check_server_arguments`` against the declared ``pool_seeds``, and
-        no route kwarg filling a name the binding answers for.
+        no route kwarg filling a name the binding answers for. The page's own
+        checks last, so a page reads ``route_kwargs`` and ``server_arguments``
+        already known to be well formed.
         """
         # Django's own check of the keywords first, so a misspelt ``sepc=`` is
         # refused as the typo it is rather than read as a view with no spec.
@@ -187,7 +189,9 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
                 f"{cls.__qualname__} does not supply the page's hooks: {missing}."
             )
         _check_configuration(cls, initkwargs)
-        check_request_hooks(cls, initkwargs, initkwargs.get("spec", cls.spec))
+        spec = initkwargs.get("spec", cls.spec)
+        check_request_hooks(cls, initkwargs, spec)
+        cls._check_page(cls.__name__, spec, initkwargs)
         return view
 
     def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
@@ -775,7 +779,6 @@ def _check_configuration(cls: type[SpecPageBase], initkwargs: Mapping[str, Any])
     if initkwargs.get("display_target", cls.display_target):
         _check_display(label, spec)
     _check_commit_button(label, initkwargs.get("commit_button", cls.commit_button))
-    cls._check_page(label, spec, initkwargs)
 
 
 def _check_commit_button(label: str, button: Any) -> None:
