@@ -2827,6 +2827,14 @@ class Shelf:
 
 
 @dataclasses.dataclass
+class NestedOnlyBookOut:
+    """An Output marking none of its own fields, only its author's key."""
+
+    title: str
+    author: AuthorOut
+
+
+@dataclasses.dataclass
 class UnmarkedBookOut:
     """An Output with choices whose displays differ from their values, and no marking."""
 
@@ -3112,6 +3120,45 @@ class TestTheTargetDisplay:
         )
         assert "target_display" not in get(form_view(spec), ada, pk=book.pk).context_data
 
+    def test_a_marking_only_inside_a_nested_object_is_no_display(self, ada: Any) -> None:
+        author = BookAuthor.objects.create(name="Le Guin")
+        book = Book.objects.create(author=author, title="Lathe", price=Decimal("9.50"))
+        spec = entry_spec(
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE,
+                selector=lambda *, pk: Book.objects.filter(pk=pk),
+                reads=PK,
+            ),
+            presenter=DataclassPresenter(NestedOnlyBookOut),
+        )
+        assert "target_display" not in get(form_view(spec), ada, pk=book.pk).context_data
+
+    @pytest.mark.parametrize(("method", "more"), [("get", 0), ("refused-post", 1)])
+    def test_a_display_resolves_a_seed_once_more_only_on_a_refused_post(
+        self, ada: Any, method: str, more: int
+    ) -> None:
+        # GET's presenter reads the pool the affordances were asked on; a
+        # refused post builds one for it, and only where a display is shown.
+        resolved: list[int] = []
+
+        def tenant(*, user: Any) -> str:
+            resolved.append(1)
+            return "acme"
+
+        seeds = DEFAULT_POOL_SEEDS.extend(tenant=tenant)
+        note = Note.objects.create(owner=ada, title="Ada's")
+
+        def answered(presenter: Any) -> int:
+            resolved.clear()
+            view = form_view(row_spec(presenter=presenter), pool_seeds=seeds)
+            if method == "get":
+                get(view, ada, pk=note.pk)
+            else:
+                post(view, ada, {"title": "far too long"}, pk=note.pk)
+            return len(resolved)
+
+        assert answered(DataclassPresenter(NoteOut)) == answered(None) + more
+
     def test_an_output_selector_s_presenter_drives_it(self, ada: Any) -> None:
         note = Note.objects.create(owner=ada, title="Ada's")
         spec = row_spec(
@@ -3171,9 +3218,13 @@ class TestTheTargetDisplay:
             },
         }
 
-    def test_the_presenter_is_handed_the_principal_the_target_and_the_call_context(
-        self, ada: Any
+    @pytest.mark.parametrize("method", ["get", "refused-post"])
+    def test_the_presenter_is_handed_the_context_dispatch_hands_it(
+        self, ada: Any, method: str
     ) -> None:
+        # The principal, the target, the request's one call context, and the
+        # call's seeds as ``ambient``, so a presenter written for dispatch -
+        # one building a link from a seed, say - reads what it reads there.
         seen: list[Any] = []
 
         class Seeing(DataclassPresenter):
@@ -3188,8 +3239,14 @@ class TestTheTargetDisplay:
 
         note = Note.objects.create(owner=ada, title="Ada's")
         spec = row_spec(permissions=[Asked()], presenter=Seeing(NoteOut))
-        get(form_view(spec), ada, pk=note.pk)
+        view = form_view(spec, pool_seeds=TENANT_SEEDS)
+        if method == "get":
+            assert get(view, ada, pk=note.pk).status_code == 200
+        else:
+            assert post(view, ada, {"title": "far too long"}, pk=note.pk).status_code == 400
         call_context, presented = seen
         assert presented.principal == ada
         assert presented.target.pk == note.pk
         assert presented.call_context is call_context
+        assert presented.ambient["tenant"] == "tenant-of-ada"
+        assert presented.ambient["user"] == ada

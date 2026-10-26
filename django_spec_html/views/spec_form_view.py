@@ -9,6 +9,7 @@ import math
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from decimal import Decimal
+from types import MappingProxyType
 from typing import Any, Final, cast
 
 from django import forms
@@ -297,16 +298,16 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     one is counted again. A successful post counts nothing.
 
     **``target_display`` is the target as a person reads it**, where the
-    spec's Output - its presenter's, or its output selector's - marks a field
-    with a ``FieldMarking``: the target presented through that presenter,
-    projected by the kernel's ``project_payload``, and with every ``HANDLE``
+    spec's Output - its presenter's, or its output selector's - marks one of
+    its own fields with a ``FieldMarking``: the target presented through that
+    presenter, with the context dispatch hands it, projected by the kernel's ``project_payload``, and with every ``HANDLE``
     dropped as well as every ``HIDDEN`` one. A row's is a dict of its
     ``fields``, with ``label``, the value of the field marked ``LABEL``,
     beside them where there is one; a set's is a list of those, one per row,
     for at most ``target_display_limit`` rows, read in one query. The Output
     must describe the target's rows, since the target is presented through
-    it. A spec whose Output marks no field, or that has none, has no
-    ``target_display``.
+    it. A spec whose Output marks none of its own fields, or that has none,
+    has no ``target_display``.
 
     **A refusal of the arguments shows every error in one post.** Beside an
     ``InvalidArguments``, the page's own form - built as the Validator's is,
@@ -413,13 +414,16 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             # No post to place it on beside the form's: the route names a
             # target its reads refuse, which a post answers at 400 too.
             raise BadRequest(str(refused.detail)) from refused
-        unavailable = _unavailable(spec, principal, target, served)
+        # One pool for the affordances and the presenter's context, so the
+        # target's display costs no seed resolution of its own on GET.
+        pool = base_pool(user=principal, seeds=served.seeds)
+        unavailable = _unavailable(spec, target, served, pool)
         # Absent when every condition is met, as ``code`` is on a refusal
         # that has none, so a template's ``{% if unavailable %}`` reads one
         # context on every answer: test_every_condition_met_leaves_it_out.
         context = {} if unavailable is None else {"unavailable": unavailable}
         form = _page_form(spec, principal, target, served)
-        context.update(self._target_context(spec, principal, target, served))
+        context.update(self._target_context(spec, principal, target, served, pool))
         return self._rendered(self.get_context_data(form=form, **context), status=200)
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
@@ -491,7 +495,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
                 status=refusal_status(refused),
                 merged=merged,
                 **_refusal_code(refused),
-                **self._target_context(spec, principal, target, served),
+                **self._target_context(spec, principal, target, served, None),
             )
         # Never ``not_found``: the target was found before dispatch, which
         # looks nothing up when handed it, and where the route's value was
@@ -632,7 +636,12 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         return _Served(route_kwargs=self.route_kwargs, server=server, seeds=seeds, call_context={})
 
     def _target_context(
-        self, spec: ServiceSpec, principal: Any, target: Any, served: _Served
+        self,
+        spec: ServiceSpec,
+        principal: Any,
+        target: Any,
+        served: _Served,
+        pool: dict[str, Any] | None,
     ) -> dict[str, Any]:
         """What the page shows of the row or set the operation acts on, under the names a template reads.
 
@@ -645,6 +654,12 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         ``target_counted_at``, counted here, at the moment the page is
         rendered. ``target_display`` is the target projected for a person,
         where the spec's Output marks a field, as ``_display`` builds it.
+
+        The presenter is handed the context dispatch hands it: the principal,
+        the target, the request's one call context, and as ``ambient`` the
+        call's base pool - ``pool``, the one GET built for the affordances, or
+        on a refused post one built here, only where a display is presented
+        (test_the_presenter_is_handed_the_context_dispatch_hands_it).
         """
         # One branch to coverage, so each condition is held by its own test:
         # test_a_post_whose_route_is_refused_carries_no_target (the marker of a
@@ -653,9 +668,15 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         if target is UNSET or target is None:
             return {}
         shown = _display(spec)
-        presented = PresentationContext(
-            principal=principal, target=target, call_context=served.call_context
-        )
+        presented: PresentationContext | None = None
+        if shown is not None:
+            ambient = base_pool(user=principal, seeds=served.seeds) if pool is None else pool
+            presented = PresentationContext(
+                principal,
+                target,
+                MappingProxyType(ambient),
+                call_context=served.call_context,
+            )
         if spec.collection_selector_spec is None:
             context: dict[str, Any] = {"target": target}
             if shown is not None:
@@ -912,13 +933,13 @@ def _bound(
 
 
 def _unavailable(
-    spec: ServiceSpec, principal: Any, target: Any, served: _Served
+    spec: ServiceSpec, target: Any, served: _Served, pool: dict[str, Any]
 ) -> Affordance | None:
     """The first of the spec's affordances not met for ``target`` now, or ``None``.
 
     Asked as the kernel says a transport offering an operation asks: the
-    callable conditions through ``unmet_operation_affordance``, on a pool
-    ``base_pool`` builds from the call's own seeds, with ``reserved`` from
+    callable conditions through ``unmet_operation_affordance``, on ``pool``,
+    the one ``base_pool`` built for the page from the call's own seeds, with ``reserved`` from
     the same ones, so a condition reading a seed ``get_pool_seeds`` added
     sees it. Then, with none of those unmet and a row to ask about, the
     conditions on the row, by the kernel's ``enforce_affordances``, which
@@ -935,7 +956,6 @@ def _unavailable(
     as the post's ``ServiceNotFound`` is.
     """
     seeds = served.seeds
-    pool = base_pool(user=principal, seeds=seeds)
     # ``reserved`` from the call's own seeds, or a condition reading a seed
     # added per call is never handed it:
     # test_a_condition_reading_a_per_call_seed_is_asked_with_it.
@@ -971,9 +991,11 @@ def _display(spec: ServiceSpec) -> tuple[Presenter, AudienceProjection] | None:
     """The presenter and the markings a person's view of the target is read through, or ``None``.
 
     ``None`` for a spec whose Output marks none of its own fields - a spec with
-    no Output, and one whose choices alone a projection would speak - since a
-    display is driven by the markings (test_a_spec_with_no_output_has_no_display,
-    test_an_output_marking_nothing_has_no_display). The markings come from the
+    no Output, one whose choices alone a projection would speak, and one
+    marking a field only inside a nested object - since a display is driven
+    by the row's own markings (test_a_spec_with_no_output_has_no_display,
+    test_an_output_marking_nothing_has_no_display,
+    test_a_marking_only_inside_a_nested_object_is_no_display). The markings come from the
     presenter's Output, so a marking means a presenter.
     """
     projection = audience_projection_for_spec(spec)

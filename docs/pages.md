@@ -252,7 +252,7 @@ fragment included:
 | `target` | the row an `instance_selector_spec` found, or the set a `collection_selector_spec` resolved | wherever there is a target: absent for a create, and for a missing row `allow_none` lets through |
 | `target_count` | how many rows the set holds | for a set |
 | `target_counted_at` | when it counted them, `django.utils.timezone.now()` | for a set |
-| `target_display` | the target as a person reads it, below | where the spec's Output marks a field |
+| `target_display` | the target as a person reads it, below | where the spec's Output marks one of its own fields |
 
 A key with nothing to hold is absent rather than `None`, as `unavailable` is.
 
@@ -296,8 +296,9 @@ input.
 spec's Output - its own presenter's, or its `output_selector_spec`'s - which
 is where the kernel keeps what an operation returns:
 
-- the target is presented through that presenter, with the request's
-  principal, the target and its one call context;
+- the target is presented through that presenter, handed the context
+  dispatch hands it: the principal, the target, the request's one call
+  context, and the call's seeds as `ambient`;
 - then projected by the kernel's `project_payload`: a `HIDDEN` field is
   dropped, and a choice is spoken as its display;
 - and every `HANDLE` is dropped as well, at any depth. An agent keeps a handle
@@ -313,8 +314,10 @@ bounded by a `LIMIT`, and presented by one call of the presenter's
 `presented_rows()`. `target_count` still counts every row, so a template can
 say how many it left out.
 
-**A spec whose Output marks no field has no `target_display`**, and neither
-has a spec with no Output; that is no error. Choices alone are not markings.
+**A spec whose Output marks none of its own fields has no
+`target_display`**, and neither has a spec with no Output; that is no error.
+Choices alone are not markings, and nor is a marking only inside a nested
+object.
 The raw `target` stays beside the display either way, for a template that
 wants both. The Output must describe the target's rows, since the target is
 presented through it: a bulk operation whose service returns something else
@@ -362,7 +365,9 @@ do, with the same attributes and hooks, checked by the same code:
 `Grant` a step hands on carries no values. On a POST, the class-level check,
 the target's lookup and dispatch each resolve it, and the form's keywords too
 where `form_kwargs` names it; on a GET, the affordances' pool takes
-dispatch's place. So a resolver answering a fresh object answers each step a
+dispatch's place, and a [target's display](#the-targets-display) is presented
+with that same pool. A refused post that presents a display resolves it once
+more, for the presenter's. So a resolver answering a fresh object answers each step a
 different one. Write seed resolvers that answer the same each time.
 
 **One call context per request.** The page creates one plain dict for each
