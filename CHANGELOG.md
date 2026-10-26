@@ -7,6 +7,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **An htmx request to `SpecFormView` is answered with a fragment of the page.**
+  The view decides a request's outcome once and then chooses the answer: the
+  page, unless `wants_fragment(request)` says htmx asked for less, which it does
+  for an `HX-Request` that is neither boosted nor a history restore, read from
+  django-htmx's `request.htmx` where its middleware set it and from the headers
+  where it did not. The fragment renders `get_fragment_template_names()`,
+  which is `fragment_template_name` or, by default, the page's own
+  `<template_name>#spec-form`, a `{% partialdef %}` that Django 6.0 resolves;
+  below 6.0, django-template-partials 23.3 or later does, with its tag named as
+  a `TEMPLATES` builtin and its loader around the project's own. GET answers
+  the form fragment, and every refusal the page re-renders answers it at 200
+  rather than the page's 4xx, since htmx swaps no 4xx by default. A success is
+  `fragment_success(result)`: `HX-Redirect` to `get_success_url(result)`, never
+  a 302, encoded and checked as the page's redirect is, so an unsafe scheme
+  raises `DisallowedRedirect` in both modes; or the template's `spec-result`
+  fragment rendered in place, with `result` in its context, and
+  `HX-Trigger: spec-succeeded`. A denial is raised in both modes, for the
+  host's handlers. A template with no fragment at the address is Django's
+  `TemplateDoesNotExist` naming it, never the page. Every answer varies on
+  `HX-Request`, `HX-Boosted` and `HX-History-Restore-Request`, and no htmx
+  header reaches dispatch.
+- **`Outcome`**, the five ways a page's post ends (`ok`, `invalid`,
+  `needs_input`, `denied`, `failed`), exported from the root. The one status
+  map gains each refusal's outcome as its third column, so the page and the
+  JSON views still read a single table.
+- **The request reaches the spec on the JSON views.** `SpecView` and
+  `AsyncSpecView` gain two hooks, each defaulting to the attribute of its name:
+  `get_pool_seeds(request)`, so a tenant, a locale or a team the request
+  carries reaches a permission check, a selector or a Validator; and
+  `get_server_arguments(request)`, the kernel's `ServerArguments` the server
+  answers for, whose values outrank whatever the client sent. The declared
+  `server_arguments` is checked by `check_server_arguments` at `as_view()`,
+  against the declared `pool_seeds`; a per-call binding may vary the values,
+  and one that binds or withholds other names raises `ImproperlyConfigured`,
+  as does a seed `get_pool_seeds` adds per request under a name the binding
+  binds or withholds. Every name the server answers for is dropped from what
+  the client sent before the request is coerced, so a client's malformed value
+  for it is never refused. Both hooks are plain `def`, and `as_view()` refuses
+  an `async def` one; `AsyncSpecView` runs them off the event loop. No
+  `request` seed is registered: a spec callable requiring one raises
+  `TypeError` on every reader that has no request.
+- **`route_kwargs` serves a route whose kwargs are not all the spec's**, as an
+  `include()` prefix such as `teams/<team>/` is. On both JSON views, and as a
+  keyword of `route_arguments`, `request_arguments`, `dispatch_request` and
+  `adispatch_request`: a mapping from a captured kwarg to the parameter it
+  fills, or to `None` to drop it, or a tuple of names as an allow-list. The
+  default is the strict rule, unchanged, and a kwarg a mapping does not name
+  is still held to it. On a view, `as_view()` refuses a bare string, and a
+  target or allowed name the spec does not declare or the server binding
+  answers for, when the URLconf is imported. Two kwargs filling one parameter
+  are refused on the request that captures both.
+- **A route kwarg that fills a name the server answers for is refused** as
+  `ImproperlyConfigured`, naming the captured kwarg and pointing at
+  `route_kwargs={name: None}`, which drops it explicitly: the route is the
+  host's, and may not contradict the host's own binding.
+- `dispatch_request` and `adispatch_request` take `server_arguments=` and apply
+  it with `apply_server_arguments` before dispatch; `request_arguments` takes
+  it to drop those names from what the client sent before coercion.
+- **`SpecFormView` takes the same attributes and hooks as the JSON views**:
+  `route_kwargs`, `get_pool_seeds(request)`, `server_arguments` and
+  `get_server_arguments(request)`, checked by the same code as `SpecView`'s at
+  `as_view()` and on each request. The binding applies wherever the page reads
+  arguments: a field of the page's form the binding binds renders disabled with
+  the server's value, one it withholds disabled and empty, on GET and on a
+  refused post, and neither is read from the post; the server's values are
+  laid over the route's before the target is found and over the post's before
+  dispatch, so the page's form, the target's lookup and dispatch read the
+  server's value. The per-call seeds reach the target's lookup, its
+  object-level and scope checks, the affordances and dispatch. The page's
+  class-level permission check is still asked with no seed, its own
+  `pool_seeds` included, so one naming a seed raises `TypeError` on the page,
+  where the JSON views hand it the call's seeds.
+- **The page asks a spec's affordances on GET.** Once the target is found, the
+  callable conditions are asked through the kernel's
+  `unmet_operation_affordance`, on a pool built from the call's seeds, and,
+  with none of those unmet and a row to ask about, the conditions on the row
+  as dispatch asks them. On a GET with a row, each callable condition is
+  therefore asked, and each seed resolved, twice. The first unmet `Affordance`
+  is in the context as `unavailable`, in the page and the fragment alike; it
+  is absent when every condition is met. The post is unchanged, and
+  dispatch's 409 stays the authority.
+- **A refused post's context carries the refusal's `code`**, for an
+  `ActionUnavailable`, as `error_response` puts it in the JSON body.
+
+### Changed
+- **An htmx post to the page is no longer answered as any other.** A success
+  is `HX-Redirect` rather than a 302, and a refusal is the form fragment at 200
+  rather than the whole page at its 4xx; a request with no htmx header is
+  answered as before.
+- **The kernel floor is now `django-service-specs>=0.15.0`.** The request
+  hooks need a permission check offered a registered seed by name, which
+  0.14.0 added, and a top-level Validator field named like a seed staying the
+  caller's, which 0.15.0 did.
+- The request-hook checks `SpecViewBase` made are shared helpers in
+  `http/utils.py`, which `SpecFormView` calls too; `SpecView` and
+  `AsyncSpecView` answer exactly as before.
+
 ## [0.1.2] — 2026-10-21
 
 ### Fixed
