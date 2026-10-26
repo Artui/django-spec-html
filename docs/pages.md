@@ -200,17 +200,25 @@ do, with the same attributes and hooks, checked by the same code:
   and every step that resolves a spec callable is handed what it answered:
   the target's lookup and its object-level or scope check, the affordances
   [below](#an-operation-that-is-unavailable), and dispatch. Seed what the
-  request carries, never the request itself.
+  request carries, never the request itself. **The class-level check is the
+  exception**: the page asks `has_permission` before it reads anything else,
+  and asks it with no seed at all, its own `pool_seeds` included, so a check
+  naming a seed raises `TypeError` on the page. The JSON views hand that check
+  its seeds.
 - **`get_server_arguments(request)`**, `server_arguments` unless overridden,
   answers the kernel's
   [`ServerArguments`][django_service_specs.types.server_arguments.ServerArguments],
-  and the page reads arguments through it everywhere it reads them, so the
-  page and dispatch see one value. A form field naming a name the server
-  answers for has its posted value dropped before anything is coerced, so a
-  value the client was never offered is never refused; the binding is then
-  laid over the post's arguments before dispatch, and over the route's before
-  the target is found, so a target selector reading a bound parameter finds
-  the row by the server's value.
+  and three readers of the call read the server's value for each name it
+  answers for: the page's form, the target's lookup and dispatch. **A field of
+  the page's form that the binding binds renders disabled, showing the
+  server's value; one it withholds renders disabled and empty**, on GET and
+  on a refused post alike, so the page never shows a value the client posted
+  for it. A disabled field is not read from the post, so a value the client
+  was never offered is never coerced or refused; the binding is laid over the
+  post's arguments before dispatch, and over the route's before the target is
+  found, so a target selector reading a bound parameter finds the row by the
+  server's value. Anything else a template shows - the row's own fields, say -
+  is what it is.
 
 The checks are the JSON views': `as_view()` refuses an `async def` hook,
 checks `server_arguments` with the kernel's `check_server_arguments` against
@@ -227,7 +235,9 @@ docs/examples/spec_form.py:request
 --8<--
 ```
 
-The URLconf routes it as `branches/<branch>/books/new/`.
+The URLconf routes it as `branches/<branch>/books/new/`. Its status renders
+disabled with `draft` selected, and a posted status is dropped: every book it
+adds is a draft.
 
 ## An operation that is unavailable
 
@@ -249,6 +259,12 @@ whose post the spec would refuse at 409:
   every condition is met, `unavailable` is absent** from the context, not
   `None`. The fragment renders from the same context, so an `hx-get` that
   loads the form carries it too.
+
+**Every callable condition is asked twice on a GET with a row**: once alone,
+then again with the row's conditions, since the kernel's `enforce_affordances`
+asks them all as dispatch does. Each seed is resolved twice as well, once for
+the target's lookup and once for the affordances' pool. Write conditions and
+seed resolvers that may be asked more than once and answer the same.
 
 The callable conditions are asked first, without a row, so where both kinds
 are unmet and the row's is declared first, the page names the callable while

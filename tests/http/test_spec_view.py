@@ -344,7 +344,11 @@ class TestPoolSeeds:
         view = type("Hooked", (SpecView,), {"spec": notes_spec(), hook: asynchronous})
         with pytest.raises(ImproperlyConfigured) as refused:
             view.as_view()
-        assert str(refused.value).startswith(f"Hooked.{hook} is async")
+        assert str(refused.value) == (
+            f"Hooked.{hook} is async, and the view calls it without awaiting it, so it would "
+            "answer a coroutine: define it with def. AsyncSpecView runs it off the event loop, "
+            "in an executor hop."
+        )
         with pytest.raises(ImproperlyConfigured, match=f"SpecView.{hook} is async"):
             SpecView.as_view(spec=notes_spec(), **{hook: asynchronous})
 

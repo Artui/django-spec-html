@@ -237,10 +237,22 @@ class TestAnUnavailableBook:
         assert b"Choose another branch." in response.content
         assert not Book.objects.exists()
 
-    def test_a_post_to_an_open_branch_adds_the_book(self, ada: Any, author: Author) -> None:
-        response = serve(FACTORY.post("/branches/main/books/new/", data=posted(author)), ada)
+    def test_a_post_to_an_open_branch_adds_the_book_as_a_draft(
+        self, ada: Any, author: Author
+    ) -> None:
+        # The posted status is dropped, and the server's is the book's.
+        data = posted(author, status=Status.PUBLISHED, published_on="1974-10-25")
+        response = serve(FACTORY.post("/branches/main/books/new/", data=data), ada)
         assert (response.status_code, response.url) == (302, "/books/")
-        assert Book.objects.get().title == "The Dispossessed"
+        book = Book.objects.get()
+        assert (book.title, book.status) == ("The Dispossessed", Status.DRAFT)
+
+    def test_the_status_the_server_answers_for_renders_disabled(self, ada: Any) -> None:
+        response = serve(FACTORY.get("/branches/main/books/new/"), ada).render()
+        select = re.search(rb'<select name="status"[^>]*>', response.content)
+        assert select is not None
+        assert b"disabled" in select.group(0)
+        assert b'<option value="draft" selected>' in response.content
 
 
 def _outcome_table() -> dict[str, tuple[str, str, str]]:

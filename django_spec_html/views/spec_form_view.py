@@ -80,7 +80,6 @@ from django_spec_html.http.utils import (
     refusal_status,
     refuse_server_owned,
     server_names,
-    without,
 )
 from django_spec_html.types.outcome import Outcome
 
@@ -241,8 +240,10 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     the target's lookup and its object-level or scope check, the affordances
     and dispatch are handed; and ``get_server_arguments(request)`` answers the binding, laid
     over the route's arguments before the target is found and over the
-    post's before dispatch. A form field naming a name the binding answers
-    for has its posted value dropped before anything is coerced.
+    post's before dispatch. A field of the page's form the binding binds
+    renders disabled with the server's value, and one it withholds disabled
+    and empty, so the post never reads it. The class-level check alone is
+    asked with no seed, where ``SpecView`` hands it the call's.
 
     **GET asks the spec's affordances** once the target is found: the
     callable conditions always, through the kernel's
@@ -347,7 +348,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         # that has none, so a template's ``{% if unavailable %}`` reads one
         # context on every answer: test_every_condition_met_leaves_it_out.
         context = {} if unavailable is None else {"unavailable": unavailable}
-        form = _page_form(spec, target)
+        form = _page_form(spec, target, served.server)
         return self._rendered(self.get_context_data(form=form, **context), status=200)
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
@@ -374,7 +375,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         target: Any = UNSET
         with suppress(InvalidArguments):
             target, grant = _found(spec, principal, grant, kwargs, served)
-        form = _page_form(spec, target, data=request.POST, files=request.FILES)
+        form = _page_form(spec, target, served.server, data=request.POST, files=request.FILES)
         try:
             read = _form_arguments(form, spec.parameters(), kwargs, served)
             result = dispatch(
@@ -752,6 +753,11 @@ def _unavailable(
     as the post's ``ServiceNotFound`` is.
     """
     pool = base_pool(user=principal, seeds=seeds)
+    # ``reserved`` from the call's own seeds on both calls, or a condition
+    # reading a seed added per call is never handed it: held here by
+    # test_a_condition_reading_a_per_call_seed_is_asked_with_it, and on
+    # ``enforce_affordances``, which asks the callables again, by
+    # test_the_row_s_conditions_are_asked_with_the_call_s_seeds.
     unmet = unmet_operation_affordance(spec, pool, reserved=seeds.reserved)
     # One branch to coverage, so each condition is held by its own test:
     # test_a_callable_condition_is_named_before_a_row_condition_declared_first
@@ -794,7 +800,35 @@ def _refusal_tree(refused: DispatchError | ServiceError) -> Mapping[Any, Any]:
     return {NON_FIELD_ERRORS: [refused.message]}
 
 
-def _page_form(spec: ServiceSpec, target: Any, **bound: Any) -> forms.BaseForm:
+def _page_form(
+    spec: ServiceSpec, target: Any, server: ServerArguments | None, **bound: Any
+) -> forms.BaseForm:
+    """The page's form, as ``_built_form`` builds it, with every field ``server`` answers for held.
+
+    A field the binding binds is disabled and shows the server's value; one
+    it withholds is disabled and shows none. A disabled field shows its
+    initial value however the form is bound, so a refused post re-renders
+    the server's value and never the one the client posted for it, and the
+    post never reads it (``_form_arguments`` skips a disabled field), so the
+    binding alone fills it. Only this form's own copies change: Django gives
+    each form instance its own ``fields``, so the form class and every other
+    request's form keep theirs (test_the_form_class_is_left_as_it_was). Held
+    on GET and on a refused post by
+    test_a_bound_field_renders_disabled_with_the_server_s_value,
+    test_a_refused_post_shows_the_server_s_value_never_the_client_s and
+    test_a_withheld_field_renders_disabled_with_no_value.
+    """
+    form = _built_form(spec, target, **bound)
+    owned = server_names(server)
+    values: Mapping[str, Any] = {} if server is None else server.values
+    for name in [name for name in form.fields if name in owned]:
+        form.fields[name].disabled = True
+        # ``None`` for a withheld name: the field shows no value.
+        form.initial[name] = values.get(name)
+    return form
+
+
+def _built_form(spec: ServiceSpec, target: Any, **bound: Any) -> forms.BaseForm:
     """The page's form, bound by ``bound`` if given, showing ``target``'s values where it is a row.
 
     A ``ModelForm`` of the row's model is built on a copy of it, as
@@ -832,10 +866,10 @@ def _form_arguments(
 ) -> dict[str, Any]:
     """The arguments a bound form's post carries, read as the form reads it, route merged last.
 
-    A field naming a parameter the server answers for is dropped before
-    anything is coerced, as ``request_arguments`` drops one, so a value the
-    client was never offered is never refused as the client's; the caller
-    lays the binding over the result.
+    A field naming a parameter the server answers for is never read:
+    ``_page_form`` disables it, and a disabled field is skipped, so a value
+    the client was never offered is never coerced or refused as the
+    client's; the caller lays the binding over the result.
     """
     read: dict[str, Any] = {}
     for name, field in form.fields.items():
@@ -877,7 +911,7 @@ def _form_arguments(
     # ``route_arguments`` - the check ``request_arguments`` makes too - has
     # refused any the spec does not declare.
     route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
-    return coerce_flat(parameters, {**without(read, server_names(served.server)), **route})
+    return coerce_flat(parameters, {**read, **route})
 
 
 def _wire(field: forms.Field, value: Any) -> Any:

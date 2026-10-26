@@ -77,7 +77,7 @@ from tests.dispatch.utils import (
     note_by_pk,
 )
 from tests.dispatch_app.models import Note
-from tests.http.utils import FACTORY, note_spec, signed_in
+from tests.http.utils import FACTORY, SeesTenant, note_spec, signed_in
 
 pytestmark = pytest.mark.django_db
 
@@ -1705,6 +1705,15 @@ def note(ada: Any) -> Note:
     return Note.objects.create(owner=ada, title="One")
 
 
+def field_tag(response: Any, name: str) -> bytes:
+    """The rendered tag of the form's field ``name``, an input or a select."""
+    found = re.search(
+        rb'<(?:input|select)[^>]*name="' + name.encode() + rb'"[^>]*>', response.content
+    )
+    assert found is not None
+    return found.group(0)
+
+
 class TestThePagesRouteKwargs:
     def test_a_kwarg_mapped_to_none_is_dropped(self, ada: Any) -> None:
         view = paged(entry_spec(), route_kwargs={"org": None}).as_view()
@@ -1816,6 +1825,13 @@ class TestThePagesPoolSeeds:
         assert headed(view.as_view(), ada).status_code == 200
         assert headed(view.as_view(), ada, "POST", {"title": "Hi"}).status_code == 302
         assert check.tenants == ["acme", "acme"]
+
+    def test_the_class_level_check_is_asked_with_no_seed(self, ada: Any) -> None:
+        # The page asks it before anything else and hands it none, its own
+        # ``pool_seeds`` included; the JSON views hand it the call's.
+        view = form_view(entry_spec(permissions=[SeesTenant()]), pool_seeds=TENANT_SEEDS)
+        with pytest.raises(TypeError, match="missing 1 required keyword-only argument: 'tenant'"):
+            get(view, ada)
 
     def test_the_hook_is_asked_once_per_request(self, ada: Any, note: Note) -> None:
         asked: list[Any] = []
@@ -2006,6 +2022,58 @@ class TestThePagesServerArguments:
                 answer()
             assert str(refused_.value).startswith(f"PerCall.get_server_arguments() {described}")
 
+    @pytest.mark.parametrize(("ask", "mode"), [(get, "page"), (hx_get, "fragment")])
+    def test_a_bound_field_renders_disabled_with_the_server_s_value(
+        self, ada: Any, ask: Any, mode: str
+    ) -> None:
+        view = fragmented(entry_spec(), server_arguments=ServerArguments(values={"title": "S"}))
+        response = ask(view, ada).render()
+        assert response.context_data["form"].fields["title"].disabled
+        tag = field_tag(response, "title")
+        assert (b'value="S"' in tag, b"disabled" in tag) == (True, True)
+
+    @pytest.mark.parametrize(("ask", "mode"), [(post, "page"), (hx_post, "fragment")])
+    def test_a_refused_post_shows_the_server_s_value_never_the_client_s(
+        self, ada: Any, ask: Any, mode: str
+    ) -> None:
+        # Refused on ``count``, so the form is re-rendered from the post.
+        spec = entry_spec()
+        view = fragmented(spec, server_arguments=ServerArguments(values={"title": "S"}))
+        response = ask(view, ada, {"title": "client", "count": "x"}).render()
+        assert refused(response) == {"count": [WHOLE]}
+        tag = field_tag(response, "title")
+        assert (b'value="S"' in tag, b"disabled" in tag) == (True, True)
+        # As a value, not a substring: the CSRF token is random text.
+        assert b'value="client"' not in response.content
+        assert spec.service.calls == []
+
+    @pytest.mark.parametrize(
+        ("ask", "data"),
+        [
+            (get, None),
+            (hx_get, None),
+            (post, {"title": "shut", "count": "77"}),
+            (hx_post, {"title": "shut", "count": "77"}),
+        ],
+        ids=["page-get", "fragment-get", "page-post", "fragment-post"],
+    )
+    def test_a_withheld_field_renders_disabled_with_no_value(
+        self, ada: Any, ask: Any, data: Any
+    ) -> None:
+        view = fragmented(
+            entry_spec(), server_arguments=ServerArguments(withheld=frozenset({"count"}))
+        )
+        response = (ask(view, ada) if data is None else ask(view, ada, data)).render()
+        tag = field_tag(response, "count")
+        assert (b"value=" in tag, b"disabled" in tag) == (False, True)
+        assert b'value="77"' not in response.content
+
+    def test_the_form_class_is_left_as_it_was(self, ada: Any) -> None:
+        view = paged(entry_spec(), server_arguments=ServerArguments(values={"title": "S"}))
+        get(view.as_view(), ada)
+        assert not EntryForm.base_fields["title"].disabled
+        assert not get(form_view(entry_spec()), ada).context_data["form"].fields["title"].disabled
+
     def test_an_empty_binding_and_none_stand_for_each_other(self, ada: Any) -> None:
         view = paged(
             entry_spec(),
@@ -2113,6 +2181,37 @@ class TestUnavailableOnGet:
         when = Affordance(code="tenant", reason="Not for this tenant.", when=open_for)
         view = paged(entry_spec(affordances=[when]), get_pool_seeds=tenant_from_the_header)
         assert headed(view.as_view(), ada).context_data["unavailable"] is when
+
+    def test_the_row_s_conditions_are_asked_with_the_call_s_seeds(self, ada: Any) -> None:
+        # Both met, so the walk reaches ``enforce_affordances``, which asks
+        # the callable again: without the call's reserved seeds it is never
+        # handed ``tenant``.
+        note = Note.objects.create(owner=ada, title="")
+        when = Affordance(code="tenant", reason="Not for this tenant.", when=open_for)
+
+        def globex(self: Any, request: Any) -> PoolSeeds:
+            return self.pool_seeds.extend(tenant=lambda: "globex")
+
+        view = paged(row_spec(affordances=[when, UNTITLED]), get_pool_seeds=globex).as_view()
+        assert unavailable_of(get(view, ada, pk=str(note.pk))) == "absent"
+
+    def test_on_a_row_each_condition_and_each_seed_is_asked_twice(self, ada: Any) -> None:
+        # Once alone, then with the row's conditions; each seed once for the
+        # lookup's pool and once for the affordances'.
+        note = Note.objects.create(owner=ada, title="")
+        asked: list[str] = []
+
+        def counted(*, tenant: str) -> bool:
+            asked.append("condition")
+            return True
+
+        def seeded(self: Any, request: Any) -> PoolSeeds:
+            return self.pool_seeds.extend(tenant=lambda: asked.append("seed") or "globex")
+
+        when = Affordance(code="counted", reason="Counted.", when=counted)
+        view = paged(row_spec(affordances=[when, UNTITLED]), get_pool_seeds=seeded).as_view()
+        assert unavailable_of(get(view, ada, pk=str(note.pk))) == "absent"
+        assert (asked.count("condition"), asked.count("seed")) == (2, 2)
 
     def test_the_page_no_longer_offers_what_the_post_refuses(self, ada: Any) -> None:
         # Served before, the page offered the form with no reason, and the

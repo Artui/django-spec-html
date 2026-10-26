@@ -25,6 +25,7 @@ from django_service_specs import (
     PoolSeeds,
     SelectorKind,
     SelectorSpec,
+    ServerArguments,
     ServiceSpec,
     update_from_input,
 )
@@ -131,6 +132,9 @@ class StockBook(SpecFormView):
     # spec reads as a seed rather than an argument: drop it, and hold every
     # other kwarg strict.
     route_kwargs = {"branch": None}
+    # A book stocked at a branch starts as a draft, whatever the form posts:
+    # the status field renders disabled, and the posted value is dropped.
+    server_arguments = ServerArguments(values={"status": Status.DRAFT})
 
     def get_pool_seeds(self, request: HttpRequest) -> PoolSeeds:
         # What the request carries, never the request itself.
