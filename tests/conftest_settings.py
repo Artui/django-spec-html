@@ -25,8 +25,11 @@ render is what a project's own template would send back. ``spec_page.html``
 wraps the same form in a layout and ``spec_fragment.html`` is the form alone,
 so a test can tell the page from the fragment on any Django; and
 ``spec_form_htmx.html`` carries its form as a ``partialdef``, which only
-Django 6.0 and later parse, so only the tests skipped below it load it. The
-path is built from this file's location, so it holds no machine's path.
+Django 6.0 and later parse, so only the tests skipped below it load it. Each
+other template is one feature's page with its form fragment beside it, named
+for that feature (``spec_target``, ``spec_confirm``, ``spec_edition``), so a
+docs example renders the page its section shows. The path is built from this
+file's location, so it holds no machine's path.
 """
 
 from __future__ import annotations
