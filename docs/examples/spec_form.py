@@ -8,7 +8,10 @@ a refusal the view does not make.
 
 from __future__ import annotations
 
-from typing import Any
+import dataclasses
+import datetime
+from decimal import Decimal
+from typing import Annotated, Any
 
 from django import forms
 from django.db.models import QuerySet
@@ -17,7 +20,9 @@ from django.urls import path, reverse, reverse_lazy
 from django_service_specs import (
     Affordance,
     ChangeResult,
+    DataclassPresenter,
     DispatchResult,
+    FieldMarking,
     FormValidator,
     Parameter,
     Parameters,
@@ -191,6 +196,67 @@ class StockBook(SpecFormView):
 # --8<-- [end:request]
 
 
+# --8<-- [start:target]
+@dataclasses.dataclass
+class BookOut:
+    """A book as an operation returns it, and as its page names it."""
+
+    pk: Annotated[int, FieldMarking.handle()]  # another call's input: never shown
+    title: Annotated[str, FieldMarking.label()]  # the name a page calls it by
+    price: Decimal
+    status: Status  # spoken as its display: "Draft", not "draft"
+    published_on: Annotated[datetime.date | None, FieldMarking.hidden()]
+
+
+class WithdrawForm(forms.Form):
+    reason = forms.CharField(max_length=200)
+
+
+def withdraw(*, instance: Book, data: dict[str, Any]) -> Book:
+    instance.status = Status.DRAFT
+    instance.save(update_fields=["status"])
+    return instance
+
+
+# One book: the page shows it, by its title, beside the form.
+withdraw_book_spec = ServiceSpec(
+    service=withdraw,
+    permissions=[IsSignedIn()],
+    validator=FormValidator(WithdrawForm),
+    instance_selector_spec=edit_book_spec.instance_selector_spec,
+    presenter=DataclassPresenter(BookOut),
+)
+
+
+class PublishForm(forms.Form):
+    published_on = forms.DateField()
+
+
+def drafts() -> QuerySet[Book]:
+    return Book.objects.filter(status=Status.DRAFT).order_by("title")
+
+
+def publish(*, collection: QuerySet[Book], data: dict[str, Any]) -> list[int]:
+    published = list(collection.values_list("pk", flat=True))
+    collection.update(status=Status.PUBLISHED, published_on=data["published_on"])
+    return published
+
+
+# Every draft at once: the page counts the set, and names the first few.
+publish_drafts_spec = ServiceSpec(
+    service=publish,
+    permissions=[IsSignedIn()],
+    validator=FormValidator(PublishForm),
+    collection_selector_spec=SelectorSpec(kind=SelectorKind.LIST, selector=drafts),
+    output_selector_spec=SelectorSpec(
+        kind=SelectorKind.LIST,
+        selector=lambda *, result: Book.objects.filter(pk__in=result).order_by("title"),
+        presenter=DataclassPresenter(BookOut),
+    ),
+)
+# --8<-- [end:target]
+
+
 def books(request: HttpRequest) -> HttpResponse:
     return HttpResponse("The books.")
 
@@ -241,6 +307,26 @@ urlpatterns = [
             spec=shelve_book_spec,
             template_name="spec_form.html",
             success_url=reverse_lazy("books"),
+        ),
+    ),
+    path(
+        "books/<int:pk>/withdraw/",
+        SpecFormView.as_view(
+            spec=withdraw_book_spec,
+            template_name="spec_target.html",
+            success_url=reverse_lazy("books"),
+            # BookOut describes the book withdrawn, so the page shows it.
+            display_target=True,
+        ),
+    ),
+    path(
+        "books/publish-drafts/",
+        SpecFormView.as_view(
+            spec=publish_drafts_spec,
+            template_name="spec_target.html",
+            success_url=reverse_lazy("books"),
+            display_target=True,
+            target_display_limit=3,
         ),
     ),
     path("branches/<branch>/books/new/", StockBook.as_view()),

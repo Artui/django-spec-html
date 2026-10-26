@@ -29,9 +29,11 @@ from django.core.handlers.exception import response_for_exception
 from django.http import Http404
 from django.middleware.csrf import CsrfViewMiddleware
 from django.template import TemplateSyntaxError, engines
+from django.template.defaultfilters import time
 from django.template.loader import get_template
 from django.test import RequestFactory
 from django.urls import get_resolver
+from django.utils import timezone
 from django_service_specs import (
     ActionUnavailable,
     AdditionalInputRequired,
@@ -256,6 +258,77 @@ class TestAFormThatTakesKeywords:
         response = serve(FACTORY.post("/books/shelve/", data=posted(author)), staff)
         assert (response.status_code, response.url) == (302, "/books/")
         assert Book.objects.get().author == author
+
+
+def drafts(author: Author, *titles: str, status: str = Status.DRAFT) -> list[Book]:
+    return [
+        Book.objects.create(title=title, price=Decimal("9.99"), status=status, author=author)
+        for title in titles
+    ]
+
+
+class TestThePageShowsItsTarget:
+    """``withdraw_book_spec`` and ``publish_drafts_spec``, rendered through ``spec_target.html``."""
+
+    def test_a_book_is_named_by_its_title_beside_the_form(self, ada: Any, author: Author) -> None:
+        (book,) = drafts(author, "The Lathe of Heaven", status=Status.PUBLISHED)
+        response = serve(FACTORY.get(f"/books/{book.pk}/withdraw/"), ada).render()
+        assert response.context_data["target"] == book
+        assert response.context_data["target_display"] == {
+            "label": "The Lathe of Heaven",
+            "fields": {"title": "The Lathe of Heaven", "price": "9.99", "status": "Published"},
+        }
+        content = response.content.decode()
+        assert "<h1>The Lathe of Heaven</h1>" in content
+        assert "<dt>status</dt><dd>Published</dd>" in content
+        # The handle and the hidden field are never shown.
+        assert "<dt>pk</dt>" not in content
+        assert "published_on" not in content
+        assert 'name="reason"' in content
+
+    def test_a_bulk_page_counts_the_set_and_says_when(self, ada: Any, author: Author) -> None:
+        drafts(author, "Earthsea", "Always Coming Home", "Lavinia", "Searoad", "Changing Planes")
+        drafts(author, "The Dispossessed", status=Status.PUBLISHED)
+        response = serve(FACTORY.get("/books/publish-drafts/"), ada).render()
+        context = response.context_data
+        assert context["target_count"] == 5
+        content = response.content.decode()
+        # In the current time zone, as the template's ``time`` filter reads it.
+        at = time(timezone.localtime(context["target_counted_at"]), "H:i")
+        assert f"5 books selected, counted at {at}." in content
+        # The first three, by title, which is the set's own order.
+        assert (
+            "<ul><li>Always Coming Home</li><li>Changing Planes</li><li>Earthsea</li></ul>"
+            in content
+        )
+        assert "The first 3 are shown." in content
+
+    def test_an_empty_set_is_0_selected_not_a_404(self, ada: Any) -> None:
+        response = serve(FACTORY.get("/books/publish-drafts/"), ada).render()
+        assert response.status_code == 200
+        assert "0 books selected, counted at" in response.content.decode()
+        assert response.context_data["target_display"] == []
+
+    def test_the_confirming_post_acts_on_the_set_as_it_is_then(
+        self, ada: Any, author: Author
+    ) -> None:
+        # The page counted two; a third draft arrives before the post, and the
+        # post re-runs the service on the set it finds, never the one counted.
+        drafts(author, "Earthsea", "Lavinia")
+        assert serve(FACTORY.get("/books/publish-drafts/"), ada).context_data["target_count"] == 2
+        drafts(author, "Searoad")
+        data = {"csrfmiddlewaretoken": "token", "save": "Save", "published_on": "2026-10-26"}
+        response = serve(FACTORY.post("/books/publish-drafts/", data=data), ada)
+        assert (response.status_code, response.url) == (302, "/books/")
+        assert not Book.objects.filter(status=Status.DRAFT).exists()
+        assert Book.objects.filter(status=Status.PUBLISHED).count() == 3
+
+    def test_a_refused_post_counts_again(self, ada: Any, author: Author) -> None:
+        drafts(author, "Earthsea")
+        data = {"csrfmiddlewaretoken": "token", "save": "Save", "published_on": ""}
+        response = serve(FACTORY.post("/books/publish-drafts/", data=data), ada).render()
+        assert response.status_code == 400
+        assert "1 book selected, counted at" in response.content.decode()
 
 
 class Anything(forms.Form):

@@ -241,6 +241,96 @@ spec, whose list of rows no form posts, and a view with neither a
 make of the request's hooks, [below](#what-the-request-carries). The view is
 **sync only** in this release.
 
+## What the page acts on
+
+**The page shows its target**, the row or set the operation acts on, in the
+context beside the form, on GET and on every refused post it re-renders, the
+fragment included:
+
+| Key | Holds | Present |
+| --- | --- | --- |
+| `target` | the row an `instance_selector_spec` found, or the set a `collection_selector_spec` resolved | wherever there is a target: absent for a create, and for a missing row `allow_none` lets through |
+| `target_count` | how many rows the set holds | for a set |
+| `target_counted_at` | when it counted them, `django.utils.timezone.now()` | for a set |
+| `target_display` | the target as a person reads it, below | on a page that sets `display_target` |
+
+A key with nothing to hold is absent rather than `None`, as `unavailable` is.
+
+```python
+--8<--
+docs/examples/spec_form.py:target
+--8<--
+```
+
+The URLconf routes the first as `books/<int:pk>/withdraw/` and the second as
+`books/publish-drafts/`, with `target_display_limit=3`, both with
+`display_target=True` and both rendering this template:
+
+```html
+--8<--
+tests/templates/spec_target.html
+--8<--
+```
+
+### A bulk page
+
+A spec with a `collection_selector_spec` acts on a set, and its page says how
+many rows the set holds. **An empty set is no refusal**: its scope check is
+still asked, there is no not-found exit, and the page above says "0 books
+selected" where an instance page answers 404. A queryset is counted with a
+`COUNT` on a fresh clone of it, so no row is read to count it; a set a
+selector answers as a list is counted with `len()`.
+
+**The count is a time-of-check, not a promise.** The rows may change between
+the page and its post, so the context carries when the set was counted, and a
+template says "5 books selected, counted at 14:02" rather than "5 books will
+be published". The post does not replay what the page counted: it re-runs the
+service on the set it finds then, and a refused post counts the set again. A
+successful post counts nothing. So nothing about the count belongs in a hidden
+input.
+
+### The target's display
+
+**A page that sets `display_target = True` shows its target as a person
+reads it**, under `target_display`. It is off by default, because the
+[`FieldMarking`][django_service_specs.output.field_marking.FieldMarking]s it
+reads are on the spec's Output - its own presenter's, or its
+`output_selector_spec`'s - and an Output describes what the operation
+returns, which need not be its target: a withdrawal may return a receipt. A
+page whose Output is marked serves as it did until it opts in, and asks no
+presenter. On:
+
+- the target is presented through that presenter, handed the context
+  dispatch hands it: the principal, the target, the request's one call
+  context, and the call's seeds as `ambient`;
+- then projected by the kernel's `project_payload`: a `HIDDEN` field is
+  dropped, and a choice is spoken as its display;
+- and every `HANDLE` is dropped as well, at any depth. An agent keeps a handle
+  to pass to another tool, and a person is never shown one.
+
+A row's display is a dict: its `fields`, and `label`, the value of the field
+marked `LABEL`, where one is. Above, the book is named "The Lathe of Heaven"
+and its fields are its title, its price and its status, read as "Published":
+the key is a handle and the publication date is hidden. **A set's display is
+a list of those, one per row, for at most `target_display_limit` rows**, 10
+by default: the first that many in the set's own order, read by one query
+bounded by a `LIMIT`, and presented by one call of the presenter's
+`presented_rows()`. `target_count` still counts every row, so a template can
+say how many it left out. `as_view()` refuses a `target_display_limit` that
+is not a positive int, a bool included.
+
+**`as_view()` refuses a page displaying its target**, when the URLconf is
+imported, where its spec has no Output, where the Output marks none of its
+own fields - choices alone are not markings, and nor is a marking only inside
+a nested object - and where the kernel's projection refuses the markings,
+such as two fields marked `LABEL`. What it cannot check is whether the
+Output describes the target's rows, since that is known only once one is
+presented: an Output that does not raises on the page's first request. That
+is the cost of turning the display on. A bulk operation whose service returns
+something else re-reads its rows with an `output_selector_spec`, as
+`publish_drafts_spec` does. The raw `target` stays beside the display, for a
+template that wants both.
+
 ## What the request carries
 
 The page reads the request as [the JSON views](http.md#what-the-request-carries)
@@ -282,7 +372,9 @@ do, with the same attributes and hooks, checked by the same code:
 `Grant` a step hands on carries no values. On a POST, the class-level check,
 the target's lookup and dispatch each resolve it, and the form's keywords too
 where `form_kwargs` names it; on a GET, the affordances' pool takes
-dispatch's place. So a resolver answering a fresh object answers each step a
+dispatch's place, and a [target's display](#the-targets-display), where the
+page shows one, is presented with that same pool. A refused post that
+presents a display resolves it once more, for the presenter's. So a resolver answering a fresh object answers each step a
 different one. Write seed resolvers that answer the same each time.
 
 **One call context per request.** The page creates one plain dict for each
