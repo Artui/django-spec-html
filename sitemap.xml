@@ -2,18 +2,18 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://artui.github.io/django-spec-html/</loc>
-         <lastmod>2026-10-21</lastmod>
+         <lastmod>2026-10-26</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-spec-html/http/</loc>
-         <lastmod>2026-10-21</lastmod>
+         <lastmod>2026-10-26</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-spec-html/pages/</loc>
-         <lastmod>2026-10-21</lastmod>
+         <lastmod>2026-10-26</lastmod>
     </url>
     <url>
          <loc>https://artui.github.io/django-spec-html/reference/</loc>
-         <lastmod>2026-10-21</lastmod>
+         <lastmod>2026-10-26</lastmod>
     </url>
 </urlset>

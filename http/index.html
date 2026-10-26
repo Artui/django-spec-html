@@ -412,6 +412,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#kwargs-a-spec-does-not-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Kwargs a spec does not read
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#the-route-on-its-own" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -432,6 +443,17 @@
     <span class="md-ellipsis">
       
         The principal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-request-carries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the request carries
       
     </span>
   </a>
@@ -567,6 +589,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#kwargs-a-spec-does-not-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Kwargs a spec does not read
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#the-route-on-its-own" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -587,6 +620,17 @@
     <span class="md-ellipsis">
       
         The principal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-request-carries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the request carries
       
     </span>
   </a>
@@ -737,7 +781,10 @@ is the whole of what a hand-written view calls:</p>
 </span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="k">return</span> <span class="k">await</span> <span class="n">adispatch_request</span><span class="p">(</span><span class="n">rename_note_spec</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">url_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"pk"</span><span class="p">:</span> <span class="n">pk</span><span class="p">})</span>
 </span></code></pre></div>
 <p>It reads the principal and the arguments, dispatches with the <code>grant</code>,
-<code>pool_seeds</code> and <code>unknown_arguments</code> it is given, and answers:</p>
+<code>pool_seeds</code> and <code>unknown_arguments</code> it is given, and answers. The
+<code>route_kwargs</code> and <code>server_arguments</code> it also takes are
+<a href="#kwargs-a-spec-does-not-read">the route's kwargs a spec does not read</a> and
+<a href="#what-the-request-carries">the values the server answers for</a>:</p>
 <ul>
 <li><strong>A not-found result</strong> is 404, <code>{"detail": "Not found."}</code>.</li>
 <li><strong>A success</strong> is the presented value, bare, with no envelope around it. The
@@ -767,7 +814,10 @@ a session query and Django refuses one on the event loop.</p>
 <h2 id="the-class-form">The class form<a class="headerlink" href="#the-class-form" title="Permanent link">&para;</a></h2>
 <p><a class="autorefs autorefs-internal" title="SpecView" href="../reference/#django_spec_html.http.spec_view.SpecView"><code>SpecView</code></a> is one spec as a
 view, and every attribute can be passed to <code>as_view()</code> or set on a subclass:
-<code>spec</code>, <code>success_status</code>, <code>unknown_arguments</code>, <code>pool_seeds</code> and <code>methods</code>.</p>
+<code>spec</code>, <code>success_status</code>, <code>unknown_arguments</code>, <code>pool_seeds</code>, <code>methods</code>,
+<code>route_kwargs</code> and <code>server_arguments</code>. Two methods a subclass may override,
+<code>get_pool_seeds(request)</code> and <code>get_server_arguments(request)</code>, are
+<a href="#what-the-request-carries">what the request carries</a> to the call.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">urlpatterns</span> <span class="o">=</span> <span class="p">[</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="c1"># A read answers GET and HEAD, and its query string is its arguments:</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="c1"># /notes/?search=draft&amp;ordering=-title</span>
@@ -779,16 +829,22 @@ view, and every attribute can be passed to <code>as_view()</code> or set on a su
 </span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="c1"># The function views above.</span>
 </span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"notes/&lt;int:pk&gt;/rename-by-hand/"</span><span class="p">,</span> <span class="n">rename_note</span><span class="p">),</span>
 </span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"notes/&lt;int:pk&gt;/arename-by-hand/"</span><span class="p">,</span> <span class="n">arename_note</span><span class="p">),</span>
-</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="p">]</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="c1"># The view above: the team from the route, as a seed rather than an argument.</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"teams/&lt;slug:team&gt;/notes/"</span><span class="p">,</span> <span class="n">TeamNotes</span><span class="o">.</span><span class="n">as_view</span><span class="p">()),</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="p">]</span>
 </span></code></pre></div>
 <p><strong>The methods follow the spec.</strong> A <code>SelectorSpec</code> answers GET and HEAD, a
 <code>ServiceSpec</code> POST. <code>methods</code> replaces that with the ones it names, from GET,
 HEAD, POST, PUT, PATCH and DELETE, in either case. Any other method is Django's
 own 405, with an <code>Allow</code> header listing exactly the methods served, and
 OPTIONS is Django's own answer.</p>
-<p><code>as_view()</code> checks the spec and the methods when the view is built, so a view
-with no spec, or one naming a method it cannot serve, fails when the URLconf is
-imported rather than on its first request. The <code>spec</code> may be a declaration of
+<p><code>as_view()</code> checks the configuration when the view is built, so a view with
+no spec, one naming a method it cannot serve, an <code>async def</code> hook,
+<code>route_kwargs</code> naming a parameter the spec does not declare, or a binding that
+cannot mean what it says, fails when the URLconf is imported rather than on
+its first request. What only a request can show is checked on each request:
+the route, under <a href="#kwargs-a-spec-does-not-read">kwargs a spec does not read</a>,
+and the hooks' answers, under <a href="#what-the-request-carries">what the request carries</a>. The <code>spec</code> may be a declaration of
 another library's, a
 <a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.specs.spec_source.SpecSource"><code>SpecSource</code></a>: it is
 compiled there too, a declaration that does not compile is refused there, and
@@ -911,10 +967,33 @@ an argument, so the spec declares each one. A route capturing a kwarg its spec
 does not declare raises <code>ImproperlyConfigured</code> on the first request it
 serves, under either <code>unknown_arguments</code> policy: the mismatch is the host's,
 wrong for every request, and a 400 would tell the client it had sent
-something wrong. A host scoping by a kwarg its spec does not take (an <code>org</code>
-read by middleware, say) calls
-<a class="autorefs autorefs-internal" title="dispatch_request" href="../reference/#django_spec_html.http.dispatch_request.dispatch_request"><code>dispatch_request</code></a>
-from its own view and passes the <code>url_kwargs</code> the spec declares.</p>
+something wrong. A host scoping by a kwarg its spec does not take says so
+with <code>route_kwargs</code>.</p>
+<h3 id="kwargs-a-spec-does-not-read">Kwargs a spec does not read<a class="headerlink" href="#kwargs-a-spec-does-not-read" title="Permanent link">&para;</a></h3>
+<p>An <code>include()</code> prefix such as <code>teams/&lt;team&gt;/</code> reaches every view under it,
+including one whose spec reads no <code>team</code>. <code>route_kwargs</code> on either JSON view
+and on <a href="../pages/">the page</a>, or on <code>dispatch_request</code> and <code>request_arguments</code>, says which kwargs fill which
+parameters:</p>
+<ul>
+<li><strong><code>None</code></strong>, the default, is the strict rule above.</li>
+<li><strong>A mapping</strong> from a captured name to the parameter it fills, or to <code>None</code>
+  to drop it: <code>{"note": "pk", "team": None}</code>. A kwarg the mapping does not
+  mention is still held to the strict rule, so a typo in a route is still
+  caught.</li>
+<li><strong>A tuple of names</strong> is an allow-list: each passes under its own name, and
+  every other kwarg is dropped.</li>
+</ul>
+<p>Each refusal is <code>ImproperlyConfigured</code>, as the strict rule's is. On a view,
+<code>as_view()</code> refuses a bare string (a <code>TypeError</code>), and a target or an allowed
+name the spec does not declare, when the URLconf is imported. Two kwargs
+filling one parameter are refused on the request that captures both, since a
+view mounted on two routes may capture one on each. A route kwarg is never one
+of the server's values, whatever it fills: the client's URL chose it, so a
+malformed one is the client's 400. <strong>Nor may it fill a name the server answers
+for</strong>: the route is the host's, so a route contradicting the host's own
+binding is refused, by <code>as_view()</code> where <code>route_kwargs</code> names the parameter
+and on the request where the route captures it, pointing at
+<code>route_kwargs={name: None}</code>, which drops it explicitly.</p>
 <h3 id="the-route-on-its-own">The route on its own<a class="headerlink" href="#the-route-on-its-own" title="Permanent link">&para;</a></h3>
 <p><a class="autorefs autorefs-internal" title="route_arguments" href="../reference/#django_spec_html.http.route_arguments.route_arguments"><code>route_arguments</code></a>
 is that rule on its own, for a view that reads the rest of its arguments some
@@ -944,6 +1023,76 @@ before it reads anything else. It raises <code>PrincipalUnavailable</code> for a
 deactivated account and returns <code>request.user</code> otherwise. Reading
 <code>request.user</code> is a session query, so an async view calls it off the event
 loop, as <code>adispatch_request</code> does.</p>
+<h2 id="what-the-request-carries">What the request carries<a class="headerlink" href="#what-the-request-carries" title="Permanent link">&para;</a></h2>
+<p>Two hooks on both JSON views, and on <a href="../pages/">the page</a>, read the request
+before dispatch, each defaulting to the attribute of its name. Django builds one view instance per request, so
+either may read <code>self.kwargs</code> too:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">InTeam</span><span class="p">(</span><span class="n">PermissionCheck</span><span class="p">):</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">message</span> <span class="o">=</span> <span class="s2">"Only a member of the team may read its notes."</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="c1"># ``team`` is a seed, so every transport serving this spec seeds its own.</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">has_permission</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">principal</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">spec</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">team</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>        <span class="k">return</span> <span class="n">principal</span><span class="o">.</span><span class="n">groups</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">team</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="n">team_notes_spec</span> <span class="o">=</span> <span class="n">SelectorSpec</span><span class="p">(</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    <span class="n">kind</span><span class="o">=</span><span class="n">SelectorKind</span><span class="o">.</span><span class="n">LIST</span><span class="p">,</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>    <span class="n">selector</span><span class="o">=</span><span class="n">notes_of</span><span class="p">,</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>    <span class="n">permissions</span><span class="o">=</span><span class="p">[</span><span class="n">IsSignedIn</span><span class="p">(),</span> <span class="n">InTeam</span><span class="p">()],</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>    <span class="n">reads</span><span class="o">=</span><span class="n">list_notes_spec</span><span class="o">.</span><span class="n">reads</span><span class="p">,</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>    <span class="n">presenter</span><span class="o">=</span><span class="n">DataclassPresenter</span><span class="p">(</span><span class="n">NoteOut</span><span class="p">),</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="p">)</span>
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>
+</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>
+</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="k">class</span><span class="w"> </span><span class="nc">TeamNotes</span><span class="p">(</span><span class="n">SpecView</span><span class="p">):</span>
+</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>    <span class="n">spec</span> <span class="o">=</span> <span class="n">team_notes_spec</span>
+</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>    <span class="c1"># Every route under the ``teams/&lt;team&gt;/`` prefix captures ``team``, which</span>
+</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>    <span class="c1"># this spec does not read: drop it, and hold every other kwarg strict.</span>
+</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a>    <span class="n">route_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"team"</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
+</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>    <span class="c1"># The server chooses the order, so a client's ``?ordering=`` is dropped.</span>
+</span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a>    <span class="c1"># Declared, so as_view() checks the name when the URLconf is imported.</span>
+</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a>    <span class="n">server_arguments</span> <span class="o">=</span> <span class="n">ServerArguments</span><span class="p">(</span><span class="n">values</span><span class="o">=</span><span class="p">{</span><span class="s2">"ordering"</span><span class="p">:</span> <span class="s2">"title"</span><span class="p">})</span>
+</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a>
+</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">get_pool_seeds</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoolSeeds</span><span class="p">:</span>
+</span><span id="__span-5-28"><a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a>        <span class="c1"># What the request carries, never the request itself.</span>
+</span><span id="__span-5-29"><a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">pool_seeds</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">team</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"team"</span><span class="p">])</span>
+</span><span id="__span-5-30"><a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a>
+</span><span id="__span-5-31"><a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">get_server_arguments</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ServerArguments</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-5-32"><a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a>        <span class="c1"># The value may vary per request; the name is the declared one.</span>
+</span><span id="__span-5-33"><a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a>        <span class="k">return</span> <span class="n">ServerArguments</span><span class="p">(</span><span class="n">values</span><span class="o">=</span><span class="p">{</span><span class="s2">"ordering"</span><span class="p">:</span> <span class="s2">"-title"</span> <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">is_staff</span> <span class="k">else</span> <span class="s2">"title"</span><span class="p">})</span>
+</span></code></pre></div>
+<ul>
+<li><strong><code>get_pool_seeds(request)</code></strong> answers the seeds the call is resolved
+  with, so a tenant, a locale or a team the request carries reaches a
+  permission check, a selector or a Validator. <strong>Seed what the request
+  carries, never the request itself</strong>, and no <code>request</code> seed is registered
+  by default: a spec callable requiring <code>request</code> raises <code>TypeError</code> on
+  every reader that has none, which is MCP, the agent tools, the CLI and a
+  task, while a spec reading <code>team</code> is one definition every transport can
+  seed.</li>
+<li><strong><code>get_server_arguments(request)</code></strong> answers the kernel's
+  <a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.types.server_arguments.ServerArguments"><code>ServerArguments</code></a>:
+  values the server answers for, which outrank whatever the client sent,
+  and names it withholds, which are dropped. A client's
+  value for a name it was never offered is never refused, however malformed:
+  <code>?ordering=sideways</code> here, or <code>?pk=abc</code> for a bound integer, which is
+  dropped before the query string is coerced. The declared
+  <code>server_arguments</code> is checked by the kernel's <code>check_server_arguments</code> at
+  <code>as_view()</code>, against the declared <code>pool_seeds</code>; the hook may vary the
+  values per request, and each is checked on every call, but it binds and
+  withholds the declared names exactly, or the request raises
+  <code>ImproperlyConfigured</code>, since the check at <code>as_view()</code> never saw any
+  other. <strong>A seed <code>get_pool_seeds</code> adds under a name the binding binds or
+  withholds is refused the same way</strong>: declared in <code>pool_seeds</code>, the
+  <code>as_view()</code> check would have refused the binding with it.</li>
+</ul>
+<p>Both hooks are plain <code>def</code>, and <code>as_view()</code> refuses an <code>async def</code> one:
+neither is awaited. <code>AsyncSpecView</code> runs both in an executor hop of their
+own, so one reading <code>request.user</code> or a model never queries on the event
+loop. A host's
+own view passes the same values to <code>dispatch_request</code> as <code>pool_seeds=</code> and
+<code>server_arguments=</code>, and calls <code>check_server_arguments</code> once, when it is
+built.</p>
 <h2 id="refusals">Refusals<a class="headerlink" href="#refusals" title="Permanent link">&para;</a></h2>
 <p><a class="autorefs autorefs-internal" title="error_response" href="../reference/#django_spec_html.http.error_response.error_response"><code>error_response</code></a>
 answers both <a href="https://artui.github.io/django-service-specs/arguments/#two-families-of-error">families</a>, with the statuses
@@ -1036,12 +1185,12 @@ package is exempted: a POST from a session-authenticated browser carries the
 token, in the <code>X-CSRFToken</code> header for a <code>fetch()</code> or in the form for an HTML
 form, and <code>CsrfViewMiddleware</code> refuses one that does not. A route that needs no
 token is the host's decision, and one line:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># A route a script calls, authenticated by the host's own middleware rather than</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># a session cookie, so it has no CSRF token to send. Exempting it is the host's</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1"># decision, and one line.</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">urlpatterns</span> <span class="o">+=</span> <span class="p">[</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"hooks/notes/&lt;int:pk&gt;/rename/"</span><span class="p">,</span> <span class="n">csrf_exempt</span><span class="p">(</span><span class="n">SpecView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="n">rename_note_spec</span><span class="p">))),</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="p">]</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># A route a script calls, authenticated by the host's own middleware rather than</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1"># a session cookie, so it has no CSRF token to send. Exempting it is the host's</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># decision, and one line.</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">urlpatterns</span> <span class="o">+=</span> <span class="p">[</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"hooks/notes/&lt;int:pk&gt;/rename/"</span><span class="p">,</span> <span class="n">csrf_exempt</span><span class="p">(</span><span class="n">SpecView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="n">rename_note_spec</span><span class="p">))),</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="p">]</span>
 </span></code></pre></div>
 <h2 id="a-refusal-placed-on-a-form">A refusal, placed on a form<a class="headerlink" href="#a-refusal-placed-on-a-form" title="Permanent link">&para;</a></h2>
 <p><a class="autorefs autorefs-internal" title="add_argument_errors" href="../reference/#django_spec_html.http.add_argument_errors.add_argument_errors"><code>add_argument_errors</code></a>

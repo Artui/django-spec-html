@@ -300,6 +300,24 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pages
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -316,6 +334,58 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-request-carries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the request carries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#an-operation-that-is-unavailable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        An operation that is unavailable
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#an-htmx-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        An htmx request
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -395,6 +465,47 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-request-carries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the request carries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#an-operation-that-is-unavailable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        An operation that is unavailable
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#an-htmx-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        An htmx request
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -423,7 +534,8 @@
 form the page renders, every page works as a plain form post, and a refused
 post comes back as the page again with the refusal placed on its form. The
 statuses a refused post answers are the <a href="../http/#refusals">JSON views'</a>, so a
-client reading one reads the other the same way.</p>
+client reading one reads the other the same way. An htmx request to the same
+URL gets the part of the page it swaps, <a href="#htmx">from the same template</a>.</p>
 <p><a class="autorefs autorefs-internal" title="SpecFormView" href="../reference/#django_spec_html.views.spec_form_view.SpecFormView"><code>SpecFormView</code></a> serves
 a spec whose Validator is a <a href="https://artui.github.io/django-service-specs/forms/"><code>FormValidator</code></a> as the page a person
 fills that form in on: the form that validates the arguments is the form the
@@ -496,9 +608,10 @@ the spec's Validator:</p>
 </span><span id="__span-3-25"><a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a>            <span class="n">success_url</span><span class="o">=</span><span class="n">reverse_lazy</span><span class="p">(</span><span class="s2">"books"</span><span class="p">),</span>
 </span><span id="__span-3-26"><a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a>        <span class="p">),</span>
 </span><span id="__span-3-27"><a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a>    <span class="p">),</span>
-</span><span id="__span-3-28"><a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"books/"</span><span class="p">,</span> <span class="n">books</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"books"</span><span class="p">),</span>
-</span><span id="__span-3-29"><a id="__codelineno-3-29" name="__codelineno-3-29" href="#__codelineno-3-29"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"books/&lt;int:pk&gt;/"</span><span class="p">,</span> <span class="n">book</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"book"</span><span class="p">),</span>
-</span><span id="__span-3-30"><a id="__codelineno-3-30" name="__codelineno-3-30" href="#__codelineno-3-30"></a><span class="p">]</span>
+</span><span id="__span-3-28"><a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"branches/&lt;branch&gt;/books/new/"</span><span class="p">,</span> <span class="n">StockBook</span><span class="o">.</span><span class="n">as_view</span><span class="p">()),</span>
+</span><span id="__span-3-29"><a id="__codelineno-3-29" name="__codelineno-3-29" href="#__codelineno-3-29"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"books/"</span><span class="p">,</span> <span class="n">books</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"books"</span><span class="p">),</span>
+</span><span id="__span-3-30"><a id="__codelineno-3-30" name="__codelineno-3-30" href="#__codelineno-3-30"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"books/&lt;int:pk&gt;/"</span><span class="p">,</span> <span class="n">book</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"book"</span><span class="p">),</span>
+</span><span id="__span-3-31"><a id="__codelineno-3-31" name="__codelineno-3-31" href="#__codelineno-3-31"></a><span class="p">]</span>
 </span></code></pre></div>
 <p>The template is any template that renders the form inside a POST form with
 its token. The one above is as small as that:</p>
@@ -612,45 +725,71 @@ the form's own widgets</strong>, which is how Django reads a form:</p>
 <code>get_success_url(result)</code>, which resolves <code>success_url</code> as Django's
 <code>redirect()</code> does, so a path, a <code>reverse_lazy</code> or a URL name all work. Override
 it to read the result, as <code>AddBookThenShowIt</code> does to reach the book it
-created. A refusal:</p>
+created. A refusal ends in one of four outcomes, read from the same map as
+its status, and each is answered as the page or, for htmx, as
+<a href="#htmx">the fragment</a>:</p>
 <table>
 <thead>
 <tr>
 <th>Refusal</th>
-<th>The form view answers</th>
+<th>Outcome</th>
+<th>The page answers</th>
+<th>The fragment answers</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>InvalidArguments</code>, <code>ServiceValidationError</code></td>
+<td>invalid</td>
 <td>400, the form re-rendered</td>
-</tr>
-<tr>
-<td><code>ActionUnavailable</code>, <code>ServiceConflict</code></td>
-<td>409, the form re-rendered</td>
-</tr>
-<tr>
-<td><code>AdditionalInputRequired</code>, <code>ServiceError</code></td>
-<td>422, the form re-rendered</td>
+<td>200, the form fragment re-rendered</td>
 </tr>
 <tr>
 <td><code>UnsupportedMediaType</code></td>
+<td>invalid</td>
 <td>415, the form re-rendered</td>
+<td>200, the form fragment re-rendered</td>
+</tr>
+<tr>
+<td><code>AdditionalInputRequired</code></td>
+<td>needs_input</td>
+<td>422, the form re-rendered</td>
+<td>200, the form fragment re-rendered</td>
+</tr>
+<tr>
+<td><code>ActionUnavailable</code>, <code>ServiceConflict</code></td>
+<td>failed</td>
+<td>409, the form re-rendered</td>
+<td>200, the form fragment re-rendered</td>
+</tr>
+<tr>
+<td><code>ServiceError</code></td>
+<td>failed</td>
+<td>422, the form re-rendered</td>
+<td>200, the form fragment re-rendered</td>
 </tr>
 <tr>
 <td><code>DispatchError</code></td>
+<td>failed</td>
 <td>400, the form re-rendered</td>
+<td>200, the form fragment re-rendered</td>
 </tr>
 <tr>
 <td><code>NotPermitted</code>, <code>PrincipalUnavailable</code></td>
+<td>denied</td>
+<td><code>PermissionDenied</code></td>
 <td><code>PermissionDenied</code></td>
 </tr>
 <tr>
-<td><code>ServiceNotFound</code>, a not-found result</td>
+<td><code>ServiceNotFound</code></td>
+<td>denied</td>
+<td><code>Http404</code></td>
 <td><code>Http404</code></td>
 </tr>
 </tbody>
 </table>
+<p>A not-found result is <code>Http404</code> too, in both. The outcome column is the
+package's <code>Outcome</code>, by value; a success is <code>ok</code>.</p>
 <p>The first two rows place the refusal on the form, and a service's string or
 list detail is about the whole form. Every other re-rendered refusal is its
 message, among the form's non-field errors. <strong>The re-rendered form carries
@@ -668,16 +807,297 @@ status.</p>
 <p><code>as_view()</code> refuses, when the URLconf is imported, a view with no
 <code>ServiceSpec</code>, a spec whose Validator is not a <code>FormValidator</code>, a <code>many</code>
 spec, whose list of rows no form posts, and a view with neither a
-<code>success_url</code> nor its own <code>get_success_url</code>. The view is <strong>sync
-only</strong> in this release.</p>
-<p><a id="htmx"></a>
-<strong>The page reads no htmx header</strong> in this release, so an htmx request is
-answered as any other post. A success is the redirect to the success URL, which
-the request follows itself, so the page that URL serves is swapped into the
-request's target. A refusal is the whole page at its 4xx status, which htmx does not swap
-by default. A fragment answer for an htmx request, with <code>HX-Redirect</code> on a
-success, is planned for 0.2.0. Until then, serve an htmx form from a view of
-your own.</p>
+<code>success_url</code> nor its own <code>get_success_url</code>; then every check the JSON views
+make of the request's hooks, <a href="#what-the-request-carries">below</a>. The view is
+<strong>sync only</strong> in this release.</p>
+<h2 id="what-the-request-carries">What the request carries<a class="headerlink" href="#what-the-request-carries" title="Permanent link">&para;</a></h2>
+<p>The page reads the request as <a href="../http/#what-the-request-carries">the JSON views</a>
+do, with the same attributes and hooks, checked by the same code:</p>
+<ul>
+<li><strong><code>route_kwargs</code></strong> says which URL kwargs fill which parameters, a mapping
+  to rename or drop (<code>{"branch": None}</code>) or a tuple of names to allow, as on
+  <a href="../http/#kwargs-a-spec-does-not-read"><code>SpecView</code></a>. <code>as_view()</code> refuses a
+  bare string and a target or an allowed name the spec does not declare, and
+  two kwargs filling one parameter are refused on the request that captures
+  both.</li>
+<li><strong><code>get_pool_seeds(request)</code></strong>, <code>pool_seeds</code> unless overridden, answers the
+  seeds this request's call is resolved with. It is asked once per request,
+  and every step that resolves a spec callable is handed what it answered:
+  the target's lookup and its object-level or scope check, the affordances
+  <a href="#an-operation-that-is-unavailable">below</a>, and dispatch. Seed what the
+  request carries, never the request itself. <strong>The class-level check is the
+  exception</strong>: the page asks <code>has_permission</code> before it reads anything else,
+  and asks it with no seed at all, its own <code>pool_seeds</code> included, so a check
+  naming a seed raises <code>TypeError</code> on the page. The JSON views hand that check
+  its seeds.</li>
+<li><strong><code>get_server_arguments(request)</code></strong>, <code>server_arguments</code> unless overridden,
+  answers the kernel's
+  <a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.types.server_arguments.ServerArguments"><code>ServerArguments</code></a>,
+  and three readers of the call read the server's value for each name it
+  answers for: the page's form, the target's lookup and dispatch. <strong>A field of
+  the page's form that the binding binds renders disabled, showing the
+  server's value; one it withholds renders disabled and empty</strong>, on GET and
+  on a refused post alike, so the page never shows a value the client posted
+  for it. A disabled field is not read from the post, so a value the client
+  was never offered is never coerced or refused; the binding is laid over the
+  post's arguments before dispatch, and over the route's before the target is
+  found, so a target selector reading a bound parameter finds the row by the
+  server's value. Anything else a template shows - the row's own fields, say -
+  is what it is.</li>
+</ul>
+<p>The checks are the JSON views': <code>as_view()</code> refuses an <code>async def</code> hook,
+checks <code>server_arguments</code> with the kernel's <code>check_server_arguments</code> against
+the declared <code>pool_seeds</code>, and refuses a <code>route_kwargs</code> filling a name the
+binding answers for. On each request, a per-call binding that binds or
+withholds other names than the declared one, a seed added per call under a
+bound or withheld name, and a route capture filling a name the server answers
+for are each refused as <code>ImproperlyConfigured</code>, the last pointing at
+<code>route_kwargs={name: None}</code>.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">CLOSED_BRANCHES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"harbour"</span><span class="p">}</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">branch_open</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">branch</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="c1"># ``branch`` is a seed, so every transport serving this spec seeds its own.</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="k">return</span> <span class="n">branch</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">CLOSED_BRANCHES</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="n">stock_book_spec</span> <span class="o">=</span> <span class="n">ServiceSpec</span><span class="p">(</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="n">service</span><span class="o">=</span><span class="n">add_book</span><span class="p">,</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    <span class="n">permissions</span><span class="o">=</span><span class="p">[</span><span class="n">IsSignedIn</span><span class="p">()],</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="n">validator</span><span class="o">=</span><span class="n">book_validator</span><span class="p">,</span>
+</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>    <span class="n">affordances</span><span class="o">=</span><span class="p">[</span>
+</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>        <span class="n">Affordance</span><span class="p">(</span>
+</span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>            <span class="n">code</span><span class="o">=</span><span class="s2">"branch_closed"</span><span class="p">,</span>
+</span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>            <span class="n">reason</span><span class="o">=</span><span class="s2">"This branch is closed for stocktaking."</span><span class="p">,</span>
+</span><span id="__span-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>            <span class="n">when</span><span class="o">=</span><span class="n">branch_open</span><span class="p">,</span>
+</span><span id="__span-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>        <span class="p">),</span>
+</span><span id="__span-6-19"><a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a>    <span class="p">],</span>
+</span><span id="__span-6-20"><a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="p">)</span>
+</span><span id="__span-6-21"><a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a>
+</span><span id="__span-6-22"><a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>
+</span><span id="__span-6-23"><a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="k">class</span><span class="w"> </span><span class="nc">StockBook</span><span class="p">(</span><span class="n">SpecFormView</span><span class="p">):</span>
+</span><span id="__span-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a>    <span class="n">spec</span> <span class="o">=</span> <span class="n">stock_book_spec</span>
+</span><span id="__span-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a>    <span class="n">template_name</span> <span class="o">=</span> <span class="s2">"spec_form_available.html"</span>
+</span><span id="__span-6-26"><a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a>    <span class="n">success_url</span> <span class="o">=</span> <span class="n">reverse_lazy</span><span class="p">(</span><span class="s2">"books"</span><span class="p">)</span>
+</span><span id="__span-6-27"><a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a>    <span class="c1"># Every route under ``branches/&lt;branch&gt;/`` captures ``branch``, which this</span>
+</span><span id="__span-6-28"><a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a>    <span class="c1"># spec reads as a seed rather than an argument: drop it, and hold every</span>
+</span><span id="__span-6-29"><a id="__codelineno-6-29" name="__codelineno-6-29" href="#__codelineno-6-29"></a>    <span class="c1"># other kwarg strict.</span>
+</span><span id="__span-6-30"><a id="__codelineno-6-30" name="__codelineno-6-30" href="#__codelineno-6-30"></a>    <span class="n">route_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"branch"</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
+</span><span id="__span-6-31"><a id="__codelineno-6-31" name="__codelineno-6-31" href="#__codelineno-6-31"></a>    <span class="c1"># A book stocked at a branch starts as a draft, whatever the form posts:</span>
+</span><span id="__span-6-32"><a id="__codelineno-6-32" name="__codelineno-6-32" href="#__codelineno-6-32"></a>    <span class="c1"># the status field renders disabled, and the posted value is dropped.</span>
+</span><span id="__span-6-33"><a id="__codelineno-6-33" name="__codelineno-6-33" href="#__codelineno-6-33"></a>    <span class="n">server_arguments</span> <span class="o">=</span> <span class="n">ServerArguments</span><span class="p">(</span><span class="n">values</span><span class="o">=</span><span class="p">{</span><span class="s2">"status"</span><span class="p">:</span> <span class="n">Status</span><span class="o">.</span><span class="n">DRAFT</span><span class="p">})</span>
+</span><span id="__span-6-34"><a id="__codelineno-6-34" name="__codelineno-6-34" href="#__codelineno-6-34"></a>
+</span><span id="__span-6-35"><a id="__codelineno-6-35" name="__codelineno-6-35" href="#__codelineno-6-35"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">get_pool_seeds</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PoolSeeds</span><span class="p">:</span>
+</span><span id="__span-6-36"><a id="__codelineno-6-36" name="__codelineno-6-36" href="#__codelineno-6-36"></a>        <span class="c1"># What the request carries, never the request itself.</span>
+</span><span id="__span-6-37"><a id="__codelineno-6-37" name="__codelineno-6-37" href="#__codelineno-6-37"></a>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">pool_seeds</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">branch</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">"branch"</span><span class="p">])</span>
+</span></code></pre></div>
+<p>The URLconf routes it as <code>branches/&lt;branch&gt;/books/new/</code>. Its status renders
+disabled with <code>draft</code> selected, and a posted status is dropped: every book it
+adds is a draft.</p>
+<h2 id="an-operation-that-is-unavailable">An operation that is unavailable<a class="headerlink" href="#an-operation-that-is-unavailable" title="Permanent link">&para;</a></h2>
+<p>A spec's <a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.types.affordance.Affordance"><code>Affordance</code></a>
+conditions say whether the operation is possible right now, and <strong>the page
+asks them on GET</strong>, after it has found the target, so it never offers a form
+whose post the spec would refuse at 409:</p>
+<ul>
+<li><strong>The callable conditions are asked always</strong>, through the kernel's
+  <code>unmet_operation_affordance</code>, on a pool <code>base_pool</code> builds from the call's
+  own seeds. So a condition reading a seed <code>get_pool_seeds</code> adds, as
+  <code>branch_open</code> above reads <code>branch</code>, is asked with it.</li>
+<li><strong>When the target is a row and every callable condition is met, the
+  conditions on the row are asked too</strong>, as dispatch asks them. A target of
+  <code>None</code> - a create, or a missing row <code>allow_none</code> lets through - is no row,
+  and no row condition is asked about it.</li>
+<li><strong>The first unmet one is in the context as <code>unavailable</code></strong>: the
+  <code>Affordance</code> itself, whose <code>code</code> and <code>reason</code> a template reads. <strong>When
+  every condition is met, <code>unavailable</code> is absent</strong> from the context, not
+  <code>None</code>. The fragment renders from the same context, so an <code>hx-get</code> that
+  loads the form carries it too.</li>
+</ul>
+<p><strong>Every callable condition is asked twice on a GET with a row</strong>: once alone,
+then again with the row's conditions, since the kernel's <code>enforce_affordances</code>
+asks them all as dispatch does. Each seed is resolved twice as well, once for
+the target's lookup and once for the affordances' pool. Write conditions and
+seed resolvers that may be asked more than once and answer the same.</p>
+<p>The callable conditions are asked first, without a row, so where both kinds
+are unmet and the row's is declared first, the page names the callable while
+the post is refused with the row's: dispatch asks in declaration order. <strong>The
+page's answer is advice, and the post's refusal is the authority</strong>: the POST
+is unchanged, dispatch asks every condition again, and a condition that
+changed between the two requests is answered by the 409.</p>
+<p><strong>A refused post carries the refusal's <code>code</code></strong> in its context, beside the
+form, for a refusal that has one: <code>ActionUnavailable</code>, whose <code>code</code> is the
+one the <a href="../http/#refusals">JSON body</a> carries beside its <code>detail</code>. It is
+absent for every other refusal. The fragment's context carries it too, so a
+template branches on the stable code rather than on the message.</p>
+<p>There is no default template yet, so a host's template says it:</p>
+<div class="language-html highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>{% if unavailable %}<span class="p">&lt;</span><span class="nt">p</span> <span class="na">class</span><span class="o">=</span><span class="s">"unavailable"</span> <span class="na">data-code</span><span class="o">=</span><span class="s">"{{ unavailable.code }}"</span><span class="p">&gt;</span>{{ unavailable.reason }}<span class="p">&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>{% endif %}
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="p">&lt;</span><span class="nt">form</span> <span class="na">method</span><span class="o">=</span><span class="s">"post"</span><span class="p">&gt;</span>{% csrf_token %}
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>  {% if code == "branch_closed" %}<span class="p">&lt;</span><span class="nt">p</span> <span class="na">class</span><span class="o">=</span><span class="s">"next"</span><span class="p">&gt;&lt;</span><span class="nt">a</span> <span class="na">href</span><span class="o">=</span><span class="s">"/branches/"</span><span class="p">&gt;</span>Choose another branch.<span class="p">&lt;/</span><span class="nt">a</span><span class="p">&gt;&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>{% endif %}
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>  <span class="p">&lt;</span><span class="nt">fieldset</span><span class="err">{%</span> <span class="na">if</span> <span class="na">unavailable</span> <span class="err">%}</span> <span class="na">disabled</span><span class="err">{%</span> <span class="na">endif</span> <span class="err">%}</span><span class="p">&gt;</span>{{ form }}<span class="p">&lt;</span><span class="nt">button</span> <span class="na">name</span><span class="o">=</span><span class="s">"save"</span><span class="p">&gt;</span>Save<span class="p">&lt;/</span><span class="nt">button</span><span class="p">&gt;&lt;/</span><span class="nt">fieldset</span><span class="p">&gt;</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="p">&lt;/</span><span class="nt">form</span><span class="p">&gt;</span>
+</span></code></pre></div>
+<p>On the closed branch above, the page says why and disables the form, and a
+post made anyway comes back at 409 with the reason among the form's errors and
+the link to another branch beside it.</p>
+<p><a id="htmx"></a></p>
+<h2 id="an-htmx-request">An htmx request<a class="headerlink" href="#an-htmx-request" title="Permanent link">&para;</a></h2>
+<p><strong>Turning htmx on is a template change.</strong> The view answers every request with
+the page unless htmx asked for less, and then answers the same outcome with the
+part of the page the request swaps, rendered from the same template. Wrap the
+page's form in <code>{% partialdef spec-form inline %}</code>, give the form <code>hx-post</code> and
+a target, and, for a success answered in place, define <code>spec-result</code>:</p>
+<div class="language-html highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="p">&lt;</span><span class="nt">html</span><span class="p">&gt;</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="p">&lt;</span><span class="nt">body</span><span class="p">&gt;</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="p">&lt;</span><span class="nt">h1</span><span class="p">&gt;</span>New book<span class="p">&lt;/</span><span class="nt">h1</span><span class="p">&gt;</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>{% partialdef spec-form inline %}
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="p">&lt;</span><span class="nt">form</span> <span class="na">method</span><span class="o">=</span><span class="s">"post"</span> <span class="na">hx-post</span><span class="o">=</span><span class="s">"{% url 'add-book' %}"</span> <span class="na">hx-swap</span><span class="o">=</span><span class="s">"outerHTML"</span><span class="p">&gt;</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>  {% csrf_token %}{{ form }}<span class="p">&lt;</span><span class="nt">button</span> <span class="na">name</span><span class="o">=</span><span class="s">"save"</span><span class="p">&gt;</span>Save<span class="p">&lt;/</span><span class="nt">button</span><span class="p">&gt;</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="p">&lt;/</span><span class="nt">form</span><span class="p">&gt;</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>{% endpartialdef %}
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>{% partialdef spec-result %}
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="p">&lt;</span><span class="nt">p</span> <span class="na">id</span><span class="o">=</span><span class="s">"saved"</span><span class="p">&gt;</span>Added {{ result.value.title }}.<span class="p">&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>{% endpartialdef %}
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="p">&lt;/</span><span class="nt">body</span><span class="p">&gt;</span>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="p">&lt;/</span><span class="nt">html</span><span class="p">&gt;</span>
+</span></code></pre></div>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">urlpatterns</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="c1"># The same view as a plain page: only the template changed.</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">path</span><span class="p">(</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>        <span class="s2">"books/new/"</span><span class="p">,</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>        <span class="n">SpecFormView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>            <span class="n">spec</span><span class="o">=</span><span class="n">add_book_spec</span><span class="p">,</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>            <span class="n">template_name</span><span class="o">=</span><span class="s2">"spec_form_htmx.html"</span><span class="p">,</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>            <span class="n">success_url</span><span class="o">=</span><span class="n">reverse_lazy</span><span class="p">(</span><span class="s2">"books"</span><span class="p">),</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>        <span class="p">),</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>        <span class="n">name</span><span class="o">=</span><span class="s2">"add-book"</span><span class="p">,</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>    <span class="p">),</span>
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"books/"</span><span class="p">,</span> <span class="n">books</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"books"</span><span class="p">),</span>
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="p">]</span>
+</span></code></pre></div>
+<p>The view's Python does not change: <code>inline</code> renders the form where it stands
+on the page, and the same block is addressable on its own as
+<code>spec_form_htmx.html#spec-form</code>, which is where the view looks for it by
+default. <strong>The tag and that <code>#name</code> address are Django 6.0's.</strong> Below 6.0,
+install
+<a href="https://github.com/carltongibson/django-template-partials">django-template-partials</a>
+(23.3 or later, the first with <code>partialdef</code>) and configure it in <code>TEMPLATES</code>:
+its tag as a <strong>builtin</strong>, and its loader around the project's own.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># settings.py, below Django 6.0 only: from 6.0 Django has the tag and the</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="c1"># address itself, and this would register a second partialdef over its own.</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="n">TEMPLATES</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="p">{</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>        <span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django.template.backends.django.DjangoTemplates"</span><span class="p">,</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>        <span class="s2">"DIRS"</span><span class="p">:</span> <span class="p">[</span><span class="n">BASE_DIR</span> <span class="o">/</span> <span class="s2">"templates"</span><span class="p">],</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>        <span class="s2">"OPTIONS"</span><span class="p">:</span> <span class="p">{</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>            <span class="c1"># The tag as a builtin, so the page's template needs no</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>            <span class="c1"># {% load partials %}, which Django 6.0 would not find.</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>            <span class="s2">"builtins"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"template_partials.templatetags.partials"</span><span class="p">],</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>            <span class="c1"># Its loader around the project's own, for the page.html#name</span>
+</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>            <span class="c1"># address. Adding "template_partials" to INSTALLED_APPS sets this</span>
+</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>            <span class="c1"># one up for you, and the builtin above still has to be named.</span>
+</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>            <span class="s2">"loaders"</span><span class="p">:</span> <span class="p">[</span>
+</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>                <span class="p">(</span>
+</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>                    <span class="s2">"template_partials.loader.Loader"</span><span class="p">,</span>
+</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a>                    <span class="p">[</span>
+</span><span id="__span-10-18"><a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a>                        <span class="s2">"django.template.loaders.filesystem.Loader"</span><span class="p">,</span>
+</span><span id="__span-10-19"><a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a>                        <span class="s2">"django.template.loaders.app_directories.Loader"</span><span class="p">,</span>
+</span><span id="__span-10-20"><a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a>                    <span class="p">],</span>
+</span><span id="__span-10-21"><a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a>                <span class="p">)</span>
+</span><span id="__span-10-22"><a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a>            <span class="p">],</span>
+</span><span id="__span-10-23"><a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a>        <span class="p">},</span>
+</span><span id="__span-10-24"><a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a>    <span class="p">}</span>
+</span><span id="__span-10-25"><a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a><span class="p">]</span>
+</span></code></pre></div>
+<p>The builtin is the part that is easy to miss. Adding <code>"template_partials"</code> to
+<code>INSTALLED_APPS</code> sets up the loader and nothing else, so the page's template
+fails to parse at <code>{% partialdef %}</code>; and a <code>{% load partials %}</code> in the
+template instead would break it again on Django 6.0, which has the tag itself
+and no such library. From 6.0, configure none of this. Without either, the
+address is a <code>TemplateDoesNotExist</code>. A fragment kept in a file of its own, or
+under another name, is one attribute, <code>fragment_template_name</code>, and renders on
+any Django.</p>
+<p><strong>Which requests get the fragment.</strong> A request whose <code>HX-Request</code> header is
+<code>true</code>, unless it is boosted (<code>HX-Boosted</code>) or a history restore
+(<code>HX-History-Restore-Request</code>): a boosted link or form swaps the whole body,
+and a history restore after a cache miss needs the whole page back, so both get
+the page. The view reads django-htmx's <code>request.htmx</code> where its middleware set
+it and the three headers where it did not, so a project with django-htmx and
+one without get the same answer; it imports nothing from django-htmx. The rule
+is one method, <code>wants_fragment(request)</code>, to override. <strong>Every answer sets
+<code>Vary</code></strong> on those three headers, the page's included, since one URL answers two
+bodies and a cache keyed on fewer would hand a fragment to a page load.</p>
+<p><strong>What the fragment answers</strong>, outcome by outcome:</p>
+<ul>
+<li><strong>GET</strong> renders the form fragment, unbound, so an <code>hx-get</code> can load the form
+  into a dialog.</li>
+<li><strong>A refusal the page re-renders</strong> is the form fragment, bound the same way
+  and from the same context, at <strong>200</strong> where the page answers 4xx: htmx swaps
+  no 4xx response by default, so a refusal answered at one would land nowhere.
+  The table above has each row, and the outcome stays in the body and in the
+  map.</li>
+<li><strong>A success</strong> is <code>fragment_success(result)</code>. Where the fragment template
+  defines <code>spec-result</code>, that is rendered in place at 200, and
+  <code>HX-Trigger: spec-succeeded</code> names an event for the rest of the page to
+  listen for. Its context is <code>result</code>, <code>view</code>, <code>spec</code> and <code>extra_context</code>, and
+  no <code>form</code>, since the post's form is done with. Otherwise it is <code>HX-Redirect</code>
+  to <code>get_success_url(result)</code>, at 200 and never a 302: an XHR follows a 302
+  itself and would swap the next page into the form. The URL is encoded and
+  checked as the page's redirect is, so a path outside ASCII arrives as the
+  page's <code>Location</code> would, and an unsafe scheme such as <code>javascript:</code> raises
+  <code>DisallowedRedirect</code> in both modes. The answer passes back
+  through the host's middleware like any other, so a cookie set for the
+  request, such as the session a sign-in rotates, is set on it. Override the
+  method for <code>HX-Location</code>, or a 204 carrying <code>HX-Trigger</code>.</li>
+<li><strong>A denial</strong> is raised in both modes alike, for the host's handlers.</li>
+</ul>
+<p><strong>A template with no fragment at the address</strong> answers htmx with Django's
+<code>TemplateDoesNotExist</code> naming it - <code>spec_form.html#spec-form</code>, or the
+<code>fragment_template_name</code> that is missing - and never with the page instead,
+which swapped into a form's target would nest a second layout inside it.</p>
+<p><strong>No htmx header reaches the spec.</strong> The mode is read only after the outcome
+is decided, to choose the wrapper: the arguments are the form's fields and the
+route's kwargs, and dispatch is called the same way in both modes. So a spec
+cannot branch on the mode, and its outcome on the page and in a fragment is one
+outcome.</p>
+<p><strong>A denial is the host's to answer, for htmx too.</strong> The view raises
+<code>PermissionDenied</code> and <code>Http404</code> in both modes, and a handler answering an htmx
+request with a bare 403 shows nothing, since htmx swaps no 4xx. htmx acts on
+<code>HX-Redirect</code> and <code>HX-Refresh</code> whatever the status, so a handler can keep the
+403 and still send the visitor somewhere:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">handler403</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">exception</span><span class="p">:</span> <span class="ne">Exception</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span><span class="p">:</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">    </span><span class="sd">"""The host's 403: a page for a browser, and for htmx a header saying where to go."""</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">headers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"HX-Request"</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">"true"</span><span class="p">:</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>        <span class="n">response</span> <span class="o">=</span> <span class="n">permission_denied</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">exception</span><span class="p">)</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    <span class="k">else</span><span class="p">:</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>        <span class="c1"># htmx swaps no 4xx body, but it acts on these two headers whatever</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>        <span class="c1"># the status, so the 403 keeps its status and still reaches the visitor.</span>
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>        <span class="n">response</span> <span class="o">=</span> <span class="n">HttpResponse</span><span class="p">(</span><span class="n">status</span><span class="o">=</span><span class="mi">403</span><span class="p">)</span>
+</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>        <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">is_authenticated</span><span class="p">:</span>
+</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>            <span class="c1"># Signed in and still refused: reload. A page that refuses this</span>
+</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>            <span class="c1"># principal on GET answers the reload with its 403 page; a denial</span>
+</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>            <span class="c1"># only the operation raises does not recur on GET, so the reload</span>
+</span><span id="__span-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>            <span class="c1"># shows the form again, empty.</span>
+</span><span id="__span-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>            <span class="n">response</span><span class="p">[</span><span class="s2">"HX-Refresh"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"true"</span>
+</span><span id="__span-11-15"><a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a>        <span class="k">else</span><span class="p">:</span>
+</span><span id="__span-11-16"><a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a>            <span class="c1"># Sign in, then come back to the page the form is on.</span>
+</span><span id="__span-11-17"><a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a>            <span class="n">here</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">headers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"HX-Current-URL"</span><span class="p">,</span> <span class="n">request</span><span class="o">.</span><span class="n">get_full_path</span><span class="p">())</span>
+</span><span id="__span-11-18"><a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a>            <span class="n">response</span><span class="p">[</span><span class="s2">"HX-Redirect"</span><span class="p">]</span> <span class="o">=</span> <span class="n">redirect_to_login</span><span class="p">(</span><span class="n">here</span><span class="p">)</span><span class="o">.</span><span class="n">url</span>
+</span><span id="__span-11-19"><a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a>    <span class="c1"># One URL, two answers: a cache must not hand one to the other.</span>
+</span><span id="__span-11-20"><a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a>    <span class="n">patch_vary_headers</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="p">(</span><span class="s2">"HX-Request"</span><span class="p">,))</span>
+</span><span id="__span-11-21"><a id="__codelineno-11-21" name="__codelineno-11-21" href="#__codelineno-11-21"></a>    <span class="k">return</span> <span class="n">response</span>
+</span></code></pre></div>
+<p>Defined in the root URLconf as <code>handler403</code>, it sends an anonymous visitor to
+sign in and back to the page the form is on, and reloads the page for a
+signed-in one. <strong>The reload answers with the 403 page only where the page
+itself refuses on GET</strong>: the spec's class-level check, or the object-level
+check on the row the route names. A denial only the operation raises, from
+inside the service, does not recur on GET, so the reload shows the form again,
+empty, and what was typed is gone; a host whose services refuse that way
+answers those in the form instead, by raising a <code>ServiceError</code>. The view's
+<code>Vary</code> never reaches a denial, which is raised rather than answered, so the
+handler sets its own on <code>HX-Request</code>, since it answers the two kinds of request
+differently.</p>
 
 
 
