@@ -52,10 +52,15 @@ INSTALLED_APPS = [
 ]
 ```
 
-`as_view()` refuses a page rendering a shipped template that no template engine
-finds, with `ImproperlyConfigured` naming the template and the setting, so the
-URLconf's import says so rather than the first request's
-`TemplateDoesNotExist`. A page naming a template of its own needs no app.
+`as_view()` refuses a page rendering a shipped template that the view's
+`template_engine` does not find, with `ImproperlyConfigured` naming the
+template and the setting, so the URLconf's import says so rather than the
+first request's `TemplateDoesNotExist`. It asks for the page and its fragment,
+or the page alone where `fragment_template_name` names a fragment of the
+project's own, and follows neither one's `extends` or `include`: a shipped page
+copied into a directory of the project's own, without the app, needs
+`base.html` and `target.html` found there too. A page naming a template of its
+own needs no app.
 
 The shipped page is a plain document: no stylesheet, no script, and no htmx
 attribute. Everything it shows is escaped. It renders:
@@ -364,8 +369,11 @@ presenter. On:
 - and every `HANDLE` is dropped as well, at any depth. An agent keeps a handle
   to pass to another tool, and a person is never shown one.
 
-A row's display is a dict: its `fields`, and `label`, the value of the field
-marked `LABEL`, where one is. Above, the book is named "The Lathe of Heaven"
+A row's display is a dict: its `fields`, the same fields as `pairs` of name
+and value in order, and `label`, the value of the field marked `LABEL`, where
+one is. Loop over `pairs` rather than `fields.items`: a template looks the key
+`items` up before the method, so an Output with a field of that name would
+loop over its value. Above, the book is named "The Lathe of Heaven"
 and its fields are its title, its price and its status, read as "Published":
 the key is a handle and the publication date is hidden. **A set's display is
 a list of those, one per row, for at most `target_display_limit` rows**, 10

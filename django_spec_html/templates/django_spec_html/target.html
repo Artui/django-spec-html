@@ -12,7 +12,7 @@ whose string may be anything its model's ``__str__`` returns.
 {% endblocktranslate %}</p>
 {% if target_display %}
 <ul>
-{% for row in target_display %}<li>{% if row.label %}{{ row.label }}{% else %}<dl>{% for name, value in row.fields.items %}<dt>{{ name }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% endif %}</li>
+{% for row in target_display %}<li>{% if row.label %}{{ row.label }}{% else %}<dl>{% for name, value in row.pairs %}<dt>{{ name }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% endif %}</li>
 {% endfor %}</ul>
 {% if target_count > target_display|length %}<p>{% blocktranslate count counter=target_display|length trimmed %}
 The first row is shown.
@@ -22,5 +22,5 @@ The first {{ counter }} rows are shown.
 {% endif %}
 {% elif target_display %}
 {% if target_display.label %}<p>{{ target_display.label }}</p>{% endif %}
-<dl>{% for name, value in target_display.fields.items %}<dt>{{ name }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+<dl>{% for name, value in target_display.pairs %}<dt>{{ name }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
 {% endif %}

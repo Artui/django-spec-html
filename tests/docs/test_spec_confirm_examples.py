@@ -77,6 +77,7 @@ class TestThePage:
         assert context["target_display"] == {
             "label": "The Lathe of Heaven",
             "fields": {"title": "The Lathe of Heaven", "status": "Published"},
+            "pairs": tuple({"title": "The Lathe of Heaven", "status": "Published"}.items()),
         }
         body = response.render().content
         assert b"Withdraw <strong>The Lathe of Heaven</strong>?" in body

@@ -78,6 +78,28 @@ class NoteOut:
     title: Annotated[str, FieldMarking.label()]
 
 
+@dataclasses.dataclass
+class UnlabelledOut:
+    pk: Annotated[int, FieldMarking.handle()]
+    title: str
+
+
+@dataclasses.dataclass
+class BasketOut:
+    """An Output whose field named ``items`` a template's ``fields.items`` would read as the key."""
+
+    pk: Annotated[int, FieldMarking.handle()]
+    title: Annotated[str, FieldMarking.label()]
+    items: str
+
+
+@dataclasses.dataclass
+class UnlabelledBasketOut:
+    pk: Annotated[int, FieldMarking.handle()]
+    title: str
+    items: str
+
+
 def form_spec(form_class: type[forms.BaseForm] = NoteForm, **kwargs: Any) -> ServiceSpec:
     kwargs.setdefault("service", Record())
     kwargs.setdefault("permissions", OPEN)
@@ -202,6 +224,7 @@ class TestTheFormPage:
     def test_get_renders_the_form_in_a_document(self, ada: Any) -> None:
         rendered = body(get(built(SpecFormView, form_spec()), ada))
         assert rendered.startswith(DOCUMENT)
+        assert '<html lang="en-us">' in rendered
         assert 'name="csrfmiddlewaretoken"' in rendered
         assert '<input type="text" name="title" maxlength="20" required' in rendered
         # No commit button set, so the submit button posts no name.
@@ -341,6 +364,57 @@ class TestTheTargetPane:
         assert "Pay rent" not in rendered
         assert "The first row is shown." in rendered
 
+    def test_an_empty_set_is_counted_none(self, ada: Any) -> None:
+        spec = confirm_spec(collection_selector_spec=EVERY_NOTE, instance_selector_spec=None)
+        assert "0 rows selected, counted at" in body(get(built(SpecConfirmView, spec), ada))
+
+    def test_a_set_row_with_no_label_is_its_fields_escaped(self, ada: Any, note: Note) -> None:
+        note.title = "<i>Milk</i>"
+        note.save()
+        spec = confirm_spec(
+            collection_selector_spec=EVERY_NOTE,
+            instance_selector_spec=None,
+            presenter=DataclassPresenter(UnlabelledOut),
+        )
+        rendered = body(get(built(SpecConfirmView, spec, display_target=True), ada))
+        assert "<li><dl><dt>title</dt><dd>&lt;i&gt;Milk&lt;/i&gt;</dd></dl></li>" in rendered
+        assert "<dt>pk</dt>" not in rendered
+
+    def test_a_set_shown_whole_says_nothing_of_rows_left_out(self, ada: Any, note: Note) -> None:
+        spec = confirm_spec(
+            collection_selector_spec=EVERY_NOTE,
+            instance_selector_spec=None,
+            presenter=DataclassPresenter(NoteOut),
+        )
+        rendered = body(get(built(SpecConfirmView, spec, display_target=True), ada))
+        assert "<li>Buy milk</li>" in rendered
+        assert "shown." not in rendered
+
+    @pytest.mark.parametrize(
+        ("presenter", "shown"),
+        [
+            pytest.param(BasketOut, "<dt>items</dt><dd>three</dd>", id="one-row"),
+            pytest.param(UnlabelledBasketOut, "<dt>items</dt><dd>three</dd>", id="a-set-s-row"),
+        ],
+    )
+    def test_a_field_named_items_is_shown_as_a_field(
+        self, ada: Any, note: Note, presenter: type, shown: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # ``fields.items`` in a template would read the key ``items`` first,
+        # and fail to unpack its value; the pane loops over ``pairs``.
+        monkeypatch.setattr(Note, "items", "three", raising=False)
+        if presenter is BasketOut:
+            spec = confirm_spec(presenter=DataclassPresenter(presenter))
+            response = get(built(SpecConfirmView, spec, display_target=True), ada, pk=note.pk)
+        else:
+            spec = confirm_spec(
+                collection_selector_spec=EVERY_NOTE,
+                instance_selector_spec=None,
+                presenter=DataclassPresenter(presenter),
+            )
+            response = get(built(SpecConfirmView, spec, display_target=True), ada)
+        assert shown in body(response)
+
     def test_one_row_counted_is_one_row(self, ada: Any, note: Note) -> None:
         spec = confirm_spec(collection_selector_spec=EVERY_NOTE, instance_selector_spec=None)
         assert "1 row selected, counted at" in body(get(built(SpecConfirmView, spec), ada))
@@ -389,6 +463,26 @@ class TestTheManyPage:
         rendered = body(response)
         assert rendered.count("Sure?") == 1
         assert "confirmed" not in rendered
+
+    def test_the_formset_posts_its_csrf_token(self, ada: Any) -> None:
+        assert 'name="csrfmiddlewaretoken"' in body(get(built(SpecFormSetView, many_spec()), ada))
+
+    def test_a_file_field_makes_the_formset_multipart(self, ada: Any) -> None:
+        rendered = body(get(built(SpecFormSetView, many_spec(form_class=AttachmentForm)), ada))
+        assert '<form method="post" enctype="multipart/form-data">' in rendered
+
+    def test_an_unmet_affordance_disables_the_formset_and_says_why(self, ada: Any) -> None:
+        paused = Affordance(code="paused", reason="Notes are paused.", when=lambda: False)
+        rendered = body(get(built(SpecFormSetView, many_spec(affordances=[paused])), ada))
+        assert '<p data-code="paused">Notes are paused.</p>' in rendered
+        assert "<fieldset disabled>" in rendered
+
+    def test_a_refusal_s_code_is_on_the_formset_s_form(self, ada: Any) -> None:
+        refused = ActionUnavailable("Closed for now.", code="closed")
+        data = {"form-TOTAL_FORMS": "1", "form-INITIAL_FORMS": "0", "form-0-title": "a"}
+        response = post(built(SpecFormSetView, many_spec(service=raising(refused))), ada, data)
+        assert response.status_code == 409
+        assert '<form method="post" data-code="closed">' in body(response)
 
     def test_the_fragment_is_the_formset_alone(self, ada: Any) -> None:
         rendered = body(get(built(SpecFormSetView, many_spec()), ada, HTMX))
@@ -494,6 +588,39 @@ class TestAPageNoEngineCanRender:
             pytest.raises(ImproperlyConfigured, match="spec_form_fragment.html"),
         ):
             built(SpecFormView, form_spec())
+
+    def test_the_view_s_own_engine_is_the_one_asked(self) -> None:
+        # The default engine finds what the app ships; the one the view names
+        # does not, and that is the engine every request renders with.
+        templates = [
+            {
+                "BACKEND": "django.template.backends.django.DjangoTemplates",
+                "APP_DIRS": True,
+            },
+            {
+                "NAME": "bare",
+                "BACKEND": "django.template.backends.django.DjangoTemplates",
+            },
+        ]
+        with (
+            override_settings(TEMPLATES=templates),
+            pytest.raises(ImproperlyConfigured, match="spec_form.html"),
+        ):
+            built(SpecFormView, form_spec(), template_engine="bare")
+
+    def test_a_fragment_of_the_project_s_own_is_not_the_shipped_one(self, tmp_path: Path) -> None:
+        # The page overridden in a directory of its own, without the app, and
+        # its fragment named: the shipped fragment would never render.
+        (tmp_path / "django_spec_html").mkdir()
+        (tmp_path / "django_spec_html" / "spec_form.html").write_text("<p>Ours</p>")
+        templates = [
+            {
+                "BACKEND": "django.template.backends.django.DjangoTemplates",
+                "DIRS": [str(tmp_path)],
+            }
+        ]
+        with override_settings(INSTALLED_APPS=WITHOUT_THE_APP, TEMPLATES=templates):
+            built(SpecFormView, form_spec(), fragment_template_name="ours/form.html")
 
     def test_a_page_s_own_template_is_not_looked_for(self) -> None:
         with override_settings(INSTALLED_APPS=WITHOUT_THE_APP):

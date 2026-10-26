@@ -294,6 +294,7 @@ class TestThePage:
         assert response.context_data["target_display"] == {
             "label": "Buy milk",
             "fields": {"title": "Buy milk", "archived": False},
+            "pairs": tuple({"title": "Buy milk", "archived": False}.items()),
         }
         assert b"Withdraw <strong>Buy milk</strong>?" in response.render().content
 

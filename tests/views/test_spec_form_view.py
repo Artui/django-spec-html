@@ -888,6 +888,27 @@ class TestClearingAFile:
 
 
 class TestRefusals:
+    def test_a_refused_post_asks_the_scope_check_once(self, ada: Any) -> None:
+        # Asked of a create before the post is read; asked again after a
+        # refusal only on a many page, whose dispatch may not have asked it.
+        class Recorded(PermissionCheck):
+            def __init__(self) -> None:
+                self.scopes: list[Any] = []
+
+            def has_permission(self, principal: Any, spec: Any) -> bool:
+                return True
+
+            def has_scope_permission(self, principal: Any, spec: Any, target: Any) -> bool:
+                self.scopes.append(target)
+                return True
+
+        check = Recorded()
+        response = post(
+            form_view(entry_spec(permissions=[check])), ada, {"title": "a", "count": "x"}
+        )
+        assert response.status_code == 400
+        assert check.scopes == [None]
+
     def test_a_form_wide_clean_error_appears_once(self, ada: Any) -> None:
         spec = entry_spec()
         response = post(form_view(spec), ada, {"title": "shut"})
@@ -3032,6 +3053,7 @@ class TestTheTargetDisplay:
         assert context["target_display"] == {
             "label": "Ada's",
             "fields": {"title": "Ada's", "archived": False},
+            "pairs": tuple({"title": "Ada's", "archived": False}.items()),
         }
         # The raw row stays beside it.
         assert context["target"].pk == note.pk
@@ -3051,6 +3073,7 @@ class TestTheTargetDisplay:
         assert display == {
             "label": "Lathe",
             "fields": {"title": "Lathe", "author": {"name": "Le Guin"}},
+            "pairs": tuple({"title": "Lathe", "author": {"name": "Le Guin"}}.items()),
         }
 
     def test_a_row_with_no_label_has_none_in_its_display(self, ada: Any) -> None:
@@ -3062,7 +3085,7 @@ class TestTheTargetDisplay:
         note = Note.objects.create(owner=ada, title="Ada's")
         spec = row_spec(presenter=DataclassPresenter(Untitled))
         display = get(shown_view(spec), ada, pk=note.pk).context_data["target_display"]
-        assert display == {"fields": {"title": "Ada's"}}
+        assert display == {"fields": {"title": "Ada's"}, "pairs": tuple({"title": "Ada's"}.items())}
 
     def test_each_row_of_a_set_is_projected_up_to_the_bound(self, ada: Any) -> None:
         notes(ada, 5)
@@ -3074,6 +3097,7 @@ class TestTheTargetDisplay:
         assert context["target_display"][0] == {
             "label": "Note 0",
             "fields": {"title": "Note 0", "archived": False},
+            "pairs": tuple({"title": "Note 0", "archived": False}.items()),
         }
         # The count, then the bounded rows in one query: never the whole set.
         assert len(queries) == 2
@@ -3199,6 +3223,13 @@ class TestTheTargetDisplay:
                 "books": [{"name": "Lathe"}, {"name": "Earthsea"}],
                 "lead": None,
             },
+            "pairs": tuple(
+                {
+                    "name": "Poetry",
+                    "books": [{"name": "Lathe"}, {"name": "Earthsea"}],
+                    "lead": None,
+                }.items()
+            ),
         }
 
     @pytest.mark.parametrize("method", ["get", "refused-post"])

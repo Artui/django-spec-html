@@ -465,8 +465,10 @@ def _split(tree: Mapping[Any, Any], sent: list[forms.BaseForm], many_argument: s
 
     Under ``many_argument``, an ``int`` key is the row's index in the list
     the post sent, so it is the form at that place in ``sent``
-    (test_a_refusal_of_row_i_lands_on_the_form_that_sent_it); any other key
-    there, ``non_field_errors``, and a list in place of the mapping, are
+    (test_a_refusal_of_row_i_lands_on_the_form_that_sent_it), and an ``int``
+    key naming a row the post did not send is the formset's, prefixed with
+    its path (test_a_refusal_of_a_row_the_post_did_not_send_lands_on_the_non_form_errors);
+    any other key there, ``non_field_errors``, and a list in place of the mapping, are
     about the list as a whole
     (test_a_refusal_of_the_list_lands_on_the_non_form_errors). Every other key
     is about the call, prefixed with its path as ``add_argument_errors``
@@ -486,8 +488,9 @@ def _split(tree: Mapping[Any, Any], sent: list[forms.BaseForm], many_argument: s
                 # one no form sent, past the list or counted from its end, and
                 # that one is the formset's, prefixed with its path. One
                 # branch to coverage, so each condition is held by its own
-                # test: test_a_refusal_of_row_i_lands_on_the_form_that_sent_it
-                # (an int), and the two cases of
+                # test: the ``the-validator-s-word-on-the-list`` case of
+                # test_a_refusal_of_the_list_lands_on_the_non_form_errors (an
+                # int, since a str key would be ordered against one), and the two cases of
                 # test_a_refusal_of_a_row_the_post_did_not_send_lands_on_the_non_form_errors
                 # (``past-the-rows-sent`` and ``negative``).
                 if isinstance(index, int) and 0 <= index < len(sent):

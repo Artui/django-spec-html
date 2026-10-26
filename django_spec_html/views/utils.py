@@ -327,6 +327,11 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
                 # A route value its reads refuse leaves it unasked, and the
                 # refusal raised is the reading's
                 # (test_a_route_value_and_a_row_s_coercion_are_refused_in_one_post).
+                # One branch to coverage: ``spec.many`` is held by
+                # test_a_refused_post_asks_the_scope_check_once, the form
+                # page's check having been asked before the post was read, and
+                # the refusal's kind by
+                # test_a_principal_the_scope_check_refuses_is_never_offered_the_page.
                 with suppress(InvalidArguments):
                     _found(spec, principal, grant, kwargs, served, ask_scope=True)
             # The outcome is decided here, once, from the one map, and the
@@ -821,7 +826,16 @@ def _check_shipped_templates(cls: type[SpecPageBase], initkwargs: Mapping[str, A
     request would answer ``TemplateDoesNotExist``; asked here, the URLconf's
     import says what is missing instead. The page and its fragment both,
     since a project overriding the page alone in a directory of its own
-    still renders the shipped fragment under htmx.
+    still renders the shipped fragment under htmx; the page alone when
+    ``fragment_template_name`` names a fragment of the project's own, which
+    is the one an htmx request renders
+    (test_a_fragment_of_the_project_s_own_is_not_the_shipped_one).
+
+    Those two names and no more: a template either of them extends or
+    includes is not followed, so a project copying a shipped page that
+    extends ``base.html`` into a directory of its own, without the app,
+    needs ``base.html`` found there too, and is told so by the first
+    request rather than here.
 
     Asked only of a page that renders a shipped template: one whose own
     ``template_name`` is a consumer's is never loaded here
@@ -834,8 +848,11 @@ def _check_shipped_templates(cls: type[SpecPageBase], initkwargs: Mapping[str, A
     names = initkwargs.get("get_template_names", cls.get_template_names)
     if page not in _SHIPPED_FRAGMENTS or names is not TemplateResponseMixin.get_template_names:
         return
+    # The engine the view names, not the default one: it is the engine every
+    # request renders with (test_the_view_s_own_engine_is_the_one_asked).
     engine = initkwargs.get("template_engine", cls.template_engine)
-    for name in (page, _SHIPPED_FRAGMENTS[page]):
+    fragment = initkwargs.get("fragment_template_name", cls.fragment_template_name)
+    for name in (page,) if fragment is not None else (page, _SHIPPED_FRAGMENTS[page]):
         try:
             get_template(name, using=engine)
         except TemplateDoesNotExist as missing:
@@ -1108,7 +1125,13 @@ def _check_display(label: str, spec: ServiceSpec) -> None:
 
 
 def _displayed(presented: Any, projection: AudienceProjection) -> dict[str, Any]:
-    """One presented row as a person reads it: its ``fields``, and the ``label`` naming it.
+    """One presented row as a person reads it: its ``fields``, the same as ``pairs``, and its ``label``.
+
+    ``pairs`` is the fields as name and value, in order, for a template to
+    loop over: ``fields.items`` in a template looks the key ``items`` up
+    first, so an Output with a field of that name - an order's, a basket's -
+    would loop over that field's value instead
+    (test_a_field_named_items_is_shown_as_a_field).
 
     Projected by the kernel's ``project_payload`` - a ``HIDDEN`` field
     dropped, a choice spoken as its display - and then
@@ -1120,9 +1143,10 @@ def _displayed(presented: Any, projection: AudienceProjection) -> dict[str, Any]
     (test_a_row_with_no_label_has_none_in_its_display).
     """
     fields = _without_handles(project_payload(presented, projection), projection)
+    shown: dict[str, Any] = {"fields": fields, "pairs": tuple(fields.items())}
     if projection.label in fields:
-        return {"label": fields[projection.label], "fields": fields}
-    return {"fields": fields}
+        return {"label": fields[projection.label], **shown}
+    return shown
 
 
 def _without_handles(payload: Any, projection: AudienceProjection) -> Any:

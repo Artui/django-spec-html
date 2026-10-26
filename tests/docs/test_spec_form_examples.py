@@ -289,6 +289,9 @@ class TestThePageShowsItsTarget:
         assert response.context_data["target_display"] == {
             "label": "The Lathe of Heaven",
             "fields": {"title": "The Lathe of Heaven", "price": "9.99", "status": "Published"},
+            "pairs": tuple(
+                {"title": "The Lathe of Heaven", "price": "9.99", "status": "Published"}.items()
+            ),
         }
         content = response.content.decode()
         assert "<h1>The Lathe of Heaven</h1>" in content

@@ -6,6 +6,6 @@
   {% endif %}
 {% elif target_display %}
   <h1>{{ target_display.label }}</h1>
-  <dl>{% for name, value in target_display.fields.items %}<dt>{{ name }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+  <dl>{% for name, value in target_display.pairs %}<dt>{{ name }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
 {% endif %}
 <form method="post">{% csrf_token %}{{ form }}<button name="save">Save</button></form>
