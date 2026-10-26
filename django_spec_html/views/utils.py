@@ -129,10 +129,10 @@ _TYPED: Final = (forms.IntegerField, forms.DateField, forms.DateTimeField)
 """The fields whose input formats are wider than the wire form the shape check reads.
 
 ``DecimalField`` and ``FloatField`` subclass ``IntegerField``, so the first
-row covers all three numbers. Each row is held by its own test:
-test_an_integer_the_form_reads_is_not_refused,
+row covers all three numbers. Each row is held by a test:
+test_localized_numbers_are_read_as_the_form_reads_them (the numbers) and
 test_dates_in_the_forms_input_formats_are_read_as_the_form_reads_them (both
-date rows) and test_localized_numbers_are_read_as_the_form_reads_them."""
+date rows)."""
 
 
 class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta):
@@ -281,21 +281,7 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
             target, grant = _found(spec, principal, grant, kwargs, served)
         form = self._form(spec, principal, target, served, data=request.POST, files=request.FILES)
         try:
-            try:
-                read = self._arguments(form, spec, kwargs, served)
-            except InvalidArguments:
-                if spec.many:
-                    # Refused by the page's own reading, so dispatch never
-                    # asks a many call's scope check: asked here first, and
-                    # only here, a principal it refuses is denied rather than
-                    # shown the form, as a create's is in ``_found`` above
-                    # (test_a_post_the_page_s_reading_refuses_asks_the_scope_check_first).
-                    # A route value its reads refuse leaves it unasked, and
-                    # the refusal raised is the reading's
-                    # (test_a_route_value_and_a_row_s_coercion_are_refused_in_one_post).
-                    with suppress(InvalidArguments):
-                        _found(spec, principal, grant, kwargs, served, ask_scope=True)
-                raise
+            read = self._arguments(form, spec, kwargs, served)
             result = dispatch(
                 spec,
                 principal=principal,
@@ -307,6 +293,26 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
                 call_context=served.call_context,
             )
         except (DispatchError, ServiceError) as refused:
+            if spec.many and isinstance(refused, InvalidArguments):
+                # A many call's scope check is dispatch's fourth step, and an
+                # ``InvalidArguments`` is the one refusal raised before it:
+                # by the page's own reading, or by dispatch's shape check -
+                # a list past ``many_max_length`` or short of
+                # ``many_min_length``. Either way it may be unasked, so it is
+                # asked here before the formset is shown, and a principal it
+                # refuses is denied rather than shown every row a choice
+                # field lists
+                # (test_a_post_the_page_s_reading_refuses_asks_the_scope_check_first,
+                # test_a_post_the_shape_check_refuses_is_denied_to_a_principal_the_scope_check_refuses).
+                # A row the Validator refuses was refused after it, so there
+                # it is asked twice: there is no grant that vouches for a
+                # scope check, a many call taking no ``target=``
+                # (test_a_row_the_validator_refuses_asks_the_scope_check_again).
+                # A route value its reads refuse leaves it unasked, and the
+                # refusal raised is the reading's
+                # (test_a_route_value_and_a_row_s_coercion_are_refused_in_one_post).
+                with suppress(InvalidArguments):
+                    _found(spec, principal, grant, kwargs, served, ask_scope=True)
             # The outcome is decided here, once, from the one map, and the
             # wrapper is chosen only after it. A denial raised by the
             # operation, the target's checks having answered before dispatch,

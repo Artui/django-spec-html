@@ -35,7 +35,7 @@ longer ships these names: import them from `django_spec_html`.
 pip install django-spec-html
 ```
 
-Python 3.10 or later, Django 4.2 or later, and `django-service-specs` 0.15.0 or
+Python 3.10 or later, Django 4.2 or later, and `django-service-specs` 0.17.0 or
 later, which it installs. Neither package needs an entry in `INSTALLED_APPS`.
 
 ## Quickstart

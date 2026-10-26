@@ -387,6 +387,41 @@ class TestGet:
         assert response.status_code == 400
         assert check.scopes == [None]
 
+    @pytest.mark.parametrize(
+        ("kwargs", "rows"),
+        [
+            pytest.param({"many_min_length": 1}, 0, id="short-of-the-list-s-minimum"),
+            pytest.param({"many_max_length": 1}, 2, id="past-the-list-s-maximum"),
+            pytest.param(
+                {"reads": Parameters.of(Parameter("shelf", "integer", required=True))},
+                1,
+                id="a-required-read-no-route-supplies",
+            ),
+        ],
+    )
+    def test_a_post_the_shape_check_refuses_is_denied_to_a_principal_the_scope_check_refuses(
+        self, ada: Any, kwargs: dict[str, Any], rows: int
+    ) -> None:
+        # Refused by dispatch's shape check, before the scope check it would
+        # have asked: a crafted management form must not show a principal
+        # the GET denies the formset, every author the choice field lists.
+        secret = Author.objects.create(name="Secret")
+        check = Scoped(admits=False)
+        view = formset_view(many_spec(AuthoredRow, permissions=[check], **kwargs))
+        with pytest.raises(PermissionDenied, match="No batch may be added here"):
+            post(view, ada, posted(*[{"author": str(secret.pk)}] * rows))
+        assert check.scopes == [None]
+
+    def test_a_row_the_validator_refuses_asks_the_scope_check_again(self, ada: Any) -> None:
+        # Dispatch asked it before the Validator refused the row, and no grant
+        # vouches for a scope check, so the page asks it a second time.
+        check = Scoped()
+        response = post(
+            formset_view(many_spec(BookRow, permissions=[check])), ada, posted({"title": "shut"})
+        )
+        assert response.status_code == 400
+        assert check.scopes == [None, None]
+
     def test_a_post_refused_at_its_top_level_is_answered_before_the_scope_check(
         self, ada: Any
     ) -> None:

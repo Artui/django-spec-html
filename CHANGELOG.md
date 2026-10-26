@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   blank ones (1 by default), never past `many_max_length`; with
   `commit_button` set, `add_button` names a second submit that re-renders the
   formset with one more form and dispatches nothing. Its scope check is asked
-  of no target, on GET and before a refused post shows its forms, and
+  of no target, on GET and before any post refused before dispatch reaches it
+  shows its forms - one the page's reading refuses, or a list the shape check
+  finds too long or too short - so a principal it refuses is denied, and
   `as_view()` refuses a formset page displaying a target, an `extra` that is
   not a non-negative int, and an `add_button` that is not a button's name.
 - **`SpecConfirmView` serves a spec with no Validator** as a page showing its
