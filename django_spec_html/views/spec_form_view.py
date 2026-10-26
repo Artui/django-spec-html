@@ -53,11 +53,7 @@ class SpecFormView(SpecPageBase):
         urlpatterns = [
             path(
                 "books/new/",
-                SpecFormView.as_view(
-                    spec=add_book_spec,
-                    template_name="books/book_form.html",
-                    success_url=reverse_lazy("books"),
-                ),
+                SpecFormView.as_view(spec=add_book_spec, success_url=reverse_lazy("books")),
             ),
         ]
 
@@ -67,6 +63,23 @@ class SpecFormView(SpecPageBase):
     class-level permission check runs first, through
     [`authorize`][django_service_specs.dispatch.authorize.authorize], so
     a page is never offered to a principal the post would refuse.
+
+    **The page's template is optional.** ``template_name`` is
+    ``django_spec_html/spec_form.html`` by default, a template this package
+    ships: a plain document with no stylesheet, script or htmx attribute,
+    holding the target pane, an unmet affordance's reason with the form
+    disabled, and the form - its errors, a question's message and the field
+    it asks for, and a submit button posting ``commit_button``'s name where
+    one is set - inside a POST form with its token. It is found as any app's
+    templates are, so a project lists ``django_spec_html`` in
+    ``INSTALLED_APPS`` with ``APP_DIRS`` on, and ``as_view()`` refuses a page
+    rendering it that no template engine finds. Its form is a file of its
+    own, ``django_spec_html/spec_form_fragment.html``, which the page
+    includes and an htmx request is answered with, on every Django. Override
+    either file the Django way, with one of the same name in a template
+    directory found first, or ``django_spec_html/base.html``, the document
+    every shipped page extends; or set ``template_name`` to a page of the
+    project's own.
 
     **An update's page shows the row it updates.** Every GET then finds its
     target as dispatch would, through
@@ -171,7 +184,8 @@ class SpecFormView(SpecPageBase):
     - **The form** renders ``get_fragment_template_names()`` where the page
       renders ``template_name``, from the same context: on GET, and on every
       refusal the page re-renders, at 200 rather than the page's 4xx, since
-      htmx swaps no 4xx by default. The default address is
+      htmx swaps no 4xx by default. A shipped page's is its fragment file.
+      For a page of the project's own the default address is
       ``<template_name>#spec-form``, a ``{% partialdef %}`` inside the page's
       own template, which Django 6.0 resolves; below it,
       django-template-partials does, with its tag named in ``TEMPLATES`` as
@@ -319,7 +333,9 @@ class SpecFormView(SpecPageBase):
 
     Attributes:
         spec: The operation served. Required.
-        template_name: The page's template, as for any Django template view.
+        template_name: The page's template, as for any Django template view:
+            ``django_spec_html/spec_form.html``, the one this package ships,
+            by default.
         success_url: Where a successful post redirects, read by
             ``get_success_url``: a path, a ``reverse_lazy``, or a URL name.
         pool_seeds: The seeds the spec's callables are resolved with, unless
@@ -334,7 +350,8 @@ class SpecFormView(SpecPageBase):
             through ``get_server_arguments``, and its names may not.
         fragment_template_name: The template an htmx request's form is
             answered with, for a fragment in another file or under another
-            name; ``None``, the default, addresses ``<template_name>#spec-form``.
+            name; ``None``, the default, addresses ``<template_name>#spec-form``,
+            or a shipped page's own fragment file.
         display_target: Whether the context carries ``target_display``,
             the target presented through the spec's Output and projected by
             its markings: ``False`` by default, checked at ``as_view()``.
@@ -356,6 +373,7 @@ class SpecFormView(SpecPageBase):
             default, which sends none.
     """
 
+    template_name = "django_spec_html/spec_form.html"
     asked_fields: tuple[str, ...] = ()
 
     @classmethod

@@ -1,0 +1,18 @@
+{% load i18n %}{% get_current_language as LANGUAGE_CODE %}<!DOCTYPE html>
+{% comment %}
+The document every page this package ships extends. Override this one file,
+the Django way, to put all three pages inside a project's own layout: each
+page fills ``content`` with its fragment and nothing else.
+{% endcomment %}
+<html lang="{{ LANGUAGE_CODE }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{% endblock %}</title>
+</head>
+<body>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

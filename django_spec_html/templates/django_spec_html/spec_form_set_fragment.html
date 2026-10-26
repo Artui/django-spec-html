@@ -1,0 +1,22 @@
+{% load i18n %}{% comment %}
+The many page's formset, and what an htmx request for it is answered with. No
+target pane: a many spec declares no target. Each form is a fieldset of its
+own, so a row's errors sit with its fields; a refusal of the list as a whole,
+a question's message among them, is the formset's non-form errors. The
+commit button comes first, so Enter in a field commits rather than adding a
+row, and the add button skips the browser's checks, since its post commits
+nothing.
+{% endcomment %}{% if unavailable %}<p data-code="{{ unavailable.code }}">{{ unavailable.reason }}</p>{% endif %}
+<form method="post"{% if formset.is_multipart %} enctype="multipart/form-data"{% endif %}{% if code %} data-code="{{ code }}"{% endif %}>
+{% csrf_token %}
+{{ formset.management_form }}
+<fieldset{% if unavailable %} disabled{% endif %}>
+{{ formset.non_form_errors }}
+{% for form in formset %}<fieldset>
+<legend>{% blocktranslate with number=forloop.counter trimmed %}Row {{ number }}{% endblocktranslate %}</legend>
+{{ form.as_div }}
+</fieldset>
+{% endfor %}<button type="submit"{% if view.commit_button %} name="{{ view.commit_button }}"{% endif %}>{% translate "Save" %}</button>
+{% if view.add_button %}<button type="submit" name="{{ view.add_button }}" formnovalidate>{% translate "Add another" %}</button>{% endif %}
+</fieldset>
+</form>

@@ -51,11 +51,7 @@ class SpecFormSetView(SpecPageBase):
         urlpatterns = [
             path(
                 "books/new/",
-                SpecFormSetView.as_view(
-                    spec=add_books_spec,
-                    template_name="books/book_formset.html",
-                    success_url=reverse_lazy("books"),
-                ),
+                SpecFormSetView.as_view(spec=add_books_spec, success_url=reverse_lazy("books")),
             ),
         ]
 
@@ -66,6 +62,16 @@ class SpecFormSetView(SpecPageBase):
     which a person must fill; and never more than ``many_max_length``. The
     template renders ``{{ formset }}`` - its management form included - inside
     a POST form with its token.
+
+    **The page's template is optional**, as on ``SpecFormView``:
+    ``django_spec_html/spec_form_set.html`` by default, which this package
+    ships, with its formset in ``django_spec_html/spec_form_set_fragment.html``.
+    It renders the management form, the formset's non-form errors, each form
+    as a fieldset of its own with its errors, and the submit button posting
+    ``commit_button``'s name where one is set, then the ``add_button``, which
+    skips the browser's checks since its post commits nothing. No target
+    pane. Found, refused at ``as_view()`` and overridden as ``SpecFormView``'s
+    is.
 
     **No target pane.** A ``many`` spec declares no target selector, which the
     kernel refuses when the spec is built, so there is no row or set to
@@ -142,7 +148,9 @@ class SpecFormSetView(SpecPageBase):
 
     Attributes:
         spec: The ``many`` operation served. Required.
-        template_name: The page's template, as for any Django template view.
+        template_name: The page's template, as for any Django template view:
+            ``django_spec_html/spec_form_set.html``, the one this package
+            ships, by default.
         success_url: Where a successful post redirects, read by
             ``get_success_url``.
         extra: How many blank forms the page offers beside those the spec's
@@ -158,6 +166,7 @@ class SpecFormSetView(SpecPageBase):
             ``get_success_message`` with the rows' ``count``.
     """
 
+    template_name = "django_spec_html/spec_form_set.html"
     extra: int = 1
     add_button: str | None = None
 

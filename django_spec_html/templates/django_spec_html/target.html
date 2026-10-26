@@ -1,0 +1,26 @@
+{% load i18n %}{% comment %}
+The target pane the form page and the confirmation page share. A set is
+counted whether or not its display is on, since a count and the time it was
+taken say nothing about any row. Otherwise only ``target_display`` is shown,
+the target as its Output marks it for a person: never ``target`` itself,
+whose string may be anything its model's ``__str__`` returns.
+{% endcomment %}{% if target_count is not None %}
+<p>{% blocktranslate count counter=target_count with at=target_counted_at|time:"H:i" trimmed %}
+{{ counter }} row selected, counted at {{ at }}.
+{% plural %}
+{{ counter }} rows selected, counted at {{ at }}.
+{% endblocktranslate %}</p>
+{% if target_display %}
+<ul>
+{% for row in target_display %}<li>{% if row.label %}{{ row.label }}{% else %}<dl>{% for name, value in row.fields.items %}<dt>{{ name }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% endif %}</li>
+{% endfor %}</ul>
+{% if target_count > target_display|length %}<p>{% blocktranslate count counter=target_display|length trimmed %}
+The first row is shown.
+{% plural %}
+The first {{ counter }} rows are shown.
+{% endblocktranslate %}</p>{% endif %}
+{% endif %}
+{% elif target_display %}
+{% if target_display.label %}<p>{{ target_display.label }}</p>{% endif %}
+<dl>{% for name, value in target_display.fields.items %}<dt>{{ name }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+{% endif %}

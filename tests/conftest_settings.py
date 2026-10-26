@@ -17,10 +17,13 @@ no machine's path, and carries the process id so two runs never share a file.
 Each test app belongs to the tests of one concern, so the models one set of
 tests needs never grow into another's.
 
-One template directory, and no app templates: ``SpecFormView`` renders a page,
-and the templates its tests and the page examples render are the whole of
-what the suite needs. ``spec_form.html`` holds a form tag, the CSRF token, the
-form and a named submit button - the page a person posts - so what those tests
+This package is listed, and ``APP_DIRS`` is on, as a project rendering the
+templates the package ships lists and turns them on: a page built with no
+``template_name`` renders one of them, and its view refuses to be built where
+no engine finds it. Beside them, one template directory of the suite's own,
+whose files are the pages a project would write itself. ``spec_form.html``
+holds a form tag, the CSRF token, the form and a named submit button - the
+page a person posts - so what those tests
 render is what a project's own template would send back. ``spec_page.html``
 wraps the same form in a layout and ``spec_fragment.html`` is the form alone,
 so a test can tell the page from the fragment on any Django; and
@@ -42,6 +45,7 @@ SECRET_KEY = "not-a-secret-this-is-the-test-suite"
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
+    "django_spec_html",
     "tests.adapter_app",
     "tests.dispatch_app",
 ]
@@ -64,5 +68,6 @@ TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [os.path.join(os.path.dirname(__file__), "templates")],
+        "APP_DIRS": True,
     }
 ]

@@ -43,6 +43,19 @@ tests/templates/spec_formset_form.html
 --8<--
 ```
 
+**A template is optional.** A view naming none renders
+`django_spec_html/spec_form_set.html`, which this package ships, with its
+formset in `django_spec_html/spec_form_set_fragment.html`, the file an htmx
+request is answered with. It is found, refused at `as_view()` when no engine
+finds it, and overridden as [the form page's is](pages.md#the-pages-template):
+list `django_spec_html` in `INSTALLED_APPS` with `APP_DIRS` on. It renders,
+escaped and with no stylesheet, script or htmx attribute, the management
+form, the non-form errors - a question's message among them - and each form
+as a fieldset of its own with its errors, then the submit button, posting
+`commit_button`'s name where one is set, and the `add_button`, which skips the
+browser's checks, since its post commits nothing. It has no target pane: a
+`many` spec has no target.
+
 ## The formset
 
 **GET** renders `template_name` with an unbound formset under `formset`, and

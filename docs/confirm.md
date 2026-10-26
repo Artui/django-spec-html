@@ -79,6 +79,26 @@ disabled, with the affordance's reason above it.
 Dispatch still asks every affordance on the post, so a book withdrawn between
 the page and its post is refused at 409.
 
+### The shipped template
+
+**A template is optional.** A view naming none renders
+`django_spec_html/spec_confirm.html`, which this package ships, with its
+target pane and button in `django_spec_html/spec_confirm_fragment.html`, the
+file an htmx request is answered with. It is found, refused at `as_view()` when
+no engine finds it, and overridden as
+[the form page's is](pages.md#the-pages-template): list `django_spec_html` in
+`INSTALLED_APPS` with `APP_DIRS` on. It renders, escaped and with no
+stylesheet, script or htmx attribute:
+
+- the target pane: a set's count and when it was counted, and
+  `target_display` where the page sets `display_target`, but never the target
+  itself;
+- an unmet affordance's `reason`, with the button disabled;
+- a refused post's `errors` as a list, or a question's message alone, since no
+  control is built from its schema; a refusal's `code` is the form's
+  `data-code`;
+- the button, posting `commit_button`'s name where one is set.
+
 ## What a post sends
 
 **POST dispatches with the route's kwargs alone**, read by `route_kwargs` and
