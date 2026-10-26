@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`SpecFormSetView` serves a `many` spec as a formset of its form**: each form
+  a row, sent as one list under `many_argument`, a form left blank sending no
+  row, and a refusal of row *i* placed on the form that sent it. The page shows
+  the spec's `many_min_length` forms, which are always sent, then `extra`
+  blank ones (1 by default), never past `many_max_length`; with
+  `commit_button` set, `add_button` names a second submit that re-renders the
+  formset with one more form and dispatches nothing. Its scope check is asked
+  of no target, on GET and before a refused post shows its forms, and
+  `as_view()` refuses a formset page displaying a target, an `extra` that is
+  not a non-negative int, and an `add_button` that is not a button's name.
+- **`SpecConfirmView` serves a spec with no Validator** as a page showing its
+  target and a submit button, with nothing posted becoming an argument. A
+  refused post re-renders the confirmation page at the refusal's status, with
+  its messages as `errors`. A question is shown by its message, and is answered
+  on a form page instead. `as_view()` refuses a spec with a Validator, and a
+  required parameter that the route (named in `route_kwargs`), a declared seed,
+  a provider or the binding does not supply. `success_message` is formatted
+  with the target.
+- **`SpecFormView` renders a service's `AdditionalInputRequired` as a
+  confirmation page.** The refusal's schema is checked first by the kernel's
+  `check_requested_input`, with the request's seeds, and a question no route
+  could hear answered raises `ImproperlyConfigured` on the page and in the
+  fragment alike. Otherwise the bound form is re-rendered with every value
+  posted, at 422 on the page and at 200 in place as the fragment, with no
+  `HX-Retarget` or `HX-Reswap`, and the context carries `requested_input`: the
+  message, the schema and the form's bound fields it names. The answer is a
+  field the spec's form declares, and the new `asked_fields` attribute, checked
+  at `as_view()`, holds those fields back from every GET and every other
+  refusal until a question names them, and shows them empty when asked. The
+  docs show the question landing in an out-of-band dialog, and say why it is no
+  gate on an agent route.
+- **The page shows its target beside the form.** On GET and on every refused
+  post it re-renders, the context carries `target`: the row an instance
+  selector found, or the set a `collection_selector_spec` resolved. It is
+  absent for a create and for a missing row `allow_none` lets through.
+- **A bulk page counts its set and says when.** `target_count` and
+  `target_counted_at` come from one `COUNT` on a fresh clone, never by reading
+  the rows, so a template says "117 rows selected, counted at 14:02" rather
+  than promising a number. An empty set is counted 0 and is no refusal; its
+  scope check is still asked. The confirming post re-runs the service on the
+  set it finds, and a successful post counts nothing.
+- **`target_display`**, on a page that sets the new `display_target` (off by
+  default), is the target projected for a person by its Output's
+  `FieldMarking`s, presented through the spec's presenter with the context
+  dispatch hands it. `HIDDEN` and `HANDLE` fields are dropped, choices are
+  spoken as their displays, and the field marked `LABEL` names the row. A set's
+  display covers at most `target_display_limit` rows (10 by default), read in
+  one bounded query. `as_view()` refuses a page displaying its target whose
+  spec has no Output, marks none of its own fields, or carries markings the
+  projection refuses, and a `target_display_limit` that is not a positive int.
+- **A post that does not commit.** `commit_button` names the submit button
+  whose post commits; any other post - a dependent choice refreshed, a row
+  added - is the page again with its form bound to the post, built through
+  `form_kwargs`, with no dispatch, no validation and `refreshed` in the
+  context, at 200 on the page and in the fragment. Under htmx 2, an
+  `HX-Trigger-Name` naming another posted control does not commit either.
+  `None`, the default, commits every post as before; `commits(request)` is the
+  rule to override, and `as_view()` refuses a name that is not a button's.
+- **`success_message`**, sent through `django.contrib.messages` on every
+  success - the redirect, `HX-Redirect` and the result fragment - formatted
+  with the form's cleaned data as Django's `SuccessMessageMixin` formats it,
+  through an overridable `get_success_message(result)`. Without the messages
+  middleware it is skipped, never raising `MessageFailure`; a refusal, a
+  confirmation page and a post that does not commit send none.
+- **`SpecFormView` builds its form with the Validator's `form_kwargs`**,
+  through the kernel's `form_keywords`: the principal, the request's seeds, the
+  row and one call context per request, which dispatch is handed too. A form
+  whose `__init__` takes a keyword is served on GET and on POST.
+
+### Changed
+- **The kernel is floored at 0.17.0**, for `form_keywords` and a seeded
+  `authorize`.
+- **A partial spec's page renders no HTML `required` attribute**, so a person
+  can post the subset the spec takes.
+
+### Fixed
+- **The page's class-level check is asked with the seeds it names**, through
+  `authorize(..., pool_seeds=...)`, instead of raising `TypeError`.
+- **A refusal of the arguments shows every error in one post**: the page's form
+  is validated under `clean_held_to_their_columns` and its errors are merged
+  without duplicates, except on a partial page or a refused route.
+- **The JSON views check a service's asked schema against the seeds the call
+  ran with.** `dispatch_request`, `adispatch_request` and so `SpecView` and
+  `AsyncSpecView` checked an `AdditionalInputRequired` schema with no pool
+  seeds, so a key a seed fills - one declared in `pool_seeds` or one
+  `get_pool_seeds(request)` adds - was written into a 422 body as a question
+  the client could not answer. It now raises `ImproperlyConfigured`, as the
+  page half already did.
+
 ## [0.2.0] — 2026-10-26
 
 ### Added
