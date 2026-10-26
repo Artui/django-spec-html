@@ -8,8 +8,8 @@ framework between the request and the kernel's
   [`SpecFormView`][django_spec_html.views.spec_form_view.SpecFormView] serves
   a spec whose Validator is a Django form as the page a person fills that form
   in on. A refused post comes back as the page again, with the refusal placed
-  on its form. The page reads no htmx header, so an htmx request is answered as
-  any other post ([htmx](pages.md#htmx)).
+  on its form. An htmx request is answered with a fragment of the same page
+  ([an htmx request](pages.md#an-htmx-request)).
 - **[JSON views](http.md).**
   [`SpecView`][django_spec_html.http.spec_view.SpecView],
   [`AsyncSpecView`][django_spec_html.http.async_spec_view.AsyncSpecView] and

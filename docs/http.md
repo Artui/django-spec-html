@@ -201,8 +201,8 @@ with `route_kwargs`.
 ### Kwargs a spec does not read
 
 An `include()` prefix such as `teams/<team>/` reaches every view under it,
-including one whose spec reads no `team`. `route_kwargs` on either view, or
-on `dispatch_request` and `request_arguments`, says which kwargs fill which
+including one whose spec reads no `team`. `route_kwargs` on either JSON view
+and on [the page](pages.md), or on `dispatch_request` and `request_arguments`, says which kwargs fill which
 parameters:
 
 - **`None`**, the default, is the strict rule above.
@@ -262,8 +262,8 @@ loop, as `adispatch_request` does.
 
 ## What the request carries
 
-Two hooks on both views read the request before dispatch, each defaulting to
-the attribute of its name. Django builds one view instance per request, so
+Two hooks on both JSON views, and on [the page](pages.md), read the request
+before dispatch, each defaulting to the attribute of its name. Django builds one view instance per request, so
 either may read `self.kwargs` too:
 
 ```python

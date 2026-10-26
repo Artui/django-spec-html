@@ -14,10 +14,11 @@ A [`django-service-specs`](https://github.com/Artui/django-service-specs) spec
 served over plain Django, with no API framework between the request and the
 kernel's `dispatch`. `SpecFormView` serves a spec whose Validator is a Django
 form as the page a person fills that form in on, and a refused post comes back
-as the page again with the refusal placed on its form. The page reads no htmx
-header: an htmx post is answered as any other, so a success is a redirect the
-request follows and a refusal is the whole page at a 4xx status, which htmx
-does not swap by default. A fragment answer for htmx is planned for 0.2.0.
+as the page again with the refusal placed on its form. An htmx request is
+answered with a fragment of the same page at the same URL: a refusal the page
+re-renders is the form at 200, since htmx swaps no 4xx by default, a denial is
+raised for the host's handlers as on the page, and a success is `HX-Redirect`
+or a result fragment rendered in place.
 Beside the pages, `SpecView`, `AsyncSpecView` and `dispatch_request` serve a
 spec as JSON, for a script or a `fetch()`.
 
