@@ -24,6 +24,7 @@ from tests.http.utils import (
     limited_spec,
     note_spec,
     notes_spec,
+    reflected_tenant_spec,
     titled_spec,
 )
 
@@ -234,3 +235,48 @@ async def test_a_hook_on_the_loop_would_be_refused(ada: Any) -> None:
     # loop, is refused by Django.
     with pytest.raises(SynchronousOnlyOperation):
         Note.objects.get(owner=ada)
+
+
+async def test_a_per_call_seed_occupying_a_bound_name_is_refused(ada: Any) -> None:
+    class Seeded(AsyncSpecView):
+        spec = reflected_tenant_spec()
+        server_arguments = ServerArguments(values={"tenant": "server"})
+
+        def get_pool_seeds(self, request: Any) -> PoolSeeds:
+            return self.pool_seeds.extend(tenant=lambda: "seeded")
+
+    with pytest.raises(ImproperlyConfigured) as refused:
+        await query(Seeded.as_view(), ada, "/")
+    assert str(refused.value).startswith(
+        "Seeded.get_pool_seeds() adds tenant, which server_arguments binds or withholds, "
+        "and the check when the view was built never saw a seed added per request"
+    )
+
+
+async def test_a_route_capturing_a_bound_name_is_refused(ada: Any) -> None:
+    class Bound(AsyncSpecView):
+        spec = note_spec()
+        server_arguments = ServerArguments(values={"pk": 1})
+
+    with pytest.raises(ImproperlyConfigured, match="The route captures pk, which server_arguments"):
+        await query(Bound.as_view(), ada, "/", pk="1")
+
+
+def test_route_kwargs_are_checked_at_as_view() -> None:
+    class Mistyped(AsyncSpecView):
+        spec = notes_spec()
+        route_kwargs = {"org": "team"}
+
+    with pytest.raises(ImproperlyConfigured, match="maps a kwarg to team, which the spec"):
+        Mistyped.as_view()
+
+
+@pytest.mark.parametrize("hook", ["get_pool_seeds", "get_server_arguments"])
+def test_an_async_hook_is_refused_at_as_view(hook: str) -> None:
+    # The view is async, its hooks are not: they run in an executor hop.
+    async def asynchronous(self: Any, request: Any) -> Any: ...
+
+    view = type("Hooked", (AsyncSpecView,), {"spec": notes_spec(), hook: asynchronous})
+    with pytest.raises(ImproperlyConfigured) as refused:
+        view.as_view()
+    assert str(refused.value).startswith(f"Hooked.{hook} is async")

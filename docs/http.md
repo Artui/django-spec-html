@@ -86,10 +86,13 @@ HEAD, POST, PUT, PATCH and DELETE, in either case. Any other method is Django's
 own 405, with an `Allow` header listing exactly the methods served, and
 OPTIONS is Django's own answer.
 
-`as_view()` checks the spec, the methods and `server_arguments` when the view
-is built, so a view with no spec, one naming a method it cannot serve, or a
-binding that cannot mean what it says, fails when the URLconf is imported
-rather than on its first request. The `spec` may be a declaration of
+`as_view()` checks the configuration when the view is built, so a view with
+no spec, one naming a method it cannot serve, an `async def` hook,
+`route_kwargs` naming a parameter the spec does not declare, or a binding that
+cannot mean what it says, fails when the URLconf is imported rather than on
+its first request. What only a request can show is checked on each request:
+the route, under [kwargs a spec does not read](#kwargs-a-spec-does-not-read),
+and the hooks' answers, under [what the request carries](#what-the-request-carries). The `spec` may be a declaration of
 another library's, a
 [`SpecSource`][django_service_specs.specs.spec_source.SpecSource]: it is
 compiled there too, a declaration that does not compile is refused there, and
@@ -210,11 +213,17 @@ parameters:
 - **A tuple of names** is an allow-list: each passes under its own name, and
   every other kwarg is dropped.
 
-Each refusal is `ImproperlyConfigured`, as the strict rule's is: a target or
-an allowed name the spec does not declare, checked whatever the route
-captured, and two kwargs filling one parameter. A route kwarg is never one of
-the server's values, whatever it fills: the client's URL chose it, so a
-malformed one is the client's 400.
+Each refusal is `ImproperlyConfigured`, as the strict rule's is. On a view,
+`as_view()` refuses a bare string (a `TypeError`), and a target or an allowed
+name the spec does not declare, when the URLconf is imported. Two kwargs
+filling one parameter are refused on the request that captures both, since a
+view mounted on two routes may capture one on each. A route kwarg is never one
+of the server's values, whatever it fills: the client's URL chose it, so a
+malformed one is the client's 400. **Nor may it fill a name the server answers
+for**: the route is the host's, so a route contradicting the host's own
+binding is refused, by `as_view()` where `route_kwargs` names the parameter
+and on the request where the route captures it, pointing at
+`route_kwargs={name: None}`, which drops it explicitly.
 
 ### The route on its own
 
@@ -274,7 +283,7 @@ docs/examples/http.py:request
 - **`get_server_arguments(request)`** answers the kernel's
   [`ServerArguments`][django_service_specs.types.server_arguments.ServerArguments]:
   values the server answers for, which outrank whatever the client sent,
-  the URL included, and names it withholds, which are dropped. A client's
+  and names it withholds, which are dropped. A client's
   value for a name it was never offered is never refused, however malformed:
   `?ordering=sideways` here, or `?pk=abc` for a bound integer, which is
   dropped before the query string is coerced. The declared
@@ -283,10 +292,14 @@ docs/examples/http.py:request
   values per request, and each is checked on every call, but it binds and
   withholds the declared names exactly, or the request raises
   `ImproperlyConfigured`, since the check at `as_view()` never saw any
-  other.
+  other. **A seed `get_pool_seeds` adds under a name the binding binds or
+  withholds is refused the same way**: declared in `pool_seeds`, the
+  `as_view()` check would have refused the binding with it.
 
-`AsyncSpecView` runs both hooks in an executor hop of their own, so one
-reading `request.user` or a model never queries on the event loop. A host's
+Both hooks are plain `def`, and `as_view()` refuses an `async def` one:
+neither is awaited. `AsyncSpecView` runs both in an executor hop of their
+own, so one reading `request.user` or a model never queries on the event
+loop. A host's
 own view passes the same values to `dispatch_request` as `pool_seeds=` and
 `server_arguments=`, and calls `check_server_arguments` once, when it is
 built.

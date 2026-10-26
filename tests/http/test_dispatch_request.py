@@ -356,15 +356,25 @@ class TestPassedThrough:
         )
         assert (response.status_code, body(response)) == (200, {"title": "One"})
 
-    def test_a_bound_value_outranks_the_query_and_the_route(self, ada: Any) -> None:
+    def test_a_bound_value_outranks_the_query(self, ada: Any) -> None:
         mine = Note.objects.create(owner=ada, title="Mine")
         response = dispatch_request(
             note_spec(),
             signed_in(FACTORY.get("/?pk=abc"), ada),
-            url_kwargs={"pk": "abc"},
             server_arguments=ServerArguments(values={"pk": mine.pk}),
         )
         assert (response.status_code, body(response)) == (200, {"title": "Mine"})
+
+    def test_a_route_filling_a_bound_name_is_the_hosts_misconfiguration(self, ada: Any) -> None:
+        with pytest.raises(
+            ImproperlyConfigured, match="The route captures pk, which server_arguments"
+        ):
+            dispatch_request(
+                note_spec(),
+                signed_in(FACTORY.get("/"), ada),
+                url_kwargs={"pk": "4"},
+                server_arguments=ServerArguments(values={"pk": 4}),
+            )
 
     def test_a_bound_value_its_parameter_refuses_is_the_hosts_error(self, ada: Any) -> None:
         # Not the client's 400: the client neither sent the value nor can see it.

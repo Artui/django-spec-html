@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from typing import Any
 
@@ -11,17 +12,19 @@ from django.middleware.csrf import CsrfViewMiddleware
 from django.views.decorators.csrf import csrf_exempt
 from django_service_specs import (
     DEFAULT_POOL_SEEDS,
+    DataclassValidator,
     Parameter,
     Parameters,
     PoolSeeds,
     SelectorKind,
     SelectorSpec,
     ServerArguments,
+    ServiceSpec,
     UnknownArguments,
 )
 
 from django_spec_html.http.spec_view import SpecView
-from tests.dispatch.utils import OPEN, TENANT_SEEDS, make_user
+from tests.dispatch.utils import OPEN, TENANT_SEEDS, Record, make_user
 from tests.dispatch_app.models import Note
 from tests.http.utils import (
     DEEP_JSON,
@@ -32,6 +35,7 @@ from tests.http.utils import (
     limited_spec,
     note_spec,
     notes_spec,
+    reflected_tenant_spec,
     signed_in,
     titled_spec,
 )
@@ -233,6 +237,31 @@ class TestRouteKwargs:
         response = send(view, "GET", ada, org="acme", pk=str(note.pk))
         assert (response.status_code, body(response)) == (200, {"title": "One"})
 
+    def test_a_bare_string_is_refused_at_as_view(self) -> None:
+        with pytest.raises(TypeError, match="route_kwargs is a tuple of names"):
+            configured(spec=notes_spec(), route_kwargs="org")
+
+    def test_a_target_the_spec_does_not_declare_is_refused_at_as_view(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match="maps a kwarg to team, which the spec"):
+            configured(spec=notes_spec(), route_kwargs={"org": "team"})
+
+    def test_an_allowed_name_the_spec_does_not_declare_is_refused_at_as_view(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match="allows team, which the spec"):
+            configured(spec=note_spec(), route_kwargs=("pk", "team"))
+
+    def test_route_kwargs_passed_to_as_view_are_checked_there_too(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match="maps a kwarg to team, which the spec"):
+            SpecView.as_view(spec=notes_spec(), route_kwargs={"org": "team"})
+
+    def test_two_kwargs_onto_one_parameter_are_refused_per_request(self, ada: Any) -> None:
+        # Mounted on two routes, a view may capture ``note`` on one and ``pk``
+        # on the other, so only a request capturing both is wrong.
+        note = Note.objects.get(owner=ada)
+        view = configured(spec=note_spec(), route_kwargs={"note": "pk"})
+        assert send(view, "GET", ada, pk=str(note.pk)).status_code == 200
+        with pytest.raises(ImproperlyConfigured, match="fills pk from more than one kwarg"):
+            send(view, "GET", ada, pk=str(note.pk), note=str(note.pk))
+
     def test_a_kwarg_the_mapping_does_not_name_is_still_refused(self, ada: Any) -> None:
         view = configured(spec=notes_spec(), route_kwargs={"org": None})
         with pytest.raises(ImproperlyConfigured, match="The route captures team,"):
@@ -240,6 +269,85 @@ class TestRouteKwargs:
 
 
 class TestPoolSeeds:
+    def test_a_per_call_seed_occupying_a_bound_name_is_refused(self, ada: Any) -> None:
+        # Declared in ``pool_seeds``, the as_view check would refuse this
+        # binding; added per call, every request would answer a 400.
+        class Seeded(SpecView):
+            spec = reflected_tenant_spec()
+            server_arguments = ServerArguments(values={"tenant": "server"})
+
+            def get_pool_seeds(self, request: Any) -> PoolSeeds:
+                return self.pool_seeds.extend(tenant=lambda: "seeded")
+
+        with pytest.raises(ImproperlyConfigured) as refused:
+            query(Seeded.as_view(), ada, "/")
+        assert str(refused.value).startswith(
+            "Seeded.get_pool_seeds() adds tenant, which server_arguments binds or withholds, "
+            "and the check when the view was built never saw a seed added per request"
+        )
+        with pytest.raises(ImproperlyConfigured, match="a registered pool seed fills"):
+            Seeded.as_view(pool_seeds=TENANT_SEEDS)
+
+    def test_a_per_call_seed_occupying_a_withheld_name_is_refused(self, ada: Any) -> None:
+        # Withheld and seeded, the withholding would do nothing.
+        class Seeded(SpecView):
+            spec = reflected_tenant_spec()
+            server_arguments = ServerArguments(withheld=frozenset({"tenant"}))
+
+            def get_pool_seeds(self, request: Any) -> PoolSeeds:
+                return self.pool_seeds.extend(tenant=lambda: "seeded")
+
+        with pytest.raises(ImproperlyConfigured, match="adds tenant, which server_arguments"):
+            query(Seeded.as_view(), ada, "/")
+
+    def test_a_declared_seed_a_bound_validator_field_shares_a_name_with_is_served(
+        self, ada: Any
+    ) -> None:
+        # The kernel lets a Validator field named like a registered seed be
+        # bound: it is the caller's argument, and the seed keeps the service's
+        # parameter of its name. Only a seed added per call is refused.
+        @dataclasses.dataclass
+        class Tenanted:
+            title: str
+            tenant: str
+
+        spec = ServiceSpec(
+            service=Record({"id": 1}), permissions=OPEN, validator=DataclassValidator(Tenanted)
+        )
+        view = SpecView.as_view(
+            spec=spec,
+            pool_seeds=TENANT_SEEDS,
+            server_arguments=ServerArguments(values={"tenant": "acme"}),
+        )
+        assert form_post(view, ada, {"title": "x", "tenant": "client"}).status_code == 200
+        assert spec.service.calls[0]["data"].tenant == "acme"
+        assert spec.service.calls[0]["tenant"] == "tenant-of-ada"
+
+    def test_a_per_call_seed_beside_the_binding_is_served(self, ada: Any) -> None:
+        check = SeesTenant()
+
+        class Seeded(SpecView):
+            spec = note_spec(permissions=(check,))
+            server_arguments = ServerArguments(values={"pk": Note.objects.get(owner=ada).pk})
+
+            def get_pool_seeds(self, request: Any) -> PoolSeeds:
+                return self.pool_seeds.extend(tenant=lambda: "seeded")
+
+        assert query(Seeded.as_view(), ada, "/").status_code == 200
+        assert check.tenants == ["seeded"]
+
+    @pytest.mark.parametrize("hook", ["get_pool_seeds", "get_server_arguments"])
+    def test_an_async_hook_is_refused_at_as_view(self, hook: str) -> None:
+        # Called without being awaited, it would answer a coroutine.
+        async def asynchronous(self: Any, request: Any) -> Any: ...
+
+        view = type("Hooked", (SpecView,), {"spec": notes_spec(), hook: asynchronous})
+        with pytest.raises(ImproperlyConfigured) as refused:
+            view.as_view()
+        assert str(refused.value).startswith(f"Hooked.{hook} is async")
+        with pytest.raises(ImproperlyConfigured, match=f"SpecView.{hook} is async"):
+            SpecView.as_view(spec=notes_spec(), **{hook: asynchronous})
+
     def test_a_seed_from_the_request_reaches_the_permission_check(self, ada: Any) -> None:
         check = SeesTenant()
 
@@ -297,12 +405,45 @@ class TestServerArguments:
         # Well formed, it would have answered nothing.
         assert body(query(view, ada, "/?limit=0")) == [{"title": "One"}, {"title": "Two"}]
 
-    def test_a_route_kwarg_for_a_withheld_name_is_dropped_too(self, ada: Any) -> None:
+    def test_a_route_capturing_a_withheld_name_is_refused(self, ada: Any) -> None:
         view = configured(
             spec=limited_spec(), server_arguments=ServerArguments(withheld=frozenset({"limit"}))
         )
-        response = query(view, ada, "/", limit="abc")
-        assert (response.status_code, body(response)) == (200, [{"title": "One"}])
+        with pytest.raises(ImproperlyConfigured) as refused:
+            query(view, ada, "/", limit="abc")
+        assert str(refused.value).startswith(
+            "The route captures limit, which server_arguments answers for. "
+            "Drop each with route_kwargs={'limit': None}"
+        )
+
+    def test_a_route_kwarg_mapped_onto_a_bound_name_is_refused_at_as_view(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as refused:
+            configured(
+                spec=note_spec(),
+                route_kwargs={"note": "pk", "org": None},
+                server_arguments=ServerArguments(values={"pk": 1}),
+            )
+        assert str(refused.value).startswith(
+            "Configured.route_kwargs fills pk, which server_arguments answers for."
+        )
+
+    def test_an_allowed_name_the_server_withholds_is_refused_at_as_view(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match="route_kwargs fills limit, which"):
+            configured(
+                spec=limited_spec(),
+                route_kwargs=("limit",),
+                server_arguments=ServerArguments(withheld=frozenset({"limit"})),
+            )
+
+    def test_a_bound_name_the_route_drops_is_served(self, ada: Any) -> None:
+        note = Note.objects.get(owner=ada)
+        view = configured(
+            spec=note_spec(),
+            route_kwargs={"pk": None},
+            server_arguments=ServerArguments(values={"pk": note.pk}),
+        )
+        response = query(view, ada, "/", pk="999")
+        assert (response.status_code, body(response)) == (200, {"title": "One"})
 
     def test_a_binding_that_cannot_mean_what_it_says_is_refused_at_as_view(self) -> None:
         with pytest.raises(ImproperlyConfigured, match="ServerArguments names nope, which the"):

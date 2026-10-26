@@ -59,8 +59,9 @@ def dispatch_request(
        names ``route_kwargs`` maps them to, and ``server_arguments`` applied
        over them by the kernel's
        [`apply_server_arguments`][django_service_specs.dispatch.apply_server_arguments.apply_server_arguments]:
-       its bound values outrank whatever the client sent, the URL included,
-       and its withheld names are dropped. The binding is not checked here:
+       its bound values outrank whatever the client sent, and its withheld
+       names are dropped. A URL kwarg filling one of its names is refused,
+       as the host's misconfiguration. The binding is not checked here:
        a host's own view calls
        [`check_server_arguments`][django_service_specs.dispatch.check_server_arguments.check_server_arguments]
        once, when it is built, as ``SpecView.as_view()`` does.

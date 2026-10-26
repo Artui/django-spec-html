@@ -788,14 +788,57 @@ class TestServerArguments:
         # here: ``apply_server_arguments`` lays them, with the spec to check them.
         assert read(request_, server_arguments=SERVED) == {"title": "t"}
 
-    def test_a_route_value_for_a_name_it_answers_for_is_dropped_too(self) -> None:
-        assert read(FACTORY.get("/"), url_kwargs={"pk": "nine"}, server_arguments=SERVED) == {}
-
-    def test_a_route_value_beside_a_json_body_is_dropped_too(self) -> None:
-        arguments = read(
-            post_json({"title": "t"}), url_kwargs={"pk": "nine"}, server_arguments=SERVED
+    @pytest.mark.parametrize(
+        "request_",
+        [
+            FACTORY.get("/"),
+            post_json({"title": "t"}),
+            FACTORY.post("/", data="", content_type=FORM),
+        ],
+        ids=["query", "json", "form"],
+    )
+    def test_a_route_kwarg_filling_a_name_it_answers_for_is_refused(
+        self, request_: HttpRequest
+    ) -> None:
+        # The route is the host's, so contradicting the host's own binding is
+        # a misconfiguration rather than a value to drop.
+        with pytest.raises(ImproperlyConfigured) as refused:
+            read(request_, url_kwargs={"pk": "4", "count": "1"}, server_arguments=SERVED)
+        assert str(refused.value).startswith(
+            "The route captures count, pk, which server_arguments answers for. "
+            "Drop each with route_kwargs={'count': None, 'pk': None}"
         )
-        assert arguments == {"title": "t"}
+
+    def test_a_mapped_kwarg_is_named_as_the_route_captured_it(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match=r"captures note, which.*\{'note': None\}"):
+            read(
+                FACTORY.get("/"),
+                url_kwargs={"note": "4"},
+                route_kwargs={"note": "pk"},
+                server_arguments=SERVED,
+            )
+
+    def test_an_allowed_kwarg_is_refused_and_a_dropped_one_is_not(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match="captures pk, which"):
+            read(
+                FACTORY.get("/"),
+                url_kwargs={"pk": "4"},
+                route_kwargs=("pk",),
+                server_arguments=SERVED,
+            )
+        dropped = read(
+            FACTORY.get("/"), url_kwargs={"pk": "4"}, route_kwargs=(), server_arguments=SERVED
+        )
+        assert dropped == {}
+
+    def test_a_kwarg_mapped_to_none_is_the_way_to_drop_one(self) -> None:
+        arguments = read(
+            FACTORY.get("/"),
+            url_kwargs={"pk": "nine"},
+            route_kwargs={"pk": None},
+            server_arguments=SERVED,
+        )
+        assert arguments == {}
 
 
 class TestArrayLength:

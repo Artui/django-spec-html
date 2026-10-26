@@ -151,6 +151,22 @@ class SeesTenant(PermissionCheck):
         return True
 
 
+def notes_in(*, user: Any, tenant: str = "") -> QuerySet[Note]:
+    """The principal's notes, whatever ``tenant`` the call carries."""
+    return Note.objects.filter(owner=user)
+
+
+def reflected_tenant_spec() -> SelectorSpec:
+    """A read declaring ``tenant`` as ``reflected``: a seed of that name fills it on every call."""
+    return SelectorSpec(
+        kind=SelectorKind.LIST,
+        selector=notes_in,
+        reads=Parameters.of(Parameter("tenant", "string", reflected=True)),
+        permissions=OPEN,
+        presenter=Titles(),
+    )
+
+
 def first_notes(*, user: Any, limit: int | None = None) -> QuerySet[Note]:
     """The principal's notes in the order written, the first ``limit`` of them if one is given."""
     notes = Note.objects.filter(owner=user).order_by("pk")

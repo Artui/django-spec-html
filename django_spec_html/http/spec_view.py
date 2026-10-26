@@ -39,10 +39,14 @@ class SpecView(SpecViewBase):
     values the server answers for, which outrank whatever the client sent and
     whose names are the declared ``server_arguments``' own.
 
-    ``as_view()`` checks the spec, the methods and ``server_arguments`` when
-    the view is built, so a view with no spec, or a binding that cannot mean
-    what it says, fails when the URLconf is imported rather than on its first
-    request.
+    ``as_view()`` checks the configuration when the view is built, so a view
+    with no spec, an ``async def`` hook, ``route_kwargs`` naming a parameter
+    the spec does not declare or one the binding answers for, or a binding
+    that cannot mean what it says, fails when the URLconf is imported rather
+    than on its first request. Each request checks what only it can show: a
+    captured kwarg the spec does not declare or the binding answers for, two
+    kwargs filling one parameter, and the hooks' answers (see
+    ``SpecViewBase.as_view``).
 
     **CSRF is the host's middleware**, as for any Django view. Nothing here is
     exempted, and ``csrf_exempt(SpecView.as_view(...))`` is one line for a host
@@ -69,14 +73,15 @@ class SpecView(SpecViewBase):
 
     def answer(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         """Dispatch the spec for ``request``, the route's kwargs as ``url_kwargs``."""
+        server, pool_seeds = self.served_hooks(request)
         return dispatch_request(
             self.served_spec(),
             request,
             url_kwargs=kwargs,
             route_kwargs=self.route_kwargs,
-            server_arguments=self.served_server_arguments(request),
+            server_arguments=server,
             success_status=self.success_status,
-            pool_seeds=self.get_pool_seeds(request),
+            pool_seeds=pool_seeds,
             unknown_arguments=self.unknown_arguments,
         )
 
