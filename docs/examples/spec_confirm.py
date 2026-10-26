@@ -27,7 +27,7 @@ from django_service_specs import (
 )
 
 # The view's own module until the package root exports it.
-from django_spec_html.views.spec_confirm_view import SpecConfirmView
+from django_spec_html import SpecConfirmView
 from tests.adapter_app.models import Book, Status
 
 

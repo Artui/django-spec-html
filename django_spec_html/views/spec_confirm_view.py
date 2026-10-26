@@ -25,6 +25,7 @@ from django_service_specs import (
 )
 
 from django_spec_html.http.route_arguments import route_arguments
+from django_spec_html.http.utils import route_targets
 from django_spec_html.views.utils import Served, SpecPageBase, refusal_tree
 
 
@@ -287,7 +288,7 @@ def _check_supplied(
     supplied = (
         server_owned_keys(spec, pool_seeds=seeds)
         | frozenset({} if server is None else server.values)
-        | _route_filled(route_kwargs)
+        | route_targets(route_kwargs)
     )
     missing = sorted(demanded - supplied)
     if missing:
@@ -296,19 +297,3 @@ def _check_supplied(
             "fill each from the route, naming it in route_kwargs, or from a pool seed, a "
             "kwargs provider or server_arguments."
         )
-
-
-def _route_filled(
-    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
-) -> frozenset[str]:
-    """Every parameter ``route_kwargs`` names a kwarg into: a mapping's targets, a tuple's names.
-
-    The rule of ``_route_targets`` in ``http/utils.py``, private to that
-    module; kept here until the parent makes it a shared helper there, when
-    this copy goes.
-    """
-    if route_kwargs is None:
-        return frozenset()
-    if isinstance(route_kwargs, Mapping):
-        return frozenset(target for target in route_kwargs.values() if target is not None)
-    return frozenset(route_kwargs)

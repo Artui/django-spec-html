@@ -15,7 +15,7 @@ post that does not commit, the success and its message. Each works as
 two differ.
 
 ```python
-from django_spec_html.views.spec_confirm_view import SpecConfirmView
+from django_spec_html import SpecConfirmView
 ```
 
 ## Which view serves a spec

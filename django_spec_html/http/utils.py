@@ -437,7 +437,7 @@ def check_request_hooks(
         check_server_arguments(
             spec, server, pool_seeds=_configured(view_class, initkwargs, "pool_seeds")
         )
-        filled = sorted(_route_targets(route_kwargs) & server.names())
+        filled = sorted(route_targets(route_kwargs) & server.names())
         if filled:
             raise ImproperlyConfigured(
                 f"{label}.route_kwargs fills {', '.join(filled)}, which server_arguments "
@@ -561,7 +561,7 @@ def _filled_by(
     return name if name in route_kwargs else None
 
 
-def _route_targets(
+def route_targets(
     route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
 ) -> frozenset[str]:
     """Every parameter ``route_kwargs`` names a kwarg into: a mapping's targets, a tuple's names."""
