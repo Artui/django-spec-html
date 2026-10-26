@@ -493,7 +493,7 @@ class TestTheRequestAndTheView:
             reads=Parameters.of(Parameter("request", "string")),
             permissions=OPEN,
         )
-        with pytest.raises(ImproperlyConfigured, match="request"):
+        with pytest.raises(ImproperlyConfigured, match="'request' and 'view' are the call's own"):
             dispatch_request(spec, signed_in(FACTORY.get("/?request=x"), ada))
 
     def test_a_field_named_request_is_read_from_data_beside_the_call_s(self, ada: Any) -> None:

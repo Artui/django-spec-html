@@ -783,7 +783,8 @@ class Served:
 
     It starts with ``request`` and ``view``, this request and this page, which
     the kernel hands to every stage naming either
-    (``TestTheRequestAndTheView`` in each page's tests). The class-level check, the target's lookup and its checks, the affordances,
+    (test_every_stage_is_handed_the_request_and_the_page, in each page's
+    tests). The class-level check, the target's lookup and its checks, the affordances,
     the form's keywords and dispatch, so a stage reads what an earlier one put
     there (test_the_checks_the_affordances_the_form_and_the_service_share_one_dict).
     """
