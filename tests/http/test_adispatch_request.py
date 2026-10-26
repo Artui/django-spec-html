@@ -17,10 +17,11 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.functional import SimpleLazyObject
-from django_service_specs import Grant, Parameters, ServiceSpec, UnknownArguments
+from django_service_specs import Grant, Parameters, ServerArguments, ServiceSpec, UnknownArguments
 
 from django_spec_html.http.adispatch_request import adispatch_request
 from tests.dispatch.utils import (
+    OPEN,
     REFUSED_ARCHIVED,
     RENAME,
     TENANT_SEEDS,
@@ -204,3 +205,28 @@ async def test_a_schema_naming_an_undeclared_key_is_the_services_error_not_a_422
 async def test_a_list_source_answers_its_presented_rows(ada: Any) -> None:
     response = await adispatch_request(Foreign(notes_spec()), get(ada))
     assert (response.status_code, body(response)) == (200, [{"title": "One"}])
+
+
+async def test_route_kwargs_and_a_binding_reach_the_call(ada: Any) -> None:
+    note = await Note.objects.aget(owner=ada)
+    response = await adispatch_request(
+        note_spec(),
+        get(ada, "/?pk=abc"),
+        url_kwargs={"org": "acme"},
+        route_kwargs={"org": None},
+        server_arguments=ServerArguments(values={"pk": note.pk}),
+    )
+    assert (response.status_code, body(response)) == (200, {"title": "One"})
+
+
+async def test_the_binding_is_applied_off_the_event_loop(ada: Any) -> None:
+    # Applying a bound value reads the spec's parameters, which this
+    # Validator declares from a query: on the loop that would be refused.
+    spec = ServiceSpec(service=Record({"id": 1}), permissions=OPEN, validator=Querying())
+    response = await adispatch_request(
+        spec,
+        post(ada, {"title": "client"}),
+        server_arguments=ServerArguments(values={"title": "S"}),
+    )
+    assert response.status_code == 200
+    assert spec.service.calls[0]["data"] == {"title": "S"}

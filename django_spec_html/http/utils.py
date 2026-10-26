@@ -10,15 +10,20 @@ the answer are separate functions: the read may query, and the answer never
 does.
 
 ``SpecView`` and ``AsyncSpecView`` likewise differ only in their handlers, so
-everything else about them is ``SpecViewBase``.
+everything else about them is ``SpecViewBase``. Its checks of the request's
+hooks are functions here rather than its methods - ``check_request_hooks``,
+``checked_binding``, ``checked_seeds``, ``refuse_server_owned`` - because
+``SpecFormView``, which is no ``SpecViewBase``, reads the request by the same
+rules and calls the same code.
 
-``REFUSAL_STATUSES`` is the one map from a refusal to its status, read by
-``error_response`` and by ``SpecFormView``, so a refused post answers at the
-status a JSON client reads for the same refusal.
+``REFUSAL_STATUSES`` is the one map from a refusal to its status and its
+outcome, read by ``error_response`` and by ``SpecFormView``, so a refused post
+answers at the status a JSON client reads for the same refusal.
 """
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Final, cast
 
@@ -38,6 +43,7 @@ from django_service_specs import (
     PoolSeeds,
     PrincipalUnavailable,
     SelectorSpec,
+    ServerArguments,
     ServiceConflict,
     ServiceError,
     ServiceNotFound,
@@ -46,10 +52,13 @@ from django_service_specs import (
     SpecSource,
     UnknownArguments,
     check_requested_input,
+    check_server_arguments,
     kernel_spec,
 )
 
+from django_spec_html.http.route_arguments import route_arguments
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
+from django_spec_html.types.outcome import Outcome
 
 ANSWERABLE: Final = ("get", "head", "post", "put", "patch", "delete")
 """The methods a spec view may be dispatched on, in the order ``Allow`` lists them.
@@ -59,26 +68,28 @@ spec has nothing to add to that answer. TRACE is not one either, since
 nothing about an operation is a loop-back of the request."""
 
 
-REFUSAL_STATUSES: Final[tuple[tuple[type[DispatchError] | type[ServiceError], int], ...]] = (
-    (InvalidArguments, 400),
-    (NotPermitted, 403),
-    (PrincipalUnavailable, 403),
-    (UnsupportedMediaType, 415),
-    (DispatchError, 400),
-    (ServiceValidationError, 400),
-    (ServiceNotFound, 404),
-    (ActionUnavailable, 409),
-    (ServiceConflict, 409),
-    (AdditionalInputRequired, 422),
-    (ServiceError, 422),
+REFUSAL_STATUSES: Final[
+    tuple[tuple[type[DispatchError] | type[ServiceError], int, Outcome], ...]
+] = (
+    (InvalidArguments, 400, Outcome.INVALID),
+    (NotPermitted, 403, Outcome.DENIED),
+    (PrincipalUnavailable, 403, Outcome.DENIED),
+    (UnsupportedMediaType, 415, Outcome.INVALID),
+    (DispatchError, 400, Outcome.FAILED),
+    (ServiceValidationError, 400, Outcome.INVALID),
+    (ServiceNotFound, 404, Outcome.DENIED),
+    (ActionUnavailable, 409, Outcome.FAILED),
+    (ServiceConflict, 409, Outcome.FAILED),
+    (AdditionalInputRequired, 422, Outcome.NEEDS_INPUT),
+    (ServiceError, 422, Outcome.FAILED),
 )
-"""Every refusal this package answers, and its status: read top to bottom, first match wins.
+"""Every refusal this package answers, its status and its outcome: read top to bottom, first match wins.
 
 A subclass is listed above its base, or the base's row would answer for it.
 Every refusal has a row naming it, even where its status is its base's, so
 the map is the whole truth a check reading it needs: the kernel's
-``unanswered_refusals`` reads this table, and a row it reports nothing about
-is held by ``test_every_refusal_has_a_row_of_its_own``.
+``unanswered_refusals`` reads each column as a table of its own, and a row it
+reports nothing about is held by ``test_every_refusal_has_a_row_of_its_own``.
 
 ``UnsupportedMediaType`` is this package's refusal, which the kernel's check
 does not ask about, so ``test_unsupported_media_type_is_415`` holds its row.
@@ -88,13 +99,24 @@ Each row's status is held twice over, by the two tables the docs publish:
 ``test_the_pages_outcome_table_is_the_one_shipped`` for the page, beside the
 row's own tests in ``test_error_response`` and ``test_spec_form_view``.
 
+The outcome is the third column rather than a second map, so the one table
+stays the whole truth. The page reads it to tell a denial, raised for the
+host's handlers, from a refusal it re-renders; every other outcome is
+answered alike by both wrappers today, so each row's outcome is held on its
+own by ``test_every_refusal_has_its_outcome``.
+
 The dispatch rows sit above the service rows, so a refusal deriving from one
 of each answers at its dispatch row's status, on both halves alike."""
 
 
 def refusal_status(refused: DispatchError | ServiceError) -> int:
     """The status ``REFUSAL_STATUSES`` answers ``refused`` with."""
-    return next(status for kind, status in REFUSAL_STATUSES if isinstance(refused, kind))
+    return next(status for kind, status, _ in REFUSAL_STATUSES if isinstance(refused, kind))
+
+
+def refusal_outcome(refused: DispatchError | ServiceError) -> Outcome:
+    """The outcome ``REFUSAL_STATUSES`` reads ``refused`` as, from the row its status is read from."""
+    return next(outcome for kind, _, outcome in REFUSAL_STATUSES if isinstance(refused, kind))
 
 
 def field_map(detail: Any) -> Mapping[Any, Any]:
@@ -223,11 +245,16 @@ def answered_methods(spec: Any, methods: Sequence[str] | None, *, label: str) ->
 
 
 class SpecViewBase(View):
-    """Everything ``SpecView`` and ``AsyncSpecView`` share: the attributes and the methods served.
+    """Everything ``SpecView`` and ``AsyncSpecView`` share: the attributes, the hooks and the methods served.
 
     Each subclass adds one handler, sync or async, bound to every method name.
     Neither subclasses the other, because an async handler cannot override a
     sync one: Django serves a class async only when all of its handlers are.
+
+    **Two hooks read the request** before dispatch, each defaulting to the
+    attribute of its name: ``get_pool_seeds(request)`` and
+    ``get_server_arguments(request)``. Django builds one view instance per
+    request, so either may read ``self.request`` as well.
     """
 
     spec: ServiceSpec | SelectorSpec | SpecSource | None = None
@@ -235,17 +262,46 @@ class SpecViewBase(View):
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT
     pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS
     methods: Sequence[str] | None = None
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None
+    server_arguments: ServerArguments | None = None
 
     @classonlymethod
     def as_view(cls, **initkwargs: Any) -> Callable[..., HttpResponseBase]:
-        """Django's ``as_view``, then the spec and methods checked, once, for every request."""
+        """Django's ``as_view``, then the configuration checked, once, for every request.
+
+        What is checked here fails when the URLconf is imported, in this order:
+
+        1. the spec and the methods;
+        2. both hooks are plain ``def``: neither is awaited, so an
+           ``async def`` one would answer a coroutine;
+        3. ``route_kwargs``: not a bare string, and every target a mapping
+           names and every name a tuple allows is a parameter the spec
+           declares, read from ``spec.parameters()``;
+        4. ``server_arguments``, by the kernel's ``check_server_arguments``
+           against the view's declared ``pool_seeds``. What
+           ``get_pool_seeds`` answers per request is not what it sees;
+        5. no target or allowed name of ``route_kwargs`` is a name
+           ``server_arguments`` answers for, since the route may not
+           contradict the binding.
+
+        What only a request can show is checked on each request: a captured
+        kwarg the spec does not declare, two kwargs filling one parameter (a
+        view mounted on two routes may capture one on each), a capture of a
+        name the binding answers for, and the hooks' answers, in
+        ``served_hooks``.
+        """
         # Django's own check of the keywords first, so a misspelt ``sepc=`` is
         # refused as the typo it is rather than read as a view with no spec.
         view = super().as_view(**initkwargs)
-        answered_methods(
-            initkwargs.get("spec", cls.spec),
-            initkwargs.get("methods", cls.methods),
-            label=cls.__name__,
+        spec = initkwargs.get("spec", cls.spec)
+        # The spec before everything that reads it, so a view with no spec is
+        # refused as one rather than by a later check failing to read it.
+        answered_methods(spec, initkwargs.get("methods", cls.methods), label=cls.__name__)
+        check_request_hooks(
+            cls,
+            initkwargs,
+            spec,
+            remedy=" AsyncSpecView runs it off the event loop, in an executor hop.",
         )
         return view
 
@@ -264,3 +320,255 @@ class SpecViewBase(View):
     def served_spec(self) -> ServiceSpec | SelectorSpec | SpecSource:
         """``spec``, which ``as_view`` refused to build a view without."""
         return cast("ServiceSpec | SelectorSpec | SpecSource", self.spec)
+
+    def get_pool_seeds(self, request: HttpRequest) -> PoolSeeds:
+        """The seeds this request's call is resolved with: ``pool_seeds`` unless overridden.
+
+        Seed what the request carries rather than the request itself -
+        ``tenant=lambda: request.tenant`` - so a spec reading ``tenant`` reads
+        it from every transport that can seed one. A spec callable requiring a
+        ``request`` raises ``TypeError`` on every reader that has none: MCP,
+        the agent tools, the CLI and a task. That is why no ``request`` seed is
+        registered by default.
+        """
+        return self.pool_seeds
+
+    def get_server_arguments(self, request: HttpRequest) -> ServerArguments | None:
+        """The values the server answers for on this request's call: ``server_arguments`` unless overridden.
+
+        The names it takes are the declared ``server_arguments``' names, which
+        ``as_view`` checked; only the values may vary per request. Each value
+        is checked against its parameter on every call, by the kernel's
+        ``apply_server_arguments``.
+        """
+        return self.server_arguments
+
+    def served_server_arguments(self, request: HttpRequest) -> ServerArguments | None:
+        """``get_server_arguments(request)``, refused unless it binds and withholds what the declared binding does.
+
+        ``as_view`` checked the declared binding alone, and every check but the
+        value's own reads only which names are bound and which withheld. So a
+        per-call binding naming another name would reach dispatch unchecked,
+        one naming fewer would hand a client a name the server answers for,
+        and one withholding a name the declared binding binds could withhold a
+        parameter no call can do without. Only the values may vary, and the
+        kernel's ``apply_server_arguments`` checks those on every call.
+        ``None`` binds and withholds nothing, as an empty binding does, so
+        either may stand for the other.
+
+        Raises:
+            ImproperlyConfigured: the bound names or the withheld ones differ.
+        """
+        return checked_binding(
+            type(self).__name__, self.get_server_arguments(request), self.server_arguments
+        )
+
+    def served_hooks(self, request: HttpRequest) -> tuple[ServerArguments | None, PoolSeeds]:
+        """What both hooks answer for ``request``, refused where the seeds meet the binding.
+
+        ``served_server_arguments``, then ``get_pool_seeds(request)``. A seed
+        the per-call seeds add beyond the declared ``pool_seeds``, under a
+        name the binding binds or withholds, is refused: the as_view check
+        read only the declared seeds, and a seed taking a bound name would
+        answer every request with the binding doing nothing, or a 400. This
+        reads names alone, so it also refuses the one pairing the kernel's
+        check would allow, a seed beside a Validator field of its name; a
+        host wanting that declares the seed in ``pool_seeds``.
+
+        Raises:
+            ImproperlyConfigured: the per-call binding's names differ from the
+                declared ones, or a per-call seed occupies one of them.
+        """
+        served = self.served_server_arguments(request)
+        seeds = checked_seeds(
+            type(self).__name__, self.get_pool_seeds(request), self.pool_seeds, served
+        )
+        return served, seeds
+
+
+def check_request_hooks(
+    view_class: type[View],
+    initkwargs: Mapping[str, Any],
+    spec: ServiceSpec | SelectorSpec | SpecSource,
+    *,
+    remedy: str = "",
+) -> None:
+    """Refuse, when the URLconf is imported, a view whose request hooks could not serve a request.
+
+    The checks every view reading the request makes once its spec is known
+    to be one, in this order: both hooks are plain ``def``; ``route_kwargs``
+    names only parameters ``spec`` declares, and is no bare string;
+    ``server_arguments`` passes the kernel's ``check_server_arguments``
+    against the view's declared ``pool_seeds``; and ``route_kwargs`` fills
+    no name the binding answers for. Each is read from ``initkwargs`` first
+    and the class second, as ``as_view`` reads every attribute. ``remedy``
+    ends the async hook's refusal, for a view with more to say about where
+    a hook runs.
+
+    Raises:
+        ImproperlyConfigured: an ``async def`` hook, a ``route_kwargs`` or a
+            binding the spec cannot honour, or a route filling a bound name.
+        TypeError: ``route_kwargs`` is a bare string.
+    """
+    label = view_class.__name__
+    for hook in ("get_pool_seeds", "get_server_arguments"):
+        if inspect.iscoroutinefunction(_configured(view_class, initkwargs, hook)):
+            raise ImproperlyConfigured(
+                f"{label}.{hook} is async, and the view calls it without awaiting it, so "
+                f"it would answer a coroutine: define it with def.{remedy}"
+            )
+    route_kwargs = _configured(view_class, initkwargs, "route_kwargs")
+    if route_kwargs is not None:
+        # No URL kwargs: what is left is the setting's own check.
+        route_arguments(kernel_spec(spec).parameters(), None, route_kwargs=route_kwargs)
+    server = _configured(view_class, initkwargs, "server_arguments")
+    if server is not None:
+        check_server_arguments(
+            spec, server, pool_seeds=_configured(view_class, initkwargs, "pool_seeds")
+        )
+        filled = sorted(_route_targets(route_kwargs) & server.names())
+        if filled:
+            raise ImproperlyConfigured(
+                f"{label}.route_kwargs fills {', '.join(filled)}, which server_arguments "
+                "answers for. The route is the host's, and may not contradict the host's "
+                "own binding: map the kwarg to None to drop it, or leave the name out of "
+                "server_arguments."
+            )
+
+
+def checked_binding(
+    label: str, served: ServerArguments | None, declared: ServerArguments | None
+) -> ServerArguments | None:
+    """``served``, a hook's per-call binding, refused unless it binds and withholds what ``declared`` does.
+
+    The check when the view was built read the declared binding alone, and
+    every check but the value's own reads only which names are bound and
+    which withheld. So a per-call binding naming another name would reach
+    dispatch unchecked, one naming fewer would hand a client a name the
+    server answers for, and one withholding a name the declared binding
+    binds could withhold a parameter no call can do without. ``None`` binds
+    and withholds nothing, as an empty binding does, so either may stand for
+    the other.
+
+    Raises:
+        ImproperlyConfigured: the bound names or the withheld ones differ.
+    """
+    # Two halves compared at once, each held by its own test:
+    # test_a_per_call_binding_dropping_a_declared_name_is_refused fails
+    # without the bound names, and
+    # test_a_per_call_binding_releasing_a_withheld_name_is_refused without
+    # the withheld ones.
+    if _split(served) != _split(declared):
+        raise ImproperlyConfigured(
+            f"{label}.get_server_arguments() {_described(served)}, where "
+            f"server_arguments {_described(declared)}. Only the declared "
+            "binding was checked when the view was built: declare every name the hook "
+            "binds or withholds, and vary only the values."
+        )
+    return served
+
+
+def checked_seeds(
+    label: str, seeds: PoolSeeds, declared: PoolSeeds, served: ServerArguments | None
+) -> PoolSeeds:
+    """``seeds``, a hook's per-call seeds, refused where one beyond ``declared`` takes a name ``served`` answers for.
+
+    The check when the view was built read only the declared seeds, and a
+    seed taking a bound name would answer every request with the binding
+    doing nothing, or a 400. This reads names alone, so it also refuses the
+    one pairing the kernel's check would allow, a seed beside a Validator
+    field of its name; a host wanting that declares the seed in
+    ``pool_seeds``.
+
+    Raises:
+        ImproperlyConfigured: a per-call seed occupies a bound or withheld name.
+    """
+    bound, withheld = _split(served)
+    # Only the seeds beyond the declared ones: the check when the view was
+    # built read those, and lets a Validator field named like one be bound,
+    # since the field is the caller's argument and the seed keeps the
+    # service's parameter of its name. Each part is held by its own test:
+    # test_a_per_call_seed_occupying_a_bound_name_is_refused (the bound
+    # names), test_a_per_call_seed_occupying_a_withheld_name_is_refused
+    # (the withheld ones), and
+    # test_a_declared_seed_a_bound_validator_field_shares_a_name_with_is_served
+    # (the declared seeds left out).
+    occupied = sorted((bound | withheld) & (seeds.names - declared.names))
+    if occupied:
+        raise ImproperlyConfigured(
+            f"{label}.get_pool_seeds() adds {', '.join(occupied)}, which "
+            "server_arguments binds or withholds, and the check when the view was built "
+            "never saw a seed added per request: declare it in pool_seeds, where that "
+            "check reads it, or leave the name to the binding."
+        )
+    return seeds
+
+
+def server_names(server: ServerArguments | None) -> frozenset[str]:
+    """Every name ``server`` answers for, bound or withheld; none for no binding."""
+    return frozenset() if server is None else server.names()
+
+
+def refuse_server_owned(
+    url_kwargs: Mapping[str, Any] | None,
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
+    owned: frozenset[str],
+) -> None:
+    """Refuse every captured kwarg that would fill a name the server answers for, by its captured name.
+
+    Named as the route captured it, so the refusal says which kwarg to drop,
+    whether it fills the name under its own or through a mapping.
+    """
+    filling = sorted(name for name in url_kwargs or {} if _filled_by(name, route_kwargs) in owned)
+    if filling:
+        raise ImproperlyConfigured(
+            f"The route captures {', '.join(filling)}, which server_arguments answers for. "
+            f"Drop each with route_kwargs={dict.fromkeys(filling)!r}, or leave it out of "
+            "server_arguments: the route is the host's, and may not contradict the host's "
+            "own binding."
+        )
+
+
+def without(arguments: Mapping[str, Any], names: frozenset[str]) -> dict[str, Any]:
+    """``arguments`` with every name in ``names`` left out: the ones the server answers for."""
+    return {key: value for key, value in arguments.items() if key not in names}
+
+
+def _configured(view_class: type[View], initkwargs: Mapping[str, Any], name: str) -> Any:
+    """The attribute ``name`` as ``as_view`` builds the view with: passed to it, or the class's."""
+    return initkwargs.get(name, getattr(view_class, name))
+
+
+def _filled_by(
+    name: str, route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None
+) -> str | None:
+    """The parameter the captured kwarg ``name`` fills under ``route_kwargs``, or ``None`` if dropped."""
+    if route_kwargs is None:
+        return name
+    if isinstance(route_kwargs, Mapping):
+        return route_kwargs.get(name, name)
+    return name if name in route_kwargs else None
+
+
+def _route_targets(
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
+) -> frozenset[str]:
+    """Every parameter ``route_kwargs`` names a kwarg into: a mapping's targets, a tuple's names."""
+    if route_kwargs is None:
+        return frozenset()
+    if isinstance(route_kwargs, Mapping):
+        return frozenset(target for target in route_kwargs.values() if target is not None)
+    return frozenset(route_kwargs)
+
+
+def _split(server: ServerArguments | None) -> tuple[frozenset[str], frozenset[str]]:
+    """The names ``server`` binds and the names it withholds; neither for no binding."""
+    if server is None:
+        return frozenset(), frozenset()
+    return frozenset(server.values), server.withheld
+
+
+def _described(server: ServerArguments | None) -> str:
+    """What ``server`` binds and withholds, in order, for a refusal."""
+    bound, withheld = _split(server)
+    return f"binds {', '.join(sorted(bound)) or 'nothing'} and withholds {', '.join(sorted(withheld)) or 'nothing'}"

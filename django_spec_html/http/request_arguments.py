@@ -17,6 +17,7 @@ from django_service_specs import (
     InvalidArguments,
     Parameter,
     Parameters,
+    ServerArguments,
     coerce_flat,
     expected_type_refusal,
     max_length_in_force,
@@ -24,6 +25,7 @@ from django_service_specs import (
 
 from django_spec_html.http.route_arguments import route_arguments
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
+from django_spec_html.http.utils import refuse_server_owned, server_names, without
 
 _CSRF_FIELD = "csrfmiddlewaretoken"
 """The field ``{% csrf_token %}`` renders into a form: Django's, and never an argument."""
@@ -40,7 +42,12 @@ _MULTIPART = "multipart/form-data"
 
 
 def request_arguments(
-    request: HttpRequest, parameters: Parameters, *, url_kwargs: Mapping[str, Any] | None = None
+    request: HttpRequest,
+    parameters: Parameters,
+    *,
+    url_kwargs: Mapping[str, Any] | None = None,
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None,
+    server_arguments: ServerArguments | None = None,
 ) -> dict[str, Any]:
     """The arguments a request carries for ``parameters``, typed as a JSON caller would send them.
 
@@ -109,7 +116,22 @@ def request_arguments(
     move the route's scope, so ``/notes/4/`` with ``pk=9`` in its body is about
     note 4. On a flat request the two are coerced together, so every refusal
     comes back at once and a clashing client value the route replaced is
-    never refused.
+    never refused. ``route_kwargs`` says which URL kwargs fill which
+    parameters, renaming or dropping the rest, as
+    [`route_arguments`][django_spec_html.http.route_arguments.route_arguments]
+    reads it.
+
+    **Every name** ``server_arguments`` **answers for is dropped** from what
+    the client sent, before anything is coerced, so a client's ``?owner=abc``
+    for a bound integer is never refused as the client's 400 for a name it was
+    never offered. **A URL kwarg filling one is refused** instead, as the
+    host's misconfiguration: the route is the host's, and it may not
+    contradict the host's own binding, so a capture the spec should not read
+    is dropped explicitly, with ``route_kwargs={name: None}``. Only the names are read
+    here: the values are laid by the kernel's
+    [`apply_server_arguments`][django_service_specs.dispatch.apply_server_arguments.apply_server_arguments],
+    which needs the spec to check them, so a host's own view passes the result
+    through it, as ``dispatch_request`` does.
 
     Raises:
         InvalidArguments: a JSON body that does not parse or is not an object,
@@ -117,18 +139,25 @@ def request_arguments(
             its parameter's name.
         UnsupportedMediaType: a body that is neither JSON nor a form.
         ImproperlyConfigured: a URL kwarg ``parameters`` does not declare,
-            which is the host's route rather than the client's request; see
+            a ``route_kwargs`` naming a parameter they do not, or a URL
+            kwarg filling a name ``server_arguments`` answers for, which is
+            the host's route rather than the client's request; see
             [`route_arguments`][django_spec_html.http.route_arguments.route_arguments].
     """
-    route = route_arguments(parameters, url_kwargs)
+    route = route_arguments(parameters, url_kwargs, route_kwargs=route_kwargs)
+    owned = server_names(server_arguments)
+    refuse_server_owned(url_kwargs, route_kwargs, owned)
     if request.method in ("GET", "HEAD"):
-        return coerce_flat(parameters, {**_flat(parameters, request.GET), **route})
+        read = {**_flat(parameters, request.GET), **route}
+        return coerce_flat(parameters, without(read, owned))
     if request.content_type == "application/json":
-        return {**_json_object(request), **coerce_flat(parameters, route)}
+        return {
+            **without(_json_object(request), owned),
+            **coerce_flat(parameters, route),
+        }
     fields, uploads = _form(request)
-    return coerce_flat(
-        parameters, {**_flat(parameters, fields), **_uploads(parameters, uploads), **route}
-    )
+    read = {**_flat(parameters, fields), **_uploads(parameters, uploads), **route}
+    return coerce_flat(parameters, without(read, owned))
 
 
 def _flat(parameters: Parameters, source: QueryDict) -> dict[str, Any]:

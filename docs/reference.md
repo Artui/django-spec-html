@@ -18,6 +18,7 @@ This package defines none. The argument reader reads one of the kernel's:
 ## Pages
 
 ::: django_spec_html.views.spec_form_view.SpecFormView
+::: django_spec_html.types.outcome.Outcome
 
 ## JSON views
 

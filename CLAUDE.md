@@ -7,9 +7,10 @@ Guidance for working in this repository.
 A `django-service-specs` spec served as a server-rendered page. `SpecFormView`
 renders a spec's form, validates a post through it, runs the kernel's
 `dispatch`, and answers as a plain form post: a redirect on a success, and the
-page again with the refusal on its form. It reads no htmx header, so an htmx
-request is answered the same way; a fragment for one is planned for 0.2.0 and
-not built.
+page again with the refusal on its form. An htmx request decides the same
+outcome and is answered with a fragment of the page instead: the form at 200 for
+a refusal the page re-renders, `HX-Redirect` or a result fragment for a success,
+and a denial raised in both modes.
 Beside the pages, `http/` serves a spec as plain-Django JSON (`SpecView`,
 `AsyncSpecView`, `dispatch_request`, `error_response`, `request_arguments`), for
 a client that wants JSON with no API framework.
@@ -74,7 +75,8 @@ Non-negotiable. They keep the package navigable, and they are the kernel's.
 | Subpackage | Holds |
 | --- | --- |
 | `views/` | `SpecFormView`, a spec served as the page its form is, and the private readers it alone uses (the form's widgets, the target, the refused render) |
-| `http/` | the JSON views (`SpecView`, `AsyncSpecView`, `dispatch_request`, `adispatch_request`), `error_response`, and the request readers both halves use: `request_arguments`, `route_arguments`, `request_principal`, `add_argument_errors`; `UnsupportedMediaType`, beside its raiser; `utils.py` for `SpecViewBase`, the helpers the entry points share, and `REFUSAL_STATUSES`, the status map the page reads too |
+| `types/` | `Outcome`, the ways a page's post ends; it imports nothing else in the package (rule 8) |
+| `http/` | the JSON views (`SpecView`, `AsyncSpecView`, `dispatch_request`, `adispatch_request`), `error_response`, and the request readers both halves use: `request_arguments`, `route_arguments`, `request_principal`, `add_argument_errors`; `UnsupportedMediaType`, beside its raiser; `utils.py` for `SpecViewBase`, the helpers the entry points share, and `REFUSAL_STATUSES`, the status map the page reads too, with each refusal's `Outcome` |
 
 `views/` imports `http/`, never the reverse. The root re-exports both
 subpackages' `__all__` and `__version__`, and `tests/test_init.py` holds that.
@@ -94,7 +96,7 @@ Each of these reads as an oversight and is not.
 - **The test settings list no kernel app.** The package needs nothing of the
   kernel switched on, and the suite shows it.
 - **The kernel no longer ships these names.** `django_service_specs.http` and
-  its ten root names are gone from kernel 0.12.0, which is the floor, so an
+  its ten root names are gone from kernel 0.12.0, below the floor, so an
   import left pointing at the kernel fails at import rather than resolving to
   a second copy. `tests/test_init.py` holds that absence, and would fail on a
   floor lowered past the removal.
@@ -171,7 +173,7 @@ configured and enforced. isort order is stdlib, third party, first party.
 | --- | --- | --- |
 | Python | 3.10 | 3.10 through 3.14 |
 | Django | 4.2 | 4.2, 5.0, 5.1, 5.2, 6.0, 6.1 |
-| django-service-specs | 0.12.0 | the newest release, and the floor in the `floor` job |
+| django-service-specs | 0.15.0 | the newest release, and the floor in the `floor` job |
 
 The Python and Django floors are the kernel's, and cannot sit below them.
 
