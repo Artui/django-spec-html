@@ -165,6 +165,8 @@ package's `Outcome`, by value; a success is `ok`.
 The first two rows place the refusal on the form, and a service's string or
 list detail is about the whole form. Every other re-rendered refusal is its
 message, among the form's non-field errors.
+An `AdditionalInputRequired` reveals the field that answers it as well, as
+[the confirmation page](#the-confirmation-page).
 
 **A refusal of the arguments shows every error in one post.** Beside an
 `InvalidArguments`, the page's own form - built as the Validator's is, with
@@ -330,6 +332,115 @@ is the cost of turning the display on. A bulk operation whose service returns
 something else re-reads its rows with an `output_selector_spec`, as
 `publish_drafts_spec` does. The raw `target` stays beside the display, for a
 template that wants both.
+
+## The confirmation page
+
+**A service that finds it needs one more value asks for it** by raising
+[`AdditionalInputRequired`](https://artui.github.io/django-service-specs/dispatching/)
+with a `schema` keyed by the argument it wants back, and the page renders
+that question: the form again, bound to every value the post carried, with
+the field that answers it revealed. The answer comes back as an ordinary
+field of the next post, so there is nothing to hold between the two and no
+session to resume.
+
+```python
+--8<--
+docs/examples/spec_form.py:confirm
+--8<--
+```
+
+**The answer is a field the spec's form declares**, here `confirmed`: an
+optional `BooleanField`, whose box left unticked cleans to `False`. The page
+builds no widget from the schema, because the closed argument set refuses a
+key no parameter declares, so a control the form does not declare could
+never carry the answer. **`asked_fields` holds the field back** until a
+question names it. It is taken out of the form every GET and every other
+refusal renders, so `{{ form }}`, or a template rendering fields one by one,
+shows no box, and a box never shown posts nothing: the service reads
+`False` and asks. `as_view()` refuses `asked_fields` unless it is a tuple
+of the form's own fields, each optional, since a field held back is absent
+from every post no question asked for, none the form disables, since a
+disabled field is never read from a post, and none a `server_arguments`
+binding answers for. A held field a refusal's error names is shown with its
+error.
+
+The URLconf routes it as `books/discard-drafts/`, with `display_target=True`
+and `asked_fields=("confirmed",)`, through this template and a page that
+includes it, named as the `fragment_template_name`:
+
+```html
+--8<--
+tests/templates/spec_confirm_form.html
+--8<--
+```
+
+**What a post that is asked gets back:**
+
+- The kernel's
+  [`check_requested_input`][django_service_specs.dispatch.check_requested_input.check_requested_input]
+  reads the schema first, with the request's seeds. A question no route could
+  hear answered - a key no parameter declares, one a seed fills, a shape a
+  transport cannot render, a type the parameter would refuse - raises
+  `ImproperlyConfigured` out of the view, on the page and in the fragment
+  alike, rather than being rendered. It is the service's mistake, and the
+  JSON views raise it too.
+- The page answers **422**, the map's status, and the fragment **200**, in
+  place: the form's own target, with no `HX-Retarget` or `HX-Reswap`.
+- The form is re-rendered with the boxes the schema names revealed, every
+  other value as it was posted, and the message among its non-field errors,
+  as any other refusal's. A box asked for again after a yes is shown empty,
+  so one click never answers a question nobody read.
+- The context carries `requested_input`, absent on every other answer:
+
+| Key | Holds |
+| --- | --- |
+| `requested_input.message` | the refusal's message |
+| `requested_input.schema` | the schema it asked under, or `None` |
+| `requested_input.fields` | the form's bound fields the schema names, in its order |
+
+A key the schema names that no field of the form declares, such as a
+parameter the spec reads from the route, is asked by its message alone.
+
+**The page that asks counts again.** On a bulk page the set is counted for
+the post that asked, after the service's pass, so `target_count` and
+`target_counted_at` say what the confirming post will find as of then, not
+what the GET counted: above, a draft added between the page and its post
+makes the question say "3 drafts". The confirming post re-runs the service
+on the set as it is when it arrives, and is asked again if the service
+finds a reason to.
+
+### A confirmation that lands elsewhere
+
+A form in a table row whose question needs a dialog puts the dialog in the
+`spec-form` fragment as an out-of-band element, which htmx swaps into the
+element of the same id wherever it is on the page, beside the form swapped in
+place. The view's Python does not change, and it sets no header:
+
+```html
+--8<--
+tests/templates/spec_confirm_dialog.html
+--8<--
+```
+
+The URLconf routes it as `books/discard-drafts/in-a-dialog/`. Every field of
+the form but the ones asked for is rendered in the form, and the dialog
+carries the message, the box and a button. **They sit outside the form, so
+each names it with HTML's `form` attribute**, which is what makes them post
+with it; a control outside the form with no `form` attribute posts nothing.
+The page renders the empty dialog only before a question, so whichever way
+the page is rendered there is one element with its id. An id that matches
+no element on the page swaps nothing.
+
+### Not a gate on an agent route
+
+**The question is a page's affordance, never a security boundary.** On an
+agent route, the same `AdditionalInputRequired` goes back to the model as a
+retry naming the missing argument, and the model can answer `confirmed: true`
+itself on its next call, with nobody asked. So nothing that must have a
+person's yes may rely on this question. For a human gate on an agent route,
+enable `ToolGuard` in django-spec-agents, whose approval card a person
+answers before the tool runs, and keep the spec's tool out of its `exempt`
+list.
 
 ## What the request carries
 

@@ -1,0 +1,6 @@
+<form method="post" hx-post="" hx-swap="outerHTML">{% csrf_token %}
+  <p>{{ target_count }} draft{{ target_count|pluralize }} selected, counted at {{ target_counted_at|time:"H:i" }}.</p>
+  <ul>{% for book in target_display %}<li>{{ book.label }}</li>{% endfor %}</ul>
+  {{ form }}
+  <button name="save">{% if requested_input %}Discard them{% else %}Discard{% endif %}</button>
+</form>
