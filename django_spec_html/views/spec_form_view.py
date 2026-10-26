@@ -297,17 +297,23 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     rows; the post re-runs the service on the set as it is then, and a refused
     one is counted again. A successful post counts nothing.
 
-    **``target_display`` is the target as a person reads it**, where the
-    spec's Output - its presenter's, or its output selector's - marks one of
-    its own fields with a ``FieldMarking``: the target presented through that
-    presenter, with the context dispatch hands it, projected by the kernel's ``project_payload``, and with every ``HANDLE``
-    dropped as well as every ``HIDDEN`` one. A row's is a dict of its
-    ``fields``, with ``label``, the value of the field marked ``LABEL``,
-    beside them where there is one; a set's is a list of those, one per row,
-    for at most ``target_display_limit`` rows, read in one query. The Output
-    must describe the target's rows, since the target is presented through
-    it. A spec whose Output marks none of its own fields, or that has none,
-    has no ``target_display``.
+    **``target_display`` is the target as a person reads it**, on a page
+    that sets ``display_target``. It is off by default: an Output describes
+    what the operation returns, which need not be its target, so a page
+    presents its target only where it says the Output describes it. On, the
+    target is presented through the spec's presenter - its own, or its output
+    selector's - with the context dispatch hands it, projected by the kernel's
+    ``project_payload``, and with every ``HANDLE`` dropped as well as every
+    ``HIDDEN`` one. A row's is a dict of its ``fields``, with ``label``, the
+    value of the field marked ``LABEL``, beside them where there is one; a
+    set's is a list of those, one per row, for at most
+    ``target_display_limit`` rows, read in one query. ``as_view()`` refuses a
+    page displaying its target whose spec has no Output, whose Output marks
+    none of its own fields with a ``FieldMarking``, or whose markings the
+    kernel's projection refuses, such as two labels. Whether the Output
+    describes the target's rows is known only once one is presented: an
+    Output that does not raises on the page's first request, which is the
+    cost of turning the display on.
 
     **A refusal of the arguments shows every error in one post.** Beside an
     ``InvalidArguments``, the page's own form - built as the Validator's is,
@@ -359,9 +365,13 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         fragment_template_name: The template an htmx request's form is
             answered with, for a fragment in another file or under another
             name; ``None``, the default, addresses ``<template_name>#spec-form``.
+        display_target: Whether the context carries ``target_display``,
+            the target presented through the spec's Output and projected by
+            its markings: ``False`` by default, checked at ``as_view()``.
         target_display_limit: How many rows of a set ``target_display``
-            projects, the first that many in the set's own order: 10 by
-            default. ``target_count`` counts them all.
+            projects, the first that many in the set's own order: a positive
+            int, 10 by default, checked at ``as_view()``. ``target_count``
+            counts them all.
     """
 
     spec: ServiceSpec | None = None
@@ -371,6 +381,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT
     route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None
     server_arguments: ServerArguments | None = None
+    display_target: bool = False
     target_display_limit: int = 10
 
     @classonlymethod
@@ -653,7 +664,9 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         ``target``; a set is ``target`` beside ``target_count`` and
         ``target_counted_at``, counted here, at the moment the page is
         rendered. ``target_display`` is the target projected for a person,
-        where the spec's Output marks a field, as ``_display`` builds it.
+        on a page that sets ``display_target``, as ``_display`` builds it;
+        otherwise no presenter is asked and no pool is built for it
+        (test_a_page_not_opted_in_never_presents_its_target).
 
         The presenter is handed the context dispatch hands it: the principal,
         the target, the request's one call context, and as ``ambient`` the
@@ -667,7 +680,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         # test_a_create_carries_no_target (``None`` is no row to show).
         if target is UNSET or target is None:
             return {}
-        shown = _display(spec)
+        shown = _display(spec) if self.display_target else None
         presented: PresentationContext | None = None
         if shown is not None:
             ambient = base_pool(user=principal, seeds=served.seeds) if pool is None else pool
@@ -825,6 +838,17 @@ def _check_configuration(cls: type[SpecFormView], initkwargs: Mapping[str, Any])
             f"{label}.as_view() needs a success_url, where a successful post redirects, "
             "or a get_success_url that returns one."
         )
+    limit = initkwargs.get("target_display_limit", cls.target_display_limit)
+    # One branch to coverage, so each condition is held by its own case of
+    # test_anything_but_a_positive_int_is_refused: ``'3'``, ``2.5`` and
+    # ``None`` the first, ``True`` the second (a bool is an int, and ``True``
+    # is positive), ``0`` and ``-1`` the third.
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+        raise ImproperlyConfigured(
+            f"{label}.target_display_limit must be a positive int; got {limit!r}."
+        )
+    if initkwargs.get("display_target", cls.display_target):
+        _check_display(label, spec)
 
 
 class _ClientRedirect(HttpResponseRedirectBase):
@@ -987,21 +1011,49 @@ def _unavailable(
     return None
 
 
-def _display(spec: ServiceSpec) -> tuple[Presenter, AudienceProjection] | None:
-    """The presenter and the markings a person's view of the target is read through, or ``None``.
+def _display(spec: ServiceSpec) -> tuple[Presenter, AudienceProjection]:
+    """The presenter and the markings a person's view of the target is read through.
 
-    ``None`` for a spec whose Output marks none of its own fields - a spec with
-    no Output, one whose choices alone a projection would speak, and one
-    marking a field only inside a nested object - since a display is driven
-    by the row's own markings (test_a_spec_with_no_output_has_no_display,
-    test_an_output_marking_nothing_has_no_display,
-    test_a_marking_only_inside_a_nested_object_is_no_display). The markings come from the
-    presenter's Output, so a marking means a presenter.
+    Asked only of a page that set ``display_target``, whose spec ``as_view``
+    checked has an Output marking one of its own fields, so there is a
+    presenter to present through. The projection is built per request rather
+    than kept from that check: a choice's display is read in the language
+    active when it is built.
     """
-    projection = audience_projection_for_spec(spec)
+    return cast("Presenter", spec.presenter_for_output()), audience_projection_for_spec(spec)
+
+
+def _check_display(label: str, spec: ServiceSpec) -> None:
+    """Refuse a page displaying its target whose spec's Output cannot display one, naming both.
+
+    Three refusals, each its own test in ``TestDisplayingTheTargetIsOptIn``:
+    a spec with no Output (test_a_spec_with_no_output_is_refused); one whose
+    projection the kernel refuses, such as two fields marked ``LABEL``
+    (test_an_output_the_projection_refuses_is_refused_naming_the_view); and
+    one marking none of its own fields, its choices alone or only a nested
+    object's (test_an_output_marking_none_of_its_own_fields_is_refused), since
+    a person's display is driven by the row's own markings. Whether the Output
+    describes the target's rows is not known until one is presented.
+    """
+    service = spec.service
+    named = f"the spec of {getattr(service, '__qualname__', type(service).__qualname__)}"
+    if spec.output() is None:
+        raise ImproperlyConfigured(
+            f"{label} displays its target through its spec's Output, and {named} declares "
+            "none: give it a presenter or an output_selector_spec, or leave display_target off."
+        )
+    try:
+        projection = audience_projection_for_spec(spec)
+    except ImproperlyConfigured as refused:
+        raise ImproperlyConfigured(
+            f"{label} cannot display the target of {named}: {refused}"
+        ) from refused
     if not projection.fields:
-        return None
-    return cast("Presenter", spec.presenter_for_output()), projection
+        raise ImproperlyConfigured(
+            f"{label} displays its target by its Output's markings, and {named}'s Output "
+            "marks none of its own fields with a FieldMarking: mark the field naming the "
+            "row FieldMarking.label(), or leave display_target off."
+        )
 
 
 def _displayed(presented: Any, projection: AudienceProjection) -> dict[str, Any]:

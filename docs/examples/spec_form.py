@@ -315,6 +315,8 @@ urlpatterns = [
             spec=withdraw_book_spec,
             template_name="spec_target.html",
             success_url=reverse_lazy("books"),
+            # BookOut describes the book withdrawn, so the page shows it.
+            display_target=True,
         ),
     ),
     path(
@@ -323,6 +325,7 @@ urlpatterns = [
             spec=publish_drafts_spec,
             template_name="spec_target.html",
             success_url=reverse_lazy("books"),
+            display_target=True,
             target_display_limit=3,
         ),
     ),

@@ -2874,6 +2874,11 @@ def set_spec(selector: Any = None, **kwargs: Any) -> ServiceSpec:
     )
 
 
+def shown_view(spec: ServiceSpec, **initkwargs: Any) -> Any:
+    """``form_view``, displaying its target."""
+    return form_view(spec, display_target=True, **initkwargs)
+
+
 def notes(owner: Any, count: int) -> list[Note]:
     return [Note.objects.create(owner=owner, title=f"Note {each}") for each in range(count)]
 
@@ -3013,7 +3018,7 @@ class TestTheTargetDisplay:
     def test_a_row_is_named_by_its_label_with_no_handle_and_nothing_hidden(self, ada: Any) -> None:
         note = Note.objects.create(owner=ada, title="Ada's")
         spec = row_spec(presenter=DataclassPresenter(NoteOut))
-        context = get(form_view(spec), ada, pk=note.pk).context_data
+        context = get(shown_view(spec), ada, pk=note.pk).context_data
         assert context["target_display"] == {
             "label": "Ada's",
             "fields": {"title": "Ada's", "archived": False},
@@ -3032,7 +3037,7 @@ class TestTheTargetDisplay:
             ),
             presenter=DataclassPresenter(BookOut),
         )
-        display = get(form_view(spec), ada, pk=book.pk).context_data["target_display"]
+        display = get(shown_view(spec), ada, pk=book.pk).context_data["target_display"]
         assert display == {
             "label": "Lathe",
             "fields": {"title": "Lathe", "author": {"name": "Le Guin"}},
@@ -3046,12 +3051,12 @@ class TestTheTargetDisplay:
 
         note = Note.objects.create(owner=ada, title="Ada's")
         spec = row_spec(presenter=DataclassPresenter(Untitled))
-        display = get(form_view(spec), ada, pk=note.pk).context_data["target_display"]
+        display = get(shown_view(spec), ada, pk=note.pk).context_data["target_display"]
         assert display == {"fields": {"title": "Ada's"}}
 
     def test_each_row_of_a_set_is_projected_up_to_the_bound(self, ada: Any) -> None:
         notes(ada, 5)
-        view = form_view(set_spec(presenter=DataclassPresenter(NoteOut)), target_display_limit=2)
+        view = shown_view(set_spec(presenter=DataclassPresenter(NoteOut)), target_display_limit=2)
         with CaptureQueriesContext(connection) as queries:
             context = get(view, ada).context_data
         assert context["target_count"] == 5
@@ -3068,7 +3073,7 @@ class TestTheTargetDisplay:
     def test_the_default_bound(self, ada: Any) -> None:
         assert SpecFormView.target_display_limit == 10
         notes(ada, SpecFormView.target_display_limit + 1)
-        view = form_view(set_spec(presenter=DataclassPresenter(NoteOut)))
+        view = shown_view(set_spec(presenter=DataclassPresenter(NoteOut)))
         context = get(view, ada).context_data
         assert len(context["target_display"]) == SpecFormView.target_display_limit
         assert context["target_count"] == SpecFormView.target_display_limit + 1
@@ -3078,11 +3083,11 @@ class TestTheTargetDisplay:
         spec = set_spec(
             selector=lambda *, user: list(notes_of(user)), presenter=DataclassPresenter(NoteOut)
         )
-        context = get(form_view(spec, target_display_limit=2), ada).context_data
+        context = get(shown_view(spec, target_display_limit=2), ada).context_data
         assert [row["label"] for row in context["target_display"]] == ["Note 0", "Note 1"]
 
     def test_an_empty_set_displays_no_row(self, ada: Any) -> None:
-        context = get(form_view(set_spec(presenter=DataclassPresenter(NoteOut))), ada).context_data
+        context = get(shown_view(set_spec(presenter=DataclassPresenter(NoteOut))), ada).context_data
         assert context["target_display"] == []
         assert context["target_count"] == 0
 
@@ -3097,41 +3102,8 @@ class TestTheTargetDisplay:
             return presented_rows(rows, context)
 
         presenter.presented_rows = counted
-        get(form_view(set_spec(presenter=presenter)), ada)
+        get(shown_view(set_spec(presenter=presenter)), ada)
         assert calls == [3]
-
-    def test_a_spec_with_no_output_has_no_display(self, ada: Any) -> None:
-        note = Note.objects.create(owner=ada, title="Ada's")
-        assert "target_display" not in get(form_view(row_spec()), ada, pk=note.pk).context_data
-        assert "target_display" not in get(form_view(set_spec()), ada).context_data
-
-    def test_an_output_marking_nothing_has_no_display(self, ada: Any) -> None:
-        # Its choices alone would be spoken for an agent; a person's display
-        # is driven by the markings, and this output declares none.
-        author = BookAuthor.objects.create(name="Le Guin")
-        book = Book.objects.create(author=author, title="Lathe", price=Decimal("9.50"))
-        spec = entry_spec(
-            instance_selector_spec=SelectorSpec(
-                kind=SelectorKind.RETRIEVE,
-                selector=lambda *, pk: Book.objects.filter(pk=pk),
-                reads=PK,
-            ),
-            presenter=DataclassPresenter(UnmarkedBookOut),
-        )
-        assert "target_display" not in get(form_view(spec), ada, pk=book.pk).context_data
-
-    def test_a_marking_only_inside_a_nested_object_is_no_display(self, ada: Any) -> None:
-        author = BookAuthor.objects.create(name="Le Guin")
-        book = Book.objects.create(author=author, title="Lathe", price=Decimal("9.50"))
-        spec = entry_spec(
-            instance_selector_spec=SelectorSpec(
-                kind=SelectorKind.RETRIEVE,
-                selector=lambda *, pk: Book.objects.filter(pk=pk),
-                reads=PK,
-            ),
-            presenter=DataclassPresenter(NestedOnlyBookOut),
-        )
-        assert "target_display" not in get(form_view(spec), ada, pk=book.pk).context_data
 
     @pytest.mark.parametrize(("method", "more"), [("get", 0), ("refused-post", 1)])
     def test_a_display_resolves_a_seed_once_more_only_on_a_refused_post(
@@ -3148,16 +3120,17 @@ class TestTheTargetDisplay:
         seeds = DEFAULT_POOL_SEEDS.extend(tenant=tenant)
         note = Note.objects.create(owner=ada, title="Ada's")
 
-        def answered(presenter: Any) -> int:
+        def answered(*, display_target: bool) -> int:
             resolved.clear()
-            view = form_view(row_spec(presenter=presenter), pool_seeds=seeds)
+            spec = row_spec(presenter=DataclassPresenter(NoteOut))
+            view = form_view(spec, pool_seeds=seeds, display_target=display_target)
             if method == "get":
                 get(view, ada, pk=note.pk)
             else:
                 post(view, ada, {"title": "far too long"}, pk=note.pk)
             return len(resolved)
 
-        assert answered(DataclassPresenter(NoteOut)) == answered(None) + more
+        assert answered(display_target=True) == answered(display_target=False) + more
 
     def test_an_output_selector_s_presenter_drives_it(self, ada: Any) -> None:
         note = Note.objects.create(owner=ada, title="Ada's")
@@ -3168,7 +3141,7 @@ class TestTheTargetDisplay:
                 presenter=DataclassPresenter(NoteOut),
             )
         )
-        display = get(form_view(spec), ada, pk=note.pk).context_data["target_display"]
+        display = get(shown_view(spec), ada, pk=note.pk).context_data["target_display"]
         assert display["label"] == "Ada's"
 
     def test_an_output_selector_declaring_affordances_still_renders(self, ada: Any) -> None:
@@ -3189,14 +3162,14 @@ class TestTheTargetDisplay:
                 affordances={"archive": archivable},
             )
         )
-        response = get(form_view(spec), ada, pk=note.pk)
+        response = get(shown_view(spec), ada, pk=note.pk)
         assert response.status_code == 200
         assert response.context_data["target_display"]["label"] == "Ada's"
 
     def test_a_refused_post_carries_the_display(self, ada: Any) -> None:
         note = Note.objects.create(owner=ada, title="Ada's")
         spec = row_spec(presenter=DataclassPresenter(NoteOut))
-        response = post(form_view(spec), ada, {"title": "far too long"}, pk=note.pk)
+        response = post(shown_view(spec), ada, {"title": "far too long"}, pk=note.pk)
         assert response.status_code == 400
         assert response.context_data["target_display"]["label"] == "Ada's"
 
@@ -3208,7 +3181,7 @@ class TestTheTargetDisplay:
             ),
             presenter=DataclassPresenter(Shelf),
         )
-        display = get(form_view(spec), ada, pk=1).context_data["target_display"]
+        display = get(shown_view(spec), ada, pk=1).context_data["target_display"]
         assert display == {
             "label": "Poetry",
             "fields": {
@@ -3239,7 +3212,7 @@ class TestTheTargetDisplay:
 
         note = Note.objects.create(owner=ada, title="Ada's")
         spec = row_spec(permissions=[Asked()], presenter=Seeing(NoteOut))
-        view = form_view(spec, pool_seeds=TENANT_SEEDS)
+        view = shown_view(spec, pool_seeds=TENANT_SEEDS)
         if method == "get":
             assert get(view, ada, pk=note.pk).status_code == 200
         else:
@@ -3250,3 +3223,122 @@ class TestTheTargetDisplay:
         assert presented.call_context is call_context
         assert presented.ambient["tenant"] == "tenant-of-ada"
         assert presented.ambient["user"] == ada
+
+
+class Unpresentable(DataclassPresenter):
+    """A presenter that must never be asked: the page did not opt in to displaying its target."""
+
+    def presented(self, value: Any, context: Any) -> Any:
+        raise AssertionError("presented")
+
+    def presented_rows(self, rows: Any, context: Any) -> Any:
+        raise AssertionError("presented_rows")
+
+
+def book_spec(out: type) -> ServiceSpec:
+    return entry_spec(
+        instance_selector_spec=SelectorSpec(
+            kind=SelectorKind.RETRIEVE,
+            selector=lambda *, pk: Book.objects.filter(pk=pk),
+            reads=PK,
+        ),
+        presenter=DataclassPresenter(out),
+    )
+
+
+@dataclasses.dataclass
+class TwoLabelsOut:
+    title: Annotated[str, FieldMarking.label()]
+    archived: Annotated[bool, FieldMarking.label()]
+
+
+class TestDisplayingTheTargetIsOptIn:
+    """``display_target`` turns the display on, and ``as_view()`` checks the Output it reads."""
+
+    def test_it_is_off_by_default(self) -> None:
+        assert SpecFormView.display_target is False
+
+    def test_a_page_not_opted_in_never_presents_its_target(self, ada: Any) -> None:
+        # A marked Output describes the operation's result, which need not be
+        # the target, so presenting the target unasked could fail a page that
+        # served before.
+        note = Note.objects.create(owner=ada, title="Ada's")
+        row = row_spec(presenter=Unpresentable(NoteOut))
+        context = get(form_view(row), ada, pk=note.pk).context_data
+        assert context["target"].pk == note.pk
+        assert "target_display" not in context
+        refused = post(form_view(row), ada, {"title": "far too long"}, pk=note.pk)
+        assert refused.status_code == 400
+        assert "target_display" not in refused.context_data
+        bulk = get(form_view(set_spec(presenter=Unpresentable(NoteOut))), ada).context_data
+        assert bulk["target_count"] == 1
+        assert "target_display" not in bulk
+
+    def test_a_page_not_opted_in_reads_no_row_to_display(self, ada: Any) -> None:
+        notes(ada, 3)
+        view = form_view(set_spec(presenter=DataclassPresenter(NoteOut)))
+        with CaptureQueriesContext(connection) as queries:
+            get(view, ada)
+        assert len(queries) == 1
+        assert "COUNT(" in queries[0]["sql"].upper()
+
+    def test_a_spec_with_no_output_is_refused(self) -> None:
+        with pytest.raises(
+            ImproperlyConfigured,
+            match=r"^SpecFormView displays its target through its spec.s Output, and the spec of "
+            r"Record declares none",
+        ):
+            shown_view(row_spec())
+
+    def test_the_attribute_is_read_on_a_subclass_too(self) -> None:
+        class Shown(SpecFormView):
+            display_target = True
+
+        with pytest.raises(ImproperlyConfigured, match=r"^Shown displays its target"):
+            Shown.as_view(spec=row_spec(), template_name=TEMPLATE, success_url="/done/")
+
+    @pytest.mark.parametrize(
+        "out",
+        [UnmarkedBookOut, NestedOnlyBookOut],
+        ids=["choices-alone", "nested-only"],
+    )
+    def test_an_output_marking_none_of_its_own_fields_is_refused(self, out: type) -> None:
+        # Choices alone would be spoken for an agent, and a nested marking
+        # names the nested object; the row's own markings drive its display.
+        with pytest.raises(
+            ImproperlyConfigured, match=r"marks none of its own fields with a FieldMarking"
+        ):
+            shown_view(book_spec(out))
+
+    def test_an_output_the_projection_refuses_is_refused_naming_the_view(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match=r"^SpecFormView cannot display") as raised:
+            shown_view(row_spec(presenter=DataclassPresenter(TwoLabelsOut)))
+        assert "both 'title' and 'archived' are marked" in str(raised.value)
+        assert isinstance(raised.value.__cause__, ImproperlyConfigured)
+
+    def test_two_labels_are_no_refusal_with_the_display_off(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        spec = row_spec(presenter=DataclassPresenter(TwoLabelsOut))
+        assert get(form_view(spec), ada, pk=note.pk).status_code == 200
+
+
+class TestTheDisplayLimit:
+    @pytest.mark.parametrize("limit", ["3", 2.5, None, True, False, 0, -1], ids=repr)
+    def test_anything_but_a_positive_int_is_refused(self, limit: Any) -> None:
+        with pytest.raises(
+            ImproperlyConfigured,
+            match=rf"^SpecFormView.target_display_limit must be a positive int; got {re.escape(repr(limit))}\.$",
+        ):
+            form_view(entry_spec(), target_display_limit=limit)
+
+    def test_a_subclass_s_limit_is_checked_too(self) -> None:
+        class Unbounded(SpecFormView):
+            target_display_limit = 0
+
+        with pytest.raises(ImproperlyConfigured, match=r"^Unbounded.target_display_limit"):
+            Unbounded.as_view(spec=entry_spec(), template_name=TEMPLATE, success_url="/done/")
+
+    def test_one_is_the_smallest_bound(self, ada: Any) -> None:
+        notes(ada, 2)
+        view = shown_view(set_spec(presenter=DataclassPresenter(NoteOut)), target_display_limit=1)
+        assert len(get(view, ada).context_data["target_display"]) == 1

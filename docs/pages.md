@@ -252,7 +252,7 @@ fragment included:
 | `target` | the row an `instance_selector_spec` found, or the set a `collection_selector_spec` resolved | wherever there is a target: absent for a create, and for a missing row `allow_none` lets through |
 | `target_count` | how many rows the set holds | for a set |
 | `target_counted_at` | when it counted them, `django.utils.timezone.now()` | for a set |
-| `target_display` | the target as a person reads it, below | where the spec's Output marks one of its own fields |
+| `target_display` | the target as a person reads it, below | on a page that sets `display_target` |
 
 A key with nothing to hold is absent rather than `None`, as `unavailable` is.
 
@@ -263,8 +263,8 @@ docs/examples/spec_form.py:target
 ```
 
 The URLconf routes the first as `books/<int:pk>/withdraw/` and the second as
-`books/publish-drafts/`, with `target_display_limit=3`, both rendering this
-template:
+`books/publish-drafts/`, with `target_display_limit=3`, both with
+`display_target=True` and both rendering this template:
 
 ```html
 --8<--
@@ -291,10 +291,14 @@ input.
 
 ### The target's display
 
-`target_display` is the target projected for a person by the
-[`FieldMarking`][django_service_specs.output.field_marking.FieldMarking]s on the
-spec's Output - its own presenter's, or its `output_selector_spec`'s - which
-is where the kernel keeps what an operation returns:
+**A page that sets `display_target = True` shows its target as a person
+reads it**, under `target_display`. It is off by default, because the
+[`FieldMarking`][django_service_specs.output.field_marking.FieldMarking]s it
+reads are on the spec's Output - its own presenter's, or its
+`output_selector_spec`'s - and an Output describes what the operation
+returns, which need not be its target: a withdrawal may return a receipt. A
+page whose Output is marked serves as it did until it opts in, and asks no
+presenter. On:
 
 - the target is presented through that presenter, handed the context
   dispatch hands it: the principal, the target, the request's one call
@@ -312,17 +316,20 @@ a list of those, one per row, for at most `target_display_limit` rows**, 10
 by default: the first that many in the set's own order, read by one query
 bounded by a `LIMIT`, and presented by one call of the presenter's
 `presented_rows()`. `target_count` still counts every row, so a template can
-say how many it left out.
+say how many it left out. `as_view()` refuses a `target_display_limit` that
+is not a positive int, a bool included.
 
-**A spec whose Output marks none of its own fields has no
-`target_display`**, and neither has a spec with no Output; that is no error.
-Choices alone are not markings, and nor is a marking only inside a nested
-object.
-The raw `target` stays beside the display either way, for a template that
-wants both. The Output must describe the target's rows, since the target is
-presented through it: a bulk operation whose service returns something else
-re-reads its rows with an `output_selector_spec`, as `publish_drafts_spec`
-does.
+**`as_view()` refuses a page displaying its target**, when the URLconf is
+imported, where its spec has no Output, where the Output marks none of its
+own fields - choices alone are not markings, and nor is a marking only inside
+a nested object - and where the kernel's projection refuses the markings,
+such as two fields marked `LABEL`. What it cannot check is whether the
+Output describes the target's rows, since that is known only once one is
+presented: an Output that does not raises on the page's first request. That
+is the cost of turning the display on. A bulk operation whose service returns
+something else re-reads its rows with an `output_selector_spec`, as
+`publish_drafts_spec` does. The raw `target` stays beside the display, for a
+template that wants both.
 
 ## What the request carries
 
@@ -365,9 +372,9 @@ do, with the same attributes and hooks, checked by the same code:
 `Grant` a step hands on carries no values. On a POST, the class-level check,
 the target's lookup and dispatch each resolve it, and the form's keywords too
 where `form_kwargs` names it; on a GET, the affordances' pool takes
-dispatch's place, and a [target's display](#the-targets-display) is presented
-with that same pool. A refused post that presents a display resolves it once
-more, for the presenter's. So a resolver answering a fresh object answers each step a
+dispatch's place, and a [target's display](#the-targets-display), where the
+page shows one, is presented with that same pool. A refused post that
+presents a display resolves it once more, for the presenter's. So a resolver answering a fresh object answers each step a
 different one. Write seed resolvers that answer the same each time.
 
 **One call context per request.** The page creates one plain dict for each
