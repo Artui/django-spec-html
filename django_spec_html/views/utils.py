@@ -13,7 +13,7 @@ since each takes what it reads as arguments and keeps nothing on the view.
 from __future__ import annotations
 
 import dataclasses
-from abc import abstractmethod
+from abc import ABCMeta, abstractmethod
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from types import MappingProxyType
@@ -117,7 +117,7 @@ is why ``commits`` reads it only to stop a commit the post's data would
 otherwise make."""
 
 
-class SpecPageBase(TemplateResponseMixin, ContextMixin, View):
+class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta):
     """Everything a spec served as a page shares, whatever the page renders for its post.
 
     Admission, the target and its display, the affordances, the post's
@@ -159,6 +159,15 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View):
         # Django's own check of the keywords first, so a misspelt ``sepc=`` is
         # refused as the typo it is rather than read as a view with no spec.
         view = super().as_view(**initkwargs)
+        # A page class missing a hook would build, and then fail on every
+        # request: Django instantiates the view per request, where ``ABCMeta``
+        # refuses it as a TypeError. Refused here instead, at URLconf import
+        # (test_a_page_missing_a_hook_is_refused_at_as_view).
+        if cls.__abstractmethods__:
+            missing = ", ".join(sorted(cls.__abstractmethods__))
+            raise ImproperlyConfigured(
+                f"{cls.__qualname__} does not supply the page's hooks: {missing}."
+            )
         _check_configuration(cls, initkwargs)
         check_request_hooks(cls, initkwargs, initkwargs.get("spec", cls.spec))
         return view

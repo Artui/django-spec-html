@@ -74,7 +74,7 @@ Non-negotiable. They keep the package navigable, and they are the kernel's.
 
 | Subpackage | Holds |
 | --- | --- |
-| `views/` | `SpecFormView`, a spec served as the page its form is, and the private readers it alone uses (the form's widgets, the target, the refused render) |
+| `views/` | `SpecFormView`, a spec served as the page its form is, with the readers only a form needs (its widgets, its arguments, the fields it holds back); `utils.py` for `SpecPageBase`, the private base every page view subclasses (admission, the target and its display, dispatch, the refusal, the success and its message, the fragment wrapper, the commit rule), whose hooks a subclass supplies and `as_view()` refuses a class missing |
 | `types/` | `Outcome`, the ways a page's post ends; it imports nothing else in the package (rule 8) |
 | `http/` | the JSON views (`SpecView`, `AsyncSpecView`, `dispatch_request`, `adispatch_request`), `error_response`, and the request readers both halves use: `request_arguments`, `route_arguments`, `request_principal`, `add_argument_errors`; `UnsupportedMediaType`, beside its raiser; `utils.py` for `SpecViewBase`, the helpers the entry points share, and `REFUSAL_STATUSES`, the status map the page reads too, with each refusal's `Outcome` |
 
@@ -173,7 +173,7 @@ configured and enforced. isort order is stdlib, third party, first party.
 | --- | --- | --- |
 | Python | 3.10 | 3.10 through 3.14 |
 | Django | 4.2 | 4.2, 5.0, 5.1, 5.2, 6.0, 6.1 |
-| django-service-specs | 0.15.0 | the newest release, and the floor in the `floor` job |
+| django-service-specs | 0.17.0 | the newest release, and the floor in the `floor` job |
 
 The Python and Django floors are the kernel's, and cannot sit below them.
 
