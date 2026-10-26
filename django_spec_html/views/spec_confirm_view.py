@@ -41,7 +41,6 @@ class SpecConfirmView(SpecPageBase):
                 "books/<int:pk>/withdraw/",
                 SpecConfirmView.as_view(
                     spec=withdraw_book_spec,
-                    template_name="books/withdraw.html",
                     success_url=reverse_lazy("books"),
                     route_kwargs=("pk",),
                 ),
@@ -62,6 +61,14 @@ class SpecConfirmView(SpecPageBase):
     template renders its own ``<form method="post">``, the CSRF token and
     the submit button. A key with nothing to hold is absent, as on every
     page, so ``{{ form }}`` is never ``None``.
+
+    **The page's template is optional**, as on ``SpecFormView``:
+    ``django_spec_html/spec_confirm.html`` by default, which this package
+    ships, with its button in ``django_spec_html/spec_confirm_fragment.html``.
+    It renders the target pane, an unmet affordance's reason with the button
+    disabled, a refused post's ``errors`` or a question's message alone, and
+    the button, posting ``commit_button``'s name where one is set. Found,
+    refused at ``as_view()`` and overridden as ``SpecFormView``'s is.
 
     **POST** dispatches with the route's kwargs, read by ``route_kwargs`` and
     coerced as a form page's are, under the binding and with the request's
@@ -104,7 +111,9 @@ class SpecConfirmView(SpecPageBase):
 
     Attributes:
         spec: The operation served, declaring no Validator. Required.
-        template_name: The page's template, as for any Django template view.
+        template_name: The page's template, as for any Django template view:
+            ``django_spec_html/spec_confirm.html``, the one this package
+            ships, by default.
         success_url: Where a successful post redirects, read by
             ``get_success_url``.
         route_kwargs: Which URL kwargs fill which parameters, as
@@ -115,7 +124,8 @@ class SpecConfirmView(SpecPageBase):
         server_arguments: The kernel's ``ServerArguments`` the server answers
             for, checked at ``as_view()``.
         fragment_template_name: The template an htmx request is answered
-            with; ``None`` addresses ``<template_name>#spec-form``.
+            with; ``None`` addresses ``<template_name>#spec-form``, or a
+            shipped page's own fragment file.
         display_target: Whether the context carries ``target_display``.
         target_display_limit: How many rows of a set ``target_display``
             projects.
@@ -124,6 +134,8 @@ class SpecConfirmView(SpecPageBase):
         success_message: The message a successful post sends, formatted by
             ``get_success_message`` with the target.
     """
+
+    template_name = "django_spec_html/spec_confirm.html"
 
     @classmethod
     def _check_spec(cls, label: str, spec: ServiceSpec) -> None:

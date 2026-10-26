@@ -347,14 +347,8 @@ class AddBookThenShowIt(SpecFormView):
 
 
 urlpatterns = [
-    path(
-        "books/new/",
-        SpecFormView.as_view(
-            spec=add_book_spec,
-            template_name="spec_form.html",
-            success_url=reverse_lazy("books"),
-        ),
-    ),
+    # No template_name: the page is the one this package ships.
+    path("books/new/", SpecFormView.as_view(spec=add_book_spec, success_url=reverse_lazy("books"))),
     path("books/add/", AddBookThenShowIt.as_view()),
     path(
         "books/<int:pk>/edit/",

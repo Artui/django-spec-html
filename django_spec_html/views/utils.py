@@ -44,7 +44,7 @@ from django.http import (
 from django.http.response import HttpResponseRedirectBase
 from django.shortcuts import resolve_url
 from django.template import TemplateDoesNotExist
-from django.template.loader import select_template
+from django.template.loader import get_template, select_template
 from django.utils import timezone
 from django.utils.cache import patch_vary_headers
 from django.utils.decorators import classonlymethod
@@ -113,6 +113,21 @@ _SPEC_FORM: Final = "spec-form"
 
 _SPEC_RESULT: Final = "spec-result"
 """The fragment a success is answered with in place, where the fragment template defines one."""
+
+_SHIPPED_FRAGMENTS: Final = MappingProxyType(
+    {
+        "django_spec_html/spec_form.html": "django_spec_html/spec_form_fragment.html",
+        "django_spec_html/spec_form_set.html": "django_spec_html/spec_form_set_fragment.html",
+        "django_spec_html/spec_confirm.html": "django_spec_html/spec_confirm_fragment.html",
+    }
+)
+"""Each page this package ships, a view's ``template_name`` by default, and the file its form is.
+
+A file of its own rather than a ``spec-form`` ``{% partialdef %}`` inside
+the page, because below Django 6.0 a page using that tag fails to parse
+unless the project configures django-template-partials, and a default has to
+render where nothing was configured for it. The page includes the
+fragment, so the two never differ."""
 
 _SUCCEEDED: Final = "spec-succeeded"
 """The event ``HX-Trigger`` names on a success answered in place, for the rest of the page."""
@@ -192,6 +207,7 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         spec = initkwargs.get("spec", cls.spec)
         check_request_hooks(cls, initkwargs, spec)
         cls._check_page(cls.__name__, spec, initkwargs)
+        _check_shipped_templates(cls, initkwargs)
         return view
 
     def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
@@ -497,10 +513,19 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         and its loader around the project's: installed as an app alone, it
         wraps the loader and the page fails to parse at ``{% partialdef %}``.
         Without either, the default is a ``TemplateDoesNotExist`` naming it.
+
+        A page this package ships is the exception: its form is a file of
+        its own, which the page includes, so the fragment is that file on
+        every Django (test_the_shipped_page_s_fragment_is_its_own_file). A
+        project overriding a shipped page's file keeps the shipped
+        fragment, and overrides the fragment's file to change the form.
         """
         if self.fragment_template_name is not None:
             return [self.fragment_template_name]
-        return [_address(name, _SPEC_FORM) for name in self.get_template_names()]
+        return [
+            _SHIPPED_FRAGMENTS.get(name) or _address(name, _SPEC_FORM)
+            for name in self.get_template_names()
+        ]
 
     def fragment_success(self, result: DispatchResult) -> HttpResponse:
         """A success, answered to the htmx request that posted it.
@@ -785,6 +810,40 @@ def _check_configuration(cls: type[SpecPageBase], initkwargs: Mapping[str, Any])
     if initkwargs.get("display_target", cls.display_target):
         _check_display(label, spec)
     _check_commit_button(label, initkwargs.get("commit_button", cls.commit_button))
+
+
+def _check_shipped_templates(cls: type[SpecPageBase], initkwargs: Mapping[str, Any]) -> None:
+    """Refuse a page rendering a template this package ships that no template engine finds.
+
+    The shipped templates are found as any app's are, so a project lists
+    ``django_spec_html`` in ``INSTALLED_APPS`` with ``APP_DIRS`` on, or puts
+    files of the same names in a directory of its own. Without either, every
+    request would answer ``TemplateDoesNotExist``; asked here, the URLconf's
+    import says what is missing instead. The page and its fragment both,
+    since a project overriding the page alone in a directory of its own
+    still renders the shipped fragment under htmx.
+
+    Asked only of a page that renders a shipped template: one whose own
+    ``template_name`` is a consumer's is never loaded here
+    (test_a_page_s_own_template_is_not_looked_for), and nor is one whose
+    ``get_template_names`` is overridden, since that may read the request
+    (test_an_overridden_get_template_names_is_not_asked). One branch to
+    coverage, so each condition is held by its own test.
+    """
+    page = initkwargs.get("template_name", cls.template_name)
+    names = initkwargs.get("get_template_names", cls.get_template_names)
+    if page not in _SHIPPED_FRAGMENTS or names is not TemplateResponseMixin.get_template_names:
+        return
+    engine = initkwargs.get("template_engine", cls.template_engine)
+    for name in (page, _SHIPPED_FRAGMENTS[page]):
+        try:
+            get_template(name, using=engine)
+        except TemplateDoesNotExist as missing:
+            raise ImproperlyConfigured(
+                f"{cls.__name__} renders {name}, a template django-spec-html ships, and no "
+                "template engine finds it: add 'django_spec_html' to INSTALLED_APPS with "
+                "APP_DIRS on, or set template_name to a template of the project's own."
+            ) from missing
 
 
 def _check_commit_button(label: str, button: Any) -> None:

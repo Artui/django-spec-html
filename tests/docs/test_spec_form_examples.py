@@ -112,6 +112,17 @@ class TestGet:
         for name in ("title", "price", "published_on", "shelves", "csrfmiddlewaretoken"):
             assert f'name="{name}"'.encode() in response.content
 
+    def test_a_page_naming_no_template_renders_the_shipped_one(self, ada: Any) -> None:
+        response = serve(FACTORY.get("/books/new/"), ada).render()
+        assert response.template_name == ["django_spec_html/spec_form.html"]
+        assert response.content.startswith(b"<!DOCTYPE html>")
+        assert b'<button type="submit">Save</button>' in response.content
+
+    def test_a_page_naming_its_own_template_renders_that(self, ada: Any) -> None:
+        response = serve(FACTORY.get("/books/add/"), ada).render()
+        assert response.template_name == ["spec_form.html"]
+        assert response.content.startswith(b'<form method="post">')
+
     def test_anonymous_is_never_offered_the_page(self) -> None:
         # The class-level check the post would run, run first: Django's own
         # PermissionDenied, which the host's 403 page answers.

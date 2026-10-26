@@ -38,14 +38,68 @@ docs/examples/spec_form.py:urls
 --8<--
 ```
 
-The template is any template that renders the form inside a POST form with
-its token. The one above is as small as that:
+### The page's template
+
+**A template is optional.** The first route above names none, so it renders
+`django_spec_html/spec_form.html`, the page this package ships, which is the
+default `template_name`. The shipped templates are found as any app's are, so
+a project rendering them lists the package as an app, with `APP_DIRS` on:
+
+```python
+INSTALLED_APPS = [
+    ...,
+    "django_spec_html",
+]
+```
+
+`as_view()` refuses a page rendering a shipped template that no template engine
+finds, with `ImproperlyConfigured` naming the template and the setting, so the
+URLconf's import says so rather than the first request's
+`TemplateDoesNotExist`. A page naming a template of its own needs no app.
+
+The shipped page is a plain document: no stylesheet, no script, and no htmx
+attribute. Everything it shows is escaped. It renders:
+
+- the [target pane](#what-the-page-acts-on): a set's count and when it was
+  counted, and the target's display where the page sets `display_target`.
+  Never the target itself, whose `str()` may be anything its model returns;
+- an [unmet affordance's](#an-operation-that-is-unavailable) `reason`, with the
+  form disabled, and its `code` as the paragraph's `data-code`;
+- on a [partial page](#a-partial-page), a line saying a field left blank is left
+  as it is. The form renders no HTML `required` there, as every partial page's
+  form does;
+- the form, through `form.as_div`: its non-field and field errors, and on a
+  [confirmation page](#the-confirmation-page) the question's message and the
+  field it asks for, each once. A refusal's `code` is the form's `data-code`,
+  and a form holding a file field posts as `multipart/form-data`;
+- the submit button, posting `commit_button`'s name where one is set, so a
+  [post that does not commit](#a-post-that-does-not-commit) is one made without
+  it.
+
+Its form is a file of its own, `django_spec_html/spec_form_fragment.html`, which
+the page includes and an [htmx request](#htmx) is answered with, on every Django:
+a `{% partialdef %}` would not parse below Django 6.0 without
+django-template-partials configured. It defines no `spec-result`, so a success
+under htmx is `HX-Redirect`, as the page's is a redirect.
+
+**Overriding it is the Django way.** A file of the same name in a template
+directory the engine searches first replaces the shipped one:
+`django_spec_html/base.html`, the document every shipped page extends, to put
+all three inside a project's layout, filling its `title` and `content` blocks;
+the page; or its fragment, to change the form. Or set `template_name`, and the
+page is a template of the project's own, any template that renders the form
+inside a POST form with its token. Every other route above does, and its
+template is as small as that:
 
 ```html
 --8<--
 tests/templates/spec_form.html
 --8<--
 ```
+
+A page of the project's own carries its form for htmx as its own `spec-form`
+fragment, [below](#htmx); a project overriding a shipped page keeps the shipped
+fragment.
 
 **GET** renders `template_name` with an unbound form under `form`, and `view`
 and `spec` beside it: the names Django's `FormView` uses, with
@@ -615,7 +669,10 @@ template instead would break it again on Django 6.0, which has the tag itself
 and no such library. From 6.0, configure none of this. Without either, the
 address is a `TemplateDoesNotExist`. A fragment kept in a file of its own, or
 under another name, is one attribute, `fragment_template_name`, and renders on
-any Django.
+any Django. That is how the [shipped page](#the-pages-template) carries its
+form: an htmx request to a page naming no template is answered with
+`django_spec_html/spec_form_fragment.html`, with nothing to configure on any
+Django.
 
 **Which requests get the fragment.** A request whose `HX-Request` header is
 `true`, unless it is boosted (`HX-Boosted`) or a history restore
