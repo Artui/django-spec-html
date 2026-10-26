@@ -140,6 +140,29 @@ def asking_spec(schema: Any) -> ServiceSpec:
     return ServiceSpec(service=ask, permissions=OPEN, validator=Titled())
 
 
+def asking_for_tenant_spec(schema: Any) -> ServiceSpec:
+    """A write that asks under ``schema``, declaring ``title`` and a ``tenant`` read.
+
+    ``tenant`` is declared outside the Validator, which is what makes a ``tenant``
+    seed the server's: a Validator field named like a seed is left to the caller
+    (``server_owned_keys``). Without that seed, ``tenant`` is an ordinary optional
+    read the caller may answer, so one schema is askable on a request that
+    carries no seed and refused on one that does. It is ``reflected`` because
+    dispatch refuses a plain parameter a registered seed occupies, before the
+    service can ask anything.
+    """
+
+    def ask(**pool: Any) -> None:
+        raise AdditionalInputRequired("Say which.", schema=schema)
+
+    return ServiceSpec(
+        service=ask,
+        permissions=OPEN,
+        validator=Titled(),
+        reads=Parameters.of(Parameter("tenant", "string", reflected=True)),
+    )
+
+
 class SeesTenant(PermissionCheck):
     """Admits every principal, and records the ``tenant`` seed each call was resolved with."""
 

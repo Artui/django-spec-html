@@ -20,6 +20,7 @@ from tests.http.utils import (
     DEEP_JSON,
     Foreign,
     SeesTenant,
+    asking_for_tenant_spec,
     body,
     limited_spec,
     note_spec,
@@ -183,6 +184,19 @@ async def test_a_seed_the_hook_reads_off_the_request_reaches_the_check_off_the_l
 
     assert (await send(Tenanted.as_view(), "GET", ada)).status_code == 200
     assert check.tenants == ["by-hook-ada"]
+
+
+async def test_a_schema_naming_a_key_the_hooks_seed_fills_is_the_services_error(
+    ada: Any,
+) -> None:
+    class Seeded(AsyncSpecView):
+        spec = asking_for_tenant_spec({"tenant": {"type": "string"}})
+
+        def get_pool_seeds(self, request: Any) -> PoolSeeds:
+            return TENANT_SEEDS
+
+    with pytest.raises(ImproperlyConfigured, match="a provider or a pool seed fills it"):
+        await send(Seeded.as_view(), "POST", ada, {"title": "x"})
 
 
 async def test_a_bound_value_the_hook_queries_for_outranks_the_query(ada: Any) -> None:

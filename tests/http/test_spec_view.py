@@ -31,6 +31,7 @@ from tests.http.utils import (
     FACTORY,
     Foreign,
     SeesTenant,
+    asking_for_tenant_spec,
     body,
     limited_spec,
     note_spec,
@@ -287,6 +288,21 @@ class TestPoolSeeds:
         )
         with pytest.raises(ImproperlyConfigured, match="a registered pool seed fills"):
             Seeded.as_view(pool_seeds=TENANT_SEEDS)
+
+    def test_a_schema_naming_a_key_the_hooks_seed_fills_is_the_services_error(
+        self, ada: Any
+    ) -> None:
+        # The seed arrives only through ``get_pool_seeds``, which the view's
+        # declared ``pool_seeds`` do not carry, so only the request's own
+        # seeds can tell the asked key is the server's.
+        class Seeded(SpecView):
+            spec = asking_for_tenant_spec({"tenant": {"type": "string"}})
+
+            def get_pool_seeds(self, request: Any) -> PoolSeeds:
+                return TENANT_SEEDS
+
+        with pytest.raises(ImproperlyConfigured, match="a provider or a pool seed fills it"):
+            send(Seeded.as_view(), "POST", ada, {"title": "x"})
 
     def test_a_per_call_seed_occupying_a_withheld_name_is_refused(self, ada: Any) -> None:
         # Withheld and seeded, the withholding would do nothing.

@@ -81,7 +81,7 @@ async def adispatch_request(
             return not_found_response()
         return success_response(spec, await apresent(spec, result), success_status)
     except (DispatchError, ServiceError) as refused:
-        check_asked_input(spec, refused)
+        check_asked_input(spec, refused, pool_seeds=pool_seeds)
         return error_response(refused)
 
 
