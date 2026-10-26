@@ -99,8 +99,8 @@ seed or `server_arguments` fills, nor one nobody declared.
 supply**, since no post to this page carries one. Which parameters the call
 demands is the kernel's answer, read through `bind_arguments` on a call
 carrying nothing: a parameter that is optional or declares a default is not
-demanded, and nor is a key a typed `kwargs` provider fills, or any read an
-untyped provider reaches. Each one left must be supplied by one of three
+demanded, and nor is a key a typed `kwargs` provider fills or may decline,
+or any read an untyped provider reaches. Each one left must be supplied by one of three
 sources, as they stand when the URLconf is imported:
 
 | Source | Supplies |
@@ -112,7 +112,11 @@ sources, as they stand when the URLconf is imported:
 **The route must say what it fills.** `as_view()` is called while the
 URLconf is being built, before the pattern it is mounted on exists, so under
 the strict rule, `route_kwargs = None`, the route supplies nothing to this
-check. That is why the example names `route_kwargs=("pk",)`. Without it:
+check. That is why the example names `route_kwargs=("pk",)`. A mapping counts
+only the parameters it maps a kwarg into, so under `{"org": None}`, for an
+`include()` prefix, a `pk` the route still passes under its own name is not
+counted until it is mapped to itself: `{"org": None, "pk": "pk"}`. Without
+any:
 
 ```text
 SpecConfirmView requires pk, which no post to a confirmation carries: fill each from the route, naming it in route_kwargs, or from a pool seed, a kwargs provider or server_arguments.

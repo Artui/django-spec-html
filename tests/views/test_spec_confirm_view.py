@@ -25,6 +25,7 @@ from django.http import Http404, HttpResponse
 from django.test import Client
 from django.urls import path
 from django_service_specs import (
+    UNSET,
     ActionUnavailable,
     AdditionalInputRequired,
     Affordance,
@@ -43,6 +44,7 @@ from django_service_specs import (
     ServiceNotFound,
     ServiceSpec,
     ServiceValidationError,
+    UnsetType,
 )
 
 from django_spec_html.views.spec_confirm_view import SpecConfirmView
@@ -170,6 +172,10 @@ class Scope(TypedDict):
     owner_name: str
 
 
+class MayDecline(TypedDict):
+    owner_name: str | UnsetType
+
+
 class TestARequiredParameterIsSupplied:
     """``as_view()`` refuses a required parameter no source supplies, since no post carries one."""
 
@@ -193,13 +199,15 @@ class TestARequiredParameterIsSupplied:
             confirm_view(spec)
 
     @pytest.mark.parametrize(
-        "route_kwargs", [("pk",), {"pk": "pk"}, {"note": "pk"}], ids=["allowed", "kept", "renamed"]
+        "route_kwargs",
+        [("pk",), {"org": None, "pk": "pk"}, {"note": "pk"}],
+        ids=["allowed", "kept", "renamed"],
     )
     def test_the_route_supplies_what_route_kwargs_names(self, route_kwargs: Any) -> None:
         confirm_view(archive_spec(), route_kwargs=route_kwargs)
 
     @pytest.mark.parametrize(
-        "route_kwargs", [None, {"pk": None}, {"other": None}], ids=["strict", "dropped", "unnamed"]
+        "route_kwargs", [None, {"pk": None}, {"org": None}], ids=["strict", "dropped", "unnamed"]
     )
     def test_a_route_naming_no_kwarg_into_it_supplies_nothing(self, route_kwargs: Any) -> None:
         # Under the strict rule the route is not known when the URLconf is
@@ -240,6 +248,14 @@ class TestARequiredParameterIsSupplied:
     def test_a_typed_provider_supplies_the_key_it_fills(self) -> None:
         def scope() -> Scope:
             return {"owner_name": "ada"}
+
+        confirm_view(self.spec(Parameter("owner_name", "string", required=True), kwargs=scope))
+
+    def test_a_key_a_typed_provider_may_decline_is_not_demanded(self) -> None:
+        # Not among the keys the server owns, which leave a declinable one to
+        # the caller: the shape check's relaxing alone lets it through.
+        def scope() -> MayDecline:
+            return {"owner_name": UNSET}
 
         confirm_view(self.spec(Parameter("owner_name", "string", required=True), kwargs=scope))
 

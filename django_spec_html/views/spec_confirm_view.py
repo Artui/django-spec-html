@@ -255,9 +255,9 @@ def _check_supplied(
     refuses to a call carrying nothing, through ``bind_arguments``, which
     relaxes what dispatch relaxes - a parameter that is optional or declares
     a default (test_a_read_the_shape_check_does_not_demand_needs_no_source), a
-    key a typed ``kwargs`` provider fills
-    (test_a_typed_provider_supplies_the_key_it_fills), and every read an
-    untyped one reaches
+    key a typed ``kwargs`` provider fills or may decline
+    (test_a_key_a_typed_provider_may_decline_is_not_demanded), and every read
+    an untyped one reaches
     (test_an_untyped_provider_supplies_every_read_it_reaches). It is handed
     no seeds, so what they fill is taken off after, beside the other two
     sources:
