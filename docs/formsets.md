@@ -13,7 +13,7 @@ own code; this page describes what differs, which is the form, the reading,
 the refusal, the scope check and [the success message](#a-success).
 
 ```python
-from django_spec_html.views.spec_form_set_view import SpecFormSetView
+from django_spec_html import SpecFormSetView
 ```
 
 The examples on this page add several books in one call. The spec's

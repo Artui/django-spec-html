@@ -16,7 +16,7 @@ from django.urls import path, reverse_lazy
 from django_service_specs import FormValidator, PermissionCheck, ServiceSpec
 
 # The view's own module until the root exports it.
-from django_spec_html.views.spec_form_set_view import SpecFormSetView
+from django_spec_html import SpecFormSetView
 from tests.adapter_app.models import Author, Book
 
 

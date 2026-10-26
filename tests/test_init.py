@@ -63,6 +63,7 @@ def test_the_root_serves_the_two_halves_and_the_version() -> None:
         "AsyncSpecView",
         "Outcome",
         "SpecConfirmView",
+        "SpecFormSetView",
         "SpecFormView",
         "SpecView",
         "UnsupportedMediaType",
