@@ -101,8 +101,55 @@ edit_book_spec = ServiceSpec(
 # --8<-- [end:update]
 
 
+# --8<-- [start:partial]
+# The same update as a partial one: a field left blank is left as it is.
+change_book_spec = ServiceSpec(
+    service=edit_book,
+    permissions=[IsSignedIn()],
+    validator=book_validator,
+    instance_selector_spec=edit_book_spec.instance_selector_spec,
+    partial=True,
+)
+# --8<-- [end:partial]
+
+
+# --8<-- [start:keywords]
+class OfferedAuthorsForm(BookForm):
+    """``BookForm``, offering the authors its constructor is handed."""
+
+    def __init__(self, *args: Any, authors: QuerySet[Author], **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["author"].queryset = authors
+
+
+def offered_authors(*, user: Any) -> dict[str, Any]:
+    # Staff add a book by anyone; everyone else by an author already shelved.
+    authors = Author.objects.all()
+    if not user.is_staff:
+        authors = authors.filter(books__isnull=False).distinct()
+    return {"authors": authors}
+
+
+shelve_book_spec = ServiceSpec(
+    service=add_book,
+    permissions=[IsSignedIn()],
+    validator=FormValidator(OfferedAuthorsForm, form_kwargs=offered_authors),
+)
+# --8<-- [end:keywords]
+
+
 # --8<-- [start:request]
+BRANCHES = {"main", "harbour"}
 CLOSED_BRANCHES = {"harbour"}
+
+
+class AtABranch(PermissionCheck):
+    message = "There is no such branch."
+
+    def has_permission(self, principal: Any, spec: Any, *, branch: str) -> bool:
+        # A seed, named by the class-level check: the page asks it with the
+        # one get_pool_seeds adds, before it offers the form.
+        return branch in BRANCHES
 
 
 def branch_open(*, branch: str) -> bool:
@@ -112,7 +159,7 @@ def branch_open(*, branch: str) -> bool:
 
 stock_book_spec = ServiceSpec(
     service=add_book,
-    permissions=[IsSignedIn()],
+    permissions=[IsSignedIn(), AtABranch()],
     validator=book_validator,
     affordances=[
         Affordance(
@@ -176,6 +223,22 @@ urlpatterns = [
         "books/<int:pk>/edit/",
         SpecFormView.as_view(
             spec=edit_book_spec,
+            template_name="spec_form.html",
+            success_url=reverse_lazy("books"),
+        ),
+    ),
+    path(
+        "books/<int:pk>/change/",
+        SpecFormView.as_view(
+            spec=change_book_spec,
+            template_name="spec_form.html",
+            success_url=reverse_lazy("books"),
+        ),
+    ),
+    path(
+        "books/shelve/",
+        SpecFormView.as_view(
+            spec=shelve_book_spec,
             template_name="spec_form.html",
             success_url=reverse_lazy("books"),
         ),

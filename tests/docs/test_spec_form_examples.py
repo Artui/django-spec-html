@@ -180,6 +180,20 @@ class TestPost:
         assert response.content.count(NEEDS_A_DATE.encode()) == 1
         assert not Book.objects.exists()
 
+    def test_every_error_shows_in_one_post(self, ada: Any, author: Author) -> None:
+        # The blank title is the shape check's, so the form's own rule about
+        # a published book's date answers beside it rather than next time.
+        data = posted(author, title="", status=Status.PUBLISHED)
+        response = serve(FACTORY.post("/books/new/", data=data), ada).render()
+        assert response.status_code == 400
+        assert response.context_data["form"].errors == {
+            "title": ["This field is required."],
+            "__all__": [NEEDS_A_DATE],
+        }
+        assert response.content.count(b"This field is required.") == 1
+        assert response.content.count(NEEDS_A_DATE.encode()) == 1
+        assert not Book.objects.exists()
+
     def test_a_blank_required_field_is_refused_once(self, ada: Any, author: Author) -> None:
         response = serve(FACTORY.post("/books/new/", data=posted(author, title="")), ada)
         assert response.status_code == 400
@@ -196,6 +210,54 @@ class TestPost:
         assert refused.status_code == 403
 
 
+class TestAPartialUpdate:
+    """``change_book_spec``: the same form, every field optional to the browser."""
+
+    def test_its_page_renders_no_required_attribute(self, ada: Any, author: Author) -> None:
+        book = Book.objects.create(
+            title="The Lathe of Heaven", price=Decimal("9.99"), status=Status.DRAFT, author=author
+        )
+        response = serve(FACTORY.get(f"/books/{book.pk}/change/"), ada).render()
+        assert response.status_code == 200
+        assert b"required" not in response.content
+        whole = serve(FACTORY.get(f"/books/{book.pk}/edit/"), ada).render()
+        assert b"required" in whole.content
+
+    def test_a_blank_field_is_left_as_it_is(self, ada: Any, author: Author) -> None:
+        book = Book.objects.create(
+            title="The Lathe of Heaven", price=Decimal("9.99"), status=Status.DRAFT, author=author
+        )
+        data = posted(author, title="", price="15.00")
+        response = serve(FACTORY.post(f"/books/{book.pk}/change/", data=data), ada)
+        assert (response.status_code, response.url) == (302, "/books/")
+        book.refresh_from_db()
+        assert (book.title, book.price) == ("The Lathe of Heaven", Decimal("15.00"))
+
+
+class TestAFormThatTakesKeywords:
+    """``shelve_book_spec``: the page's form is built with what ``form_kwargs`` answers."""
+
+    def test_the_page_offers_the_authors_the_validator_accepts(
+        self, ada: Any, author: Author
+    ) -> None:
+        Book.objects.create(
+            title="The Lathe of Heaven", price=Decimal("9.99"), status=Status.DRAFT, author=author
+        )
+        unshelved = Author.objects.create(name="Russ")
+        page = serve(FACTORY.get("/books/shelve/"), ada).render()
+        assert list(page.context_data["form"].fields["author"].queryset) == [author]
+        assert f'value="{unshelved.pk}"'.encode() not in page.content
+        response = serve(FACTORY.post("/books/shelve/", data=posted(unshelved)), ada)
+        assert response.status_code == 400
+        assert list(response.context_data["form"].errors) == ["author"]
+
+    def test_staff_are_offered_every_author(self, author: Author) -> None:
+        staff = get_user_model().objects.create_user(username="grace", is_staff=True)
+        response = serve(FACTORY.post("/books/shelve/", data=posted(author)), staff)
+        assert (response.status_code, response.url) == (302, "/books/")
+        assert Book.objects.get().author == author
+
+
 class Anything(forms.Form):
     """A form every post is valid for, so each refusal comes from the service that raises it."""
 
@@ -204,6 +266,16 @@ class Anything(forms.Form):
 
 class TestAnUnavailableBook:
     """``StockBook``: the page asks whether the operation is available before anyone posts."""
+
+    @pytest.mark.parametrize("method", ["get", "post"])
+    def test_a_branch_the_seeded_check_refuses_is_never_offered_the_page(
+        self, ada: Any, author: Author, method: str
+    ) -> None:
+        # The class-level check names the seed, and is asked with it.
+        request = getattr(FACTORY, method)("/branches/nowhere/books/new/", data=posted(author))
+        with pytest.raises(PermissionDenied, match=r"^There is no such branch\.$"):
+            serve(request, ada)
+        assert not Book.objects.exists()
 
     def test_an_open_branch_is_offered_the_form(self, ada: Any) -> None:
         response = serve(FACTORY.get("/branches/main/books/new/"), ada).render()

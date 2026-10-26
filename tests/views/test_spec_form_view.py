@@ -2642,6 +2642,19 @@ class TestAPartialPage:
         assert (response.status_code, refused(response)) == (400, {"count": [WHOLE]})
         assert validated(spec) == 0
 
+    def test_a_checkbox_and_a_multi_select_are_always_sent(self, ada: Any) -> None:
+        # The browser posts neither when unticked or empty, and the form reads
+        # each as a value all the same, so neither is a field left out.
+        spec = entry_spec(partial=True)
+        assert post(form_view(spec), ada, {}).status_code == 302
+        assert received(spec) == {"urgent": False, "tags": []}
+
+    def test_a_ticked_clear_checkbox_clears_the_file(self, ada: Any) -> None:
+        spec = entry_spec(validator=Watched(CoverForm), partial=True)
+        response = post(form_view(spec), ada, {"cover-clear": "on"})
+        assert response.status_code == 302
+        assert received(spec) == {"cover": False}
+
 
 class TestASeedResolvedAtEachStep:
     """A ``Grant`` carries no values, so each step naming a seed resolves it again."""
