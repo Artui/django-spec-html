@@ -3,21 +3,15 @@
 from __future__ import annotations
 
 import copy
-import datetime
-import math
 from collections.abc import Collection, Mapping
-from decimal import Decimal
-from typing import Any, Final, cast
+from typing import Any, cast
 
 from django import forms
 from django.core.exceptions import (
     ImproperlyConfigured,
-    ValidationError,
 )
 from django.db import models
 from django.forms.models import model_to_dict
-from django.forms.utils import ErrorDict
-from django.forms.widgets import FILE_INPUT_CONTRADICTION
 from django.http import (
     HttpResponse,
 )
@@ -27,7 +21,6 @@ from django_service_specs import (
     DispatchError,
     FormValidator,
     InvalidArguments,
-    Parameters,
     ServerArguments,
     ServiceError,
     ServiceSpec,
@@ -41,16 +34,13 @@ from django_spec_html.http.route_arguments import route_arguments
 from django_spec_html.http.utils import (
     server_names,
 )
-from django_spec_html.views.utils import Served, SpecPageBase, refusal_tree
-
-_TYPED: Final = (forms.IntegerField, forms.DateField, forms.DateTimeField)
-"""The fields whose input formats are wider than the wire form the shape check reads.
-
-``DecimalField`` and ``FloatField`` subclass ``IntegerField``, so the first
-row covers all three numbers. Each row is held by its own test:
-test_an_integer_the_form_reads_is_not_refused,
-test_dates_in_the_forms_input_formats_are_read_as_the_form_reads_them (both
-date rows) and test_localized_numbers_are_read_as_the_form_reads_them."""
+from django_spec_html.views.utils import (
+    Served,
+    SpecPageBase,
+    form_values,
+    refusal_tree,
+    without_errors,
+)
 
 
 class SpecFormView(SpecPageBase):
@@ -402,8 +392,15 @@ class SpecFormView(SpecPageBase):
     def _arguments(
         self, form: forms.BaseForm, spec: ServiceSpec, url_kwargs: Mapping[str, Any], served: Served
     ) -> Mapping[str, Any]:
-        """The post's arguments, as ``_form_arguments`` reads them off the form."""
-        return _form_arguments(form, spec.parameters(), url_kwargs, served)
+        """The post's arguments: the form's values, and the route's kwargs coerced in the same call.
+
+        One refusal then carries every problem, once ``route_arguments`` -
+        the check ``request_arguments`` makes too - has refused any kwarg the
+        spec does not declare.
+        """
+        parameters = spec.parameters()
+        route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
+        return coerce_flat(parameters, {**form_values(form), **route})
 
     def _render_page(
         self, form: forms.BaseForm, refreshed: bool, /, **context: Any
@@ -412,7 +409,7 @@ class SpecFormView(SpecPageBase):
         if refreshed:
             # Before ``_hold_back``, which reads the form's errors and would
             # otherwise validate it.
-            _without_errors(form)
+            without_errors(form)
         _hold_back(form, self.asked_fields, ())
         return self._rendered(self.get_context_data(form=form, **context), status=200)
 
@@ -474,7 +471,7 @@ class SpecFormView(SpecPageBase):
         if merged:
             clean_held_to_their_columns(form)
         else:
-            _without_errors(form)
+            without_errors(form)
         add_argument_errors(form, refusal_tree(refused))
         schema: Mapping[str, Any] = {}
         # One branch to coverage, so each condition is held by its own test:
@@ -589,19 +586,6 @@ def _hold_back(form: forms.BaseForm, held: tuple[str, ...], asked: Collection[st
             form.fields.pop(name, None)
 
 
-def _without_errors(form: forms.BaseForm) -> None:
-    """Set a bound form's error state to none, so rendering it validates nothing.
-
-    Django's own two attributes, as ``full_clean()`` starts them, with the
-    form's renderer as Django 5.0 and later pass it; ``Any``, as the stubs
-    declare neither as assignable. A refused post's form then carries the
-    refusal alone, and a post that does not commit shows no error at all.
-    """
-    bound: Any = form
-    bound._errors = ErrorDict(renderer=form.renderer)
-    bound.cleaned_data = {}
-
-
 def _form_class(spec: ServiceSpec) -> type[forms.BaseForm]:
     """The form the spec validates with, which ``as_view`` checked is there."""
     return cast("FormValidator", spec.validator).form_class
@@ -626,7 +610,7 @@ def _page_form(
     it withholds is disabled and shows none. A disabled field shows its
     initial value however the form is bound, so a refused post re-renders
     the server's value and never the one the client posted for it, and the
-    post never reads it (``_form_arguments`` skips a disabled field), so the
+    post never reads it (``form_values`` skips a disabled field), so the
     binding alone fills it. Only this form's own copies change: Django gives
     each form instance its own ``fields``, so the form class and every other
     request's form keep theirs (test_the_form_class_is_left_as_it_was). Held
@@ -701,89 +685,3 @@ def _built_form(
     own = {name: value for name, value in keywords.items() if name != "initial"}
     initial = {**keywords.get("initial", {}), **model_to_dict(target, fields=names)}
     return form_class(**bound, **own, initial=initial)
-
-
-def _form_arguments(
-    form: forms.BaseForm, parameters: Parameters, url_kwargs: Mapping[str, Any], served: Served
-) -> dict[str, Any]:
-    """The arguments a bound form's post carries, read as the form reads it, route merged last.
-
-    A field naming a parameter the server answers for is never read:
-    ``_page_form`` disables it, and a disabled field is skipped, so a value
-    the client was never offered is never coerced or refused as the
-    client's; the caller lays the binding over the result.
-    """
-    read: dict[str, Any] = {}
-    for name, field in form.fields.items():
-        if field.disabled:
-            continue
-        value = form[name].data
-        widget = field.widget
-        # A ticked clear checkbox is read by the file's widget, as ``False``,
-        # or as a marker where a file was uploaded beside it. Neither is a
-        # file the shape check takes, and the Validator declares the checkbox
-        # as an argument of its own, named as the widget names it: so the
-        # checkbox is passed as that, and the file as what was uploaded, if
-        # anything was. With nothing uploaded the file is absent, and the
-        # Validator's form reads the checkbox as a cleared file; beside an
-        # upload, that form refuses the pair in its own words. One
-        # branch to coverage, so each condition is held by its own test:
-        # test_a_checked_box_is_true_and_an_unchecked_one_false (the widget:
-        # an unticked ``BooleanField`` reads ``False`` too),
-        # test_the_rendered_checkbox_ticked_clears_the_file (``False``) and
-        # test_an_upload_and_the_ticked_box_are_refused_in_the_form_s_words
-        # (the marker).
-        if isinstance(widget, forms.ClearableFileInput) and (
-            value is False or value is FILE_INPUT_CONTRADICTION
-        ):
-            read[widget.clear_checkbox_name(name)] = True
-            value = form.files.get(form[name].html_name)
-        # A form reads a missing field and a blank one alike, so both are
-        # absent here and the shape check never sees a blank it would refuse
-        # where the form takes it. One branch to coverage, so each condition is
-        # held by its own test: test_a_required_field_never_posted_is_refused_once
-        # (``None``) and test_a_blank_optional_field_is_absent (``""``).
-        if value is None or value == "":
-            continue
-        read[name] = _wire(field, value)
-    # Every value is typed as the shape check reads it by now, or a string
-    # for ``coerce_flat`` to type by its declaration, which passes a value
-    # that is not a string through untouched. The route's kwargs are coerced
-    # in the same call, so one refusal carries every problem, once
-    # ``route_arguments`` - the check ``request_arguments`` makes too - has
-    # refused any the spec does not declare.
-    route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
-    return coerce_flat(parameters, {**read, **route})
-
-
-def _wire(field: forms.Field, value: Any) -> Any:
-    """``value`` as the field reads it, in the wire form the shape check reads, where they differ.
-
-    A value the field refuses, or reads as a number no JSON caller can send,
-    is passed on as it came, so the refusal is the kernel's own - in the words
-    the field would have used.
-    """
-    if not isinstance(field, _TYPED):
-        return value
-    try:
-        # ``Any``, because the stubs give each class its base's return: a
-        # FloatField is an IntegerField to them, and returns a float.
-        typed: Any = field.to_python(value)
-    except ValidationError:
-        return value
-    if isinstance(typed, Decimal):
-        return str(typed)
-    if isinstance(typed, datetime.date):
-        # A datetime is a date too, and each writes its own ISO form: the
-        # date-time with its offset, since the field made it aware.
-        return typed.isoformat()
-    # Only a float can be no finite number, and asking an int, which an
-    # ``IntegerField`` reads any number of digits as, converts it to one,
-    # raising OverflowError past a float's range. One branch to coverage, so
-    # each condition is held by its own test:
-    # test_an_integer_past_a_float_s_range_reaches_the_validator (the float)
-    # and test_localized_numbers_are_read_as_the_form_reads_them (its
-    # finiteness: without it, every float is sent on as it was typed).
-    if isinstance(typed, float) and not math.isfinite(typed):
-        return value
-    return typed

@@ -13,20 +13,27 @@ since each takes what it reads as arguments and keeps nothing on the view.
 from __future__ import annotations
 
 import dataclasses
+import datetime
+import math
 from abc import ABCMeta, abstractmethod
 from collections.abc import Callable, Mapping
 from contextlib import suppress
+from decimal import Decimal
 from types import MappingProxyType
 from typing import Any, Final, cast
 from urllib.parse import unquote
 
+from django import forms
 from django.contrib import messages
 from django.core.exceptions import (
     BadRequest,
     ImproperlyConfigured,
     PermissionDenied,
+    ValidationError,
 )
 from django.db import models
+from django.forms.utils import ErrorDict
+from django.forms.widgets import FILE_INPUT_CONTRADICTION
 from django.http import (
     Http404,
     HttpRequest,
@@ -116,6 +123,16 @@ _TRIGGER_NAME: Final = "HX-Trigger-Name"
 A header htmx 2 sends, and not every client that posts the form does, which
 is why ``commits`` reads it only to stop a commit the post's data would
 otherwise make."""
+
+
+_TYPED: Final = (forms.IntegerField, forms.DateField, forms.DateTimeField)
+"""The fields whose input formats are wider than the wire form the shape check reads.
+
+``DecimalField`` and ``FloatField`` subclass ``IntegerField``, so the first
+row covers all three numbers. Each row is held by its own test:
+test_an_integer_the_form_reads_is_not_refused,
+test_dates_in_the_forms_input_formats_are_read_as_the_form_reads_them (both
+date rows) and test_localized_numbers_are_read_as_the_form_reads_them."""
 
 
 class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta):
@@ -1065,6 +1082,101 @@ def _denial(refused: DispatchError | ServiceError) -> PermissionDenied | Http404
     if refusal_status(refused) == 403:
         return PermissionDenied(refused.message)
     return Http404(refused.message)
+
+
+def without_errors(form: forms.BaseForm) -> None:
+    """Set a bound form's error state to none, so rendering it validates nothing.
+
+    Django's own two attributes, as ``full_clean()`` starts them, with the
+    form's renderer as Django 5.0 and later pass it; ``Any``, as the stubs
+    declare neither as assignable. A refused post's form then carries the
+    refusal alone, and a post that does not commit shows no error at all.
+    """
+    bound: Any = form
+    bound._errors = ErrorDict(renderer=form.renderer)
+    bound.cleaned_data = {}
+
+
+def form_values(form: forms.BaseForm) -> dict[str, Any]:
+    """The values a bound form's post carries, read as the form reads it and typed for the shape check.
+
+    A field naming a parameter the server answers for is never read: the
+    form page disables it, and a disabled field is skipped, so a value the
+    client was never offered is never coerced or refused as the client's;
+    the caller lays the binding over the result. Every value comes back
+    typed as the shape check reads it, or a string for ``coerce_flat`` to
+    type by its declaration, which passes a value that is not a string
+    through untouched: the caller coerces it, with whatever the route adds,
+    so one refusal carries every problem. The form page and each row of the
+    formset page read their forms through it.
+    """
+    read: dict[str, Any] = {}
+    for name, field in form.fields.items():
+        if field.disabled:
+            continue
+        value = form[name].data
+        widget = field.widget
+        # A ticked clear checkbox is read by the file's widget, as ``False``,
+        # or as a marker where a file was uploaded beside it. Neither is a
+        # file the shape check takes, and the Validator declares the checkbox
+        # as an argument of its own, named as the widget names it: so the
+        # checkbox is passed as that, and the file as what was uploaded, if
+        # anything was. With nothing uploaded the file is absent, and the
+        # Validator's form reads the checkbox as a cleared file; beside an
+        # upload, that form refuses the pair in its own words. One
+        # branch to coverage, so each condition is held by its own test:
+        # test_a_checked_box_is_true_and_an_unchecked_one_false (the widget:
+        # an unticked ``BooleanField`` reads ``False`` too),
+        # test_the_rendered_checkbox_ticked_clears_the_file (``False``) and
+        # test_an_upload_and_the_ticked_box_are_refused_in_the_form_s_words
+        # (the marker).
+        if isinstance(widget, forms.ClearableFileInput) and (
+            value is False or value is FILE_INPUT_CONTRADICTION
+        ):
+            read[widget.clear_checkbox_name(name)] = True
+            value = form.files.get(form[name].html_name)
+        # A form reads a missing field and a blank one alike, so both are
+        # absent here and the shape check never sees a blank it would refuse
+        # where the form takes it. One branch to coverage, so each condition is
+        # held by its own test: test_a_required_field_never_posted_is_refused_once
+        # (``None``) and test_a_blank_optional_field_is_absent (``""``).
+        if value is None or value == "":
+            continue
+        read[name] = _wire(field, value)
+    return read
+
+
+def _wire(field: forms.Field, value: Any) -> Any:
+    """``value`` as the field reads it, in the wire form the shape check reads, where they differ.
+
+    A value the field refuses, or reads as a number no JSON caller can send,
+    is passed on as it came, so the refusal is the kernel's own - in the words
+    the field would have used.
+    """
+    if not isinstance(field, _TYPED):
+        return value
+    try:
+        # ``Any``, because the stubs give each class its base's return: a
+        # FloatField is an IntegerField to them, and returns a float.
+        typed: Any = field.to_python(value)
+    except ValidationError:
+        return value
+    if isinstance(typed, Decimal):
+        return str(typed)
+    if isinstance(typed, datetime.date):
+        # A datetime is a date too, and each writes its own ISO form: the
+        # date-time with its offset, since the field made it aware.
+        return typed.isoformat()
+    # Only a float can be no finite number, and asking an int, which an
+    # ``IntegerField`` reads any number of digits as, converts it to one,
+    # raising OverflowError past a float's range. One branch to coverage, so
+    # each condition is held by its own test:
+    # test_an_integer_past_a_float_s_range_reaches_the_validator (the float)
+    # and test_localized_numbers_are_read_as_the_form_reads_them (its
+    # finiteness: without it, every float is sent on as it was typed).
+    if isinstance(typed, float) and not math.isfinite(typed):
+        return value
+    return typed
 
 
 def refusal_tree(refused: DispatchError | ServiceError) -> Mapping[Any, Any]:

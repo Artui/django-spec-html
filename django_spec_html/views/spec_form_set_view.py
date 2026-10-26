@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Mapping
 from typing import Any, cast
 
@@ -29,16 +28,12 @@ from django_service_specs import (
 
 from django_spec_html.http.add_argument_errors import add_argument_errors
 from django_spec_html.http.route_arguments import route_arguments
-
-# The single page's readers, shared rather than copied, and private to
-# ``spec_form_view.py`` until the parent moves them to ``views/utils.py``:
-# ``_form_arguments`` is called once per row with no route (see
-# ``_row_arguments``), and ``_without_errors`` is the same two attributes.
-from django_spec_html.views.spec_form_view import _form_arguments, _without_errors
 from django_spec_html.views.utils import (
     Served,
     SpecPageBase,
+    form_values,
     refusal_tree,
+    without_errors,
 )
 
 
@@ -278,7 +273,7 @@ class SpecFormSetView(SpecPageBase):
         # (test_a_row_its_coercion_refuses_is_refused_at_its_form).
         for index, row in enumerate(_sent(form)):
             try:
-                rows.append(_row_arguments(row, rows_parameters, served))
+                rows.append(_row_arguments(row, rows_parameters))
             except InvalidArguments as refused:
                 refused_rows[index] = refused.detail
         parameters = spec.parameters()
@@ -299,7 +294,7 @@ class SpecFormSetView(SpecPageBase):
         """The page GET renders, a refreshed formset's error state, and each form's, set to none."""
         if refreshed:
             for each in form.forms:
-                _without_errors(each)
+                without_errors(each)
             _set_formset_errors(form, [])
         return self._rendered(self.get_context_data(formset=form, **context), status=200)
 
@@ -331,7 +326,7 @@ class SpecFormSetView(SpecPageBase):
         spec = self.served_spec()
         sent = _sent(form)
         for each in form.forms:
-            _without_errors(each)
+            without_errors(each)
         if isinstance(refused, InvalidArguments) and not spec.partial:
             for row in sent:
                 clean_held_to_their_columns(row)
@@ -442,28 +437,18 @@ def _sent(formset: BaseFormSet) -> list[forms.BaseForm]:
     return [form for form in formset.forms if not (form.empty_permitted and not form.has_changed())]
 
 
-def _row_arguments(
-    form: forms.BaseForm, rows_parameters: Parameters, served: Served
-) -> dict[str, Any]:
-    """One sent form's row: its fields read and coerced as ``_form_arguments`` reads a page's form, with no route.
+def _row_arguments(form: forms.BaseForm, rows_parameters: Parameters) -> dict[str, Any]:
+    """One sent form's row: its values read as the form page reads its form, coerced as a row.
 
-    ``_form_arguments`` is the single page's reader whole: the widget-reading
-    loop, then ``coerce_flat`` over the read values and the route's kwargs.
-    Called with the list's rows as its parameters and no route - no URL
-    kwargs, and no ``route_kwargs`` to check them by - it is the loop, then
-    the row coerced against its own declarations, which is what a row
-    needs; the route is the call's, read once beside the list. The parent
-    may split ``_form_arguments`` into the loop and the route's merge in
-    ``views/utils.py``; until then the loop is called here, never copied,
-    and these hold it per row
-    (test_a_checked_box_is_true_and_an_unchecked_one_false,
+    The route is the call's, read once beside the list, so a row is its
+    form's values coerced against the row's own declarations and nothing
+    else. These hold the reader per row:
+    test_a_checked_box_is_true_and_an_unchecked_one_false,
     test_a_blank_optional_field_is_absent,
-    test_a_date_in_the_form_s_input_format_is_read_as_the_form_reads_it,
-    test_a_choice_s_key_is_coerced_in_its_row).
+    test_a_date_in_the_form_s_input_format_is_read_as_the_form_reads_it and
+    test_a_choice_s_key_is_coerced_in_its_row.
     """
-    return _form_arguments(
-        form, rows_parameters, {}, dataclasses.replace(served, route_kwargs=None)
-    )
+    return coerce_flat(rows_parameters, form_values(form))
 
 
 def _split(tree: Mapping[Any, Any], sent: list[forms.BaseForm], many_argument: str) -> list[str]:
