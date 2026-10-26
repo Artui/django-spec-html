@@ -374,6 +374,60 @@
   
   
     <li class="md-nav__item">
+      <a href="confirm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Confirming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="formsets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Formsets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="http/" class="md-nav__link">
         
   
@@ -506,8 +560,10 @@ framework between the request and the kernel's
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span>django-spec-html
 </span></code></pre></div>
 <p>It installs <a href="https://artui.github.io/django-service-specs/"><code>django-service-specs</code></a>, the kernel whose specs it serves,
-from 0.15.0, on Python 3.10 and Django 4.2 or later. Neither package needs an
-entry in <code>INSTALLED_APPS</code>.</p>
+from 0.17.0, on Python 3.10 and Django 4.2 or later. The JSON views need no
+entry in <code>INSTALLED_APPS</code>; the pages' default templates are found as any app's
+are, so list <code>django_spec_html</code> there to use them, or give each page a
+<code>template_name</code> of its own (<a href="pages/#the-pages-template">the page's template</a>).</p>
 <p>Both halves were the kernel's, and moved here so the kernel carries no
 transport: the JSON views as kernel 0.11.0 shipped them, and <code>SpecFormView</code>
 as kernel 0.5.1 did. The behaviour is the kernel's, but for the page

@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://artui.github.io/django-spec-html/http/">
       
       
-        <link rel="prev" href="../pages/">
+        <link rel="prev" href="../formsets/">
       
       
         <link rel="next" href="../reference/">
@@ -299,6 +299,60 @@
     
   
     Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../confirm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Confirming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../formsets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Formsets
   
 
     
@@ -1172,9 +1226,11 @@ render in the active language, lazy ones included.</p>
 <p><strong>A schema no route could hear answered is not a 422.</strong> <code>dispatch_request</code> and
 <code>adispatch_request</code> pass an <code>AdditionalInputRequired</code> schema through
 <a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.dispatch.check_requested_input.check_requested_input"><code>check_requested_input</code></a>
-before writing it: a schema naming a key the spec does not declare, or a shape
-an MCP elicitation form cannot render, raises <code>ImproperlyConfigured</code> naming the
-key, as it does on every other route. <code>error_response</code> alone has no spec in
+before writing it: a schema naming a key the spec does not declare, a key the
+server fills, or a shape an MCP elicitation form cannot render, raises
+<code>ImproperlyConfigured</code> naming the key, as it does on every other route. The
+seeds the check reads are the request's own, so a seed <code>get_pool_seeds(request)</code>
+supplies counts as the server's, as it does to dispatch. <code>error_response</code> alone has no spec in
 hand and writes whatever it is given.</p>
 <p><strong>Never 401.</strong> A session has no challenge to answer, and a 401 tells a client
 to start an authentication flow it has no way to finish. An anonymous caller
