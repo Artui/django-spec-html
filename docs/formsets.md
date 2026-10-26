@@ -6,12 +6,11 @@ row, every failing row is refused at once, and each refusal is addressed by the
 row's index. `SpecFormSetView` serves one as a page: a formset of the spec's
 form, one form a row, posted as the list. The [single-form page](pages.md)
 refuses a `many` spec, since one form posts one row; this is the page that
-serves it. Everything that page does that is not about its one form - the
-admission, the [request's hooks](pages.md#what-the-request-carries), the
+serves it. The [request's hooks](pages.md#what-the-request-carries), the
 [htmx fragment](pages.md#an-htmx-request), [a post that does not
-commit](pages.md#a-post-that-does-not-commit), [the success
-message](pages.md#a-success-message) and the denials - is the same code, and
-this page describes only what differs.
+commit](pages.md#a-post-that-does-not-commit) and the denials are that page's
+own code; this page describes what differs, which is the form, the reading,
+the refusal, the scope check and [the success message](#a-success).
 
 ```python
 from django_spec_html.views.spec_form_set_view import SpecFormSetView
@@ -47,8 +46,17 @@ tests/templates/spec_formset_form.html
 ## The formset
 
 **GET** renders `template_name` with an unbound formset under `formset`, and
-`view` and `spec` beside it, once the spec's class-level check admits the
-principal: an anonymous visitor above gets Django's own `PermissionDenied`.
+`view` and `spec` beside it, once the principal is admitted: an anonymous
+visitor above gets Django's own `PermissionDenied`.
+
+- **Admission asks the scope check of nothing.** There is no target to look
+  up, so after the spec's class-level check the page asks the scope check of
+  `None`, as dispatch asks it of every `many` call, and a principal the post
+  would refuse is never offered the page. A route value the spec's `reads`
+  refuse is a 400, as on every page. On a post the page asks nothing itself:
+  dispatch asks the scope check, once, after the call's top-level shape
+  check, so a post refused at its top level - a route value - is answered
+  with the formset again before the scope check is asked.
 
 - **`extra` blank forms**, 1 by default, after the spec's `many_min_length`
   forms, which a person must fill in. The page above offers three.

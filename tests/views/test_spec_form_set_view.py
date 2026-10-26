@@ -33,8 +33,10 @@ from django_service_specs import (
     NotPermitted,
     Parameter,
     Parameters,
+    PermissionCheck,
     ServiceConflict,
     ServiceSpec,
+    ServiceValidationError,
     Validated,
     ValidationContext,
 )
@@ -135,6 +137,23 @@ class NoTwoAlike(Watched):
         if len(set(titles)) < len(titles):
             raise InvalidArguments({NON_FIELD_ERRORS: ["Two rows share a title."]})
         return super().validated_many(rows, context, many_argument=many_argument)
+
+
+class Scoped(PermissionCheck):
+    """Admits every principal, then answers the scope check as told; records each scope it saw."""
+
+    message = "No batch may be added here."
+
+    def __init__(self, admits: bool = True) -> None:
+        self.admits = admits
+        self.scopes: list[Any] = []
+
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        return True
+
+    def has_scope_permission(self, principal: Any, spec: Any, target: Any) -> bool:
+        self.scopes.append(target)
+        return self.admits
 
 
 @dataclasses.dataclass
@@ -322,6 +341,39 @@ class TestGet:
         with pytest.raises(PermissionDenied, match="Only editors"):
             get(formset_view(many_spec(permissions=[Refuse()])), ada)
 
+    def test_a_principal_the_scope_check_refuses_is_never_offered_the_page(self, ada: Any) -> None:
+        # Asked of nothing, as dispatch asks it of a many call, and as the
+        # single page asks it of a create: the post would be refused too.
+        check = Scoped(admits=False)
+        view = formset_view(many_spec(permissions=[check]))
+        with pytest.raises(PermissionDenied, match="No batch may be added here"):
+            get(view, ada)
+        with pytest.raises(PermissionDenied, match="No batch may be added here"):
+            post(view, ada, posted({"title": "One"}))
+        assert check.scopes == [None, None]
+
+    def test_the_scope_check_is_asked_once_a_post(self, ada: Any) -> None:
+        # By dispatch alone: asked before it too, it would run twice.
+        check = Scoped()
+        response = post(formset_view(many_spec(permissions=[check])), ada, posted({"title": "One"}))
+        assert response.status_code == 302
+        assert check.scopes == [None]
+
+    def test_a_post_refused_at_its_top_level_is_answered_before_the_scope_check(
+        self, ada: Any
+    ) -> None:
+        # docs/formsets.md states this order: the page reads the route before
+        # dispatch, and dispatch asks the scope check only past that read.
+        check = Scoped(admits=False)
+        spec = many_spec(
+            permissions=[check],
+            reads=Parameters.of(Parameter("shelf", "integer", required=True)),
+        )
+        data = posted({"title": "One"})
+        response = post(formset_view(spec), ada, data, url_kwargs={"shelf": "x"})
+        assert (response.status_code, non_form(response)) == (400, ["shelf: Enter a whole number."])
+        assert check.scopes == []
+
     def test_a_route_value_the_reads_refuse_is_a_bad_request(self, ada: Any) -> None:
         spec = many_spec(reads=Parameters.of(Parameter("shelf", "integer", required=True)))
         with pytest.raises(BadRequest, match="shelf"):
@@ -482,6 +534,34 @@ class TestSplittingTheRefusal:
         assert non_form(response) == ["shelf: Enter a whole number."]
         assert row_errors(response) == [{"title": [TOO_LONG]}]
 
+    def test_a_service_s_tree_under_another_key_is_a_prefixed_non_form_error(
+        self, ada: Any
+    ) -> None:
+        # A mapping under a key that is not the list's is about the call,
+        # read with its path rather than as rows.
+        def refuses(**pool: Any) -> None:
+            raise ServiceValidationError({"shelf": {"code": ["Unknown shelf."]}})
+
+        spec = ServiceSpec(
+            service=refuses, permissions=OPEN, many=True, validator=FormValidator(BookRow)
+        )
+        response = post(formset_view(spec), ada, posted({"title": "One"}))
+        assert response.status_code == 400
+        assert non_form(response) == ["shelf.code: Unknown shelf."]
+        assert row_errors(response) == [{}]
+
+    def test_a_service_s_tree_under_the_list_lands_on_the_forms(self, ada: Any) -> None:
+        # A service may address rows as the kernel does, by index.
+        def refuses(**pool: Any) -> None:
+            raise ServiceValidationError({"items": {1: {"title": ["Already on the shelf."]}}})
+
+        spec = ServiceSpec(
+            service=refuses, permissions=OPEN, many=True, validator=FormValidator(BookRow)
+        )
+        response = post(formset_view(spec), ada, posted({"title": "One"}, {"title": "Two"}))
+        assert row_errors(response) == [{}, {"title": ["Already on the shelf."]}]
+        assert non_form(response) == []
+
     def test_a_row_s_own_check_answers_beside_another_row_s_shape_refusal(self, ada: Any) -> None:
         # The shape check refuses the blank title, so the Validator never
         # runs on the row; the page's form says the rest in the same post.
@@ -555,6 +635,8 @@ class TestAPostThatDoesNotCommit:
 
     def test_an_add_button_re_renders_with_one_more_form_and_no_dispatch(self, ada: Any) -> None:
         spec = many_spec()
+        # A GET carries no post to add to.
+        assert len(get(adding(spec), ada).context_data["formset"].forms) == 1
         response = post(adding(spec), ada, posted({"title": "One"}, add="Add a row"))
         assert response.status_code == 200
         formset = response.context_data["formset"]

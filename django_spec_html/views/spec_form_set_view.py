@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
-from contextlib import suppress
 from typing import Any, cast
 
 from django import forms
@@ -22,9 +21,12 @@ from django_service_specs import (
     FormValidator,
     Grant,
     InvalidArguments,
+    NotPermitted,
     Parameters,
+    PrincipalUnavailable,
     ServiceError,
     ServiceSpec,
+    authorize_scope,
     base_pool,
     check_requested_input,
     clean_held_to_their_columns,
@@ -228,8 +230,12 @@ class SpecFormSetView(SpecPageBase):
         for attribute, name in (("commit_button", commit), ("add_button", add)):
             # Each a string by now or ``None``, which names no button: the
             # base refused a commit button that is neither, and
-            # ``_check_add_button`` an add button
-            # (test_a_button_under_the_formset_s_prefix_is_refused).
+            # ``_check_add_button`` an add button. One branch to coverage, so
+            # each condition is held by its own test:
+            # test_renders_an_unbound_formset_of_extra_forms (a page naming
+            # no button) and test_the_commit_button_commits (a button's name
+            # outside the prefix), beside
+            # test_a_button_under_the_formset_s_prefix_is_refused.
             if name is not None and name.startswith(prefix):
                 raise ImproperlyConfigured(
                     f"{label}.{attribute} names {name!r}, under the formset's {prefix!r} "
@@ -251,6 +257,10 @@ class SpecFormSetView(SpecPageBase):
         )
         formset_class = _formset_class(spec, self.extra)
         data = bound.get("data")
+        # One branch to coverage, so each condition is held by its own test:
+        # test_an_add_button_re_renders_with_one_more_form_and_no_dispatch
+        # (its GET: no post to add to) and test_a_refresh_validates_nothing
+        # (a post without the button adds nothing).
         if data is not None and self.add_button in data:
             bound = {**bound, "data": _one_more_form(formset_class, data)}
         return formset_class(**bound, form_kwargs=dict(keywords))
@@ -368,19 +378,19 @@ class SpecFormSetView(SpecPageBase):
     # and that refuses every ``many`` spec with ``ImproperlyConfigured``, as
     # ``dispatch`` refuses ``target=`` on one, ``None`` included. The parent
     # adds that guard to ``_found`` - return ``UNSET`` and the grant for a
-    # ``many`` spec once the route is coerced - and then deletes both
-    # overrides and ``_no_target``; this file's tests hold the behaviour
-    # either way.
+    # ``many`` spec once the route is coerced - and the scope check of
+    # nothing to ``_page`` for one, and then deletes both overrides and
+    # ``_no_target``; this file's tests hold the behaviour either way.
 
     def _page(
         self, request: HttpRequest, url_kwargs: Mapping[str, Any], **bound: Any
     ) -> HttpResponse:
-        """The base's ``_page``, with no target looked for."""
+        """The base's ``_page``, with no target looked for, and the scope check asked of nothing."""
         spec = self.served_spec()
         served = self._served(request)
         principal, grant = _admitted(spec, request, url_kwargs, served)
         try:
-            target, _ = _no_target(spec, grant, url_kwargs, served)
+            target, _ = _no_target(spec, principal, grant, url_kwargs, served)
         except InvalidArguments as refused:
             raise BadRequest(str(refused.detail)) from refused
         pool = base_pool(user=principal, seeds=served.seeds)
@@ -393,15 +403,20 @@ class SpecFormSetView(SpecPageBase):
         return self._render_page(form, bool(bound), **context)
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-        """The base's ``post``, with no target looked for: a ``many`` call is handed none."""
+        """The base's ``post``, with no target looked for: a ``many`` call is handed none.
+
+        Nor is the scope check asked before dispatch, which asks it of
+        nothing on every ``many`` call and cannot be told it ran: a grant
+        saying the target was checked is honoured only beside a ``target=``,
+        which a ``many`` call refuses. Asked here too, it would run twice
+        (test_the_scope_check_is_asked_once_a_post).
+        """
         if not self.commits(request):
             return self._page(request, kwargs, data=request.POST, files=request.FILES)
         spec = self.served_spec()
         served = self._served(request)
         principal, grant = _admitted(spec, request, kwargs, served)
         target: Any = UNSET
-        with suppress(InvalidArguments):
-            target, grant = _no_target(spec, grant, kwargs, served)
         form = self._form(spec, principal, target, served, data=request.POST, files=request.FILES)
         try:
             read = self._arguments(form, spec, kwargs, served)
@@ -447,19 +462,34 @@ class SpecFormSetView(SpecPageBase):
 
 
 def _no_target(
-    spec: ServiceSpec, grant: Grant, url_kwargs: Mapping[str, Any], served: Served
+    spec: ServiceSpec, principal: Any, grant: Grant, url_kwargs: Mapping[str, Any], served: Served
 ) -> tuple[Any, Grant]:
-    """What the base's ``_found`` answers for a ``many`` spec once the parent's guard is in: ``UNSET`` and the grant.
+    """``UNSET`` and the grant, once the route is coerced and the scope check asked of nothing.
 
     The route's kwargs coerced and bound first, as ``_found`` does before it
     asks ``resolve_target``, so a route value the spec's reads refuse is a
     ``BadRequest`` on GET, as on every page
-    (test_a_route_value_the_reads_refuse_is_a_bad_request), and left to
-    dispatch on a post.
+    (test_a_route_value_the_reads_refuse_is_a_bad_request). Then the scope
+    check, by the kernel's ``authorize_scope``, of ``None``, as dispatch asks
+    it of a ``many`` call and as the single page asks it of a create, so a
+    page is never offered to a principal the post would refuse
+    (test_a_principal_the_scope_check_refuses_is_never_offered_the_page).
     """
     parameters = spec.parameters()
     route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
-    _bound(spec, coerce_flat(parameters, route), served.server)
+    arguments = _bound(spec, coerce_flat(parameters, route), served.server)
+    try:
+        authorize_scope(
+            spec,
+            principal,
+            None,
+            grant=grant,
+            arguments=arguments,
+            pool_seeds=served.seeds,
+            call_context=served.call_context,
+        )
+    except (NotPermitted, PrincipalUnavailable) as refused:
+        raise _denial(refused) from refused
     return UNSET, grant
 
 
@@ -563,7 +593,8 @@ def _row_arguments(
     the row coerced against its own declarations, which is what a row
     needs; the route is the call's, read once beside the list. The parent
     may split ``_form_arguments`` into the loop and the route's merge in
-    ``views/utils.py``; until then this is the one copy of the loop
+    ``views/utils.py``; until then the loop is called here, never copied,
+    and these hold it per row
     (test_a_checked_box_is_true_and_an_unchecked_one_false,
     test_a_blank_optional_field_is_absent,
     test_a_date_in_the_form_s_input_format_is_read_as_the_form_reads_it,
@@ -589,6 +620,11 @@ def _split(tree: Mapping[Any, Any], sent: list[forms.BaseForm], many_argument: s
     """
     left: list[str] = []
     for key, value in tree.items():
+        # One branch to coverage, so each condition is held by its own test:
+        # test_a_service_s_tree_under_another_key_is_a_prefixed_non_form_error
+        # (a mapping under another key is no rows) and the ``the-list-s-length``
+        # case of test_a_refusal_of_the_list_lands_on_the_non_form_errors (a
+        # list under the list's name is no rows either).
         if key == many_argument and isinstance(value, Mapping):
             for index, node in value.items():
                 if isinstance(index, int):
@@ -596,6 +632,10 @@ def _split(tree: Mapping[Any, Any], sent: list[forms.BaseForm], many_argument: s
                 else:
                     left.extend(message for _, message in refusal_messages(node))
             continue
+        # Unprefixed, each condition held by its own test:
+        # test_a_post_without_the_management_form_is_refused_in_django_s_words
+        # (a non-field key) and the ``the-list-s-length`` case above (the
+        # list is the formset itself, and its name means nothing to a reader).
         for path, message in refusal_messages(value):
             where = path if key in NON_FIELD_KEYS or key == many_argument else (str(key), *path)
             left.append(f"{'.'.join(where)}: {message}" if where else message)
