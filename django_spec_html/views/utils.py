@@ -70,6 +70,7 @@ from django_service_specs import (
     apply_server_arguments,
     audience_projection_for_spec,
     authorize,
+    authorize_scope,
     base_pool,
     check_requested_input,
     coerce_flat,
@@ -208,7 +209,7 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         served = self._served(request)
         principal, grant = _admitted(spec, request, url_kwargs, served)
         try:
-            target, _ = _found(spec, principal, grant, url_kwargs, served)
+            target, _ = _found(spec, principal, grant, url_kwargs, served, ask_scope=True)
         except InvalidArguments as refused:
             # No post to place it on beside the form's: the route names a
             # target its reads refuse, which a post answers at 400 too.
@@ -259,7 +260,21 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
             target, grant = _found(spec, principal, grant, kwargs, served)
         form = self._form(spec, principal, target, served, data=request.POST, files=request.FILES)
         try:
-            read = self._arguments(form, spec, kwargs, served)
+            try:
+                read = self._arguments(form, spec, kwargs, served)
+            except InvalidArguments:
+                if spec.many:
+                    # Refused by the page's own reading, so dispatch never
+                    # asks a many call's scope check: asked here first, and
+                    # only here, a principal it refuses is denied rather than
+                    # shown the form, as a create's is in ``_found`` above
+                    # (test_a_post_the_page_s_reading_refuses_asks_the_scope_check_first).
+                    # A route value its reads refuse leaves it unasked, and
+                    # the refusal raised is the reading's
+                    # (test_a_route_value_and_a_row_s_coercion_are_refused_in_one_post).
+                    with suppress(InvalidArguments):
+                        _found(spec, principal, grant, kwargs, served, ask_scope=True)
+                raise
             result = dispatch(
                 spec,
                 principal=principal,
@@ -841,6 +856,8 @@ def _found(
     grant: Grant,
     url_kwargs: Mapping[str, Any],
     served: Served,
+    *,
+    ask_scope: bool = False,
 ) -> tuple[Any, Grant]:
     """The row, set or ``None`` the post acts on, and the grant vouching for it.
 
@@ -853,14 +870,38 @@ def _found(
     answer. The server's binding is laid over them as dispatch's arguments
     are, so a target selector reading a bound parameter finds the row by the
     server's value, the one dispatch is then handed.
+
+    A ``many`` spec has no target: ``resolve_target`` refuses one with
+    ``ImproperlyConfigured`` and dispatch refuses ``target=``, ``None``
+    included, asking the scope check of ``None`` itself on every call. So it
+    is ``UNSET`` once the route is read, and the scope check is asked of
+    ``None`` here only when ``ask_scope`` says dispatch will not ask it: on
+    the page, so a principal the post would refuse is never offered it, and
+    on a post the page's own reading refused; any other post leaves it to
+    dispatch, which would otherwise ask it twice
+    (test_a_principal_the_scope_check_refuses_is_never_offered_the_page,
+    test_the_scope_check_is_asked_once_a_post).
     """
     parameters = spec.parameters()
     route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
+    arguments = _bound(spec, coerce_flat(parameters, route), served.server)
     try:
+        if spec.many:
+            if ask_scope:
+                authorize_scope(
+                    spec,
+                    principal,
+                    None,
+                    grant=grant,
+                    arguments=arguments,
+                    pool_seeds=served.seeds,
+                    call_context=served.call_context,
+                )
+            return UNSET, grant
         resolved = resolve_target(
             spec,
             principal=principal,
-            arguments=_bound(spec, coerce_flat(parameters, route), served.server),
+            arguments=arguments,
             grant=grant,
             pool_seeds=served.seeds,
             call_context=served.call_context,

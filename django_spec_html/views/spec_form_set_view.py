@@ -4,62 +4,40 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
-from contextlib import suppress
 from typing import Any, cast
 
 from django import forms
-from django.contrib import messages
-from django.core.exceptions import BadRequest, ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured
 from django.forms.formsets import TOTAL_FORM_COUNT, BaseFormSet
-from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse
 from django_service_specs import (
     NON_FIELD_ERRORS,
     NON_FIELD_KEYS,
-    UNSET,
     AdditionalInputRequired,
     DispatchError,
     DispatchResult,
     FormValidator,
-    Grant,
     InvalidArguments,
-    NotPermitted,
     Parameters,
-    PrincipalUnavailable,
     ServiceError,
     ServiceSpec,
-    authorize_scope,
-    base_pool,
-    check_requested_input,
     clean_held_to_their_columns,
     coerce_flat,
-    dispatch,
     form_keywords,
     refusal_messages,
 )
 
 from django_spec_html.http.add_argument_errors import add_argument_errors
 from django_spec_html.http.route_arguments import route_arguments
-from django_spec_html.http.utils import refusal_outcome, refusal_status
-from django_spec_html.types.outcome import Outcome
 
 # The single page's readers, shared rather than copied, and private to
 # ``spec_form_view.py`` until the parent moves them to ``views/utils.py``:
 # ``_form_arguments`` is called once per row with no route (see
 # ``_row_arguments``), and ``_without_errors`` is the same two attributes.
 from django_spec_html.views.spec_form_view import _form_arguments, _without_errors
-
-# ``_admitted``, ``_bound``, ``_denial``, ``_refusal_code`` and ``_unavailable``
-# are the base's step functions, private to ``views/utils.py``, which the two
-# overrides below and ``_no_target`` call as the base does; imported here only
-# until those are deleted.
 from django_spec_html.views.utils import (
     Served,
     SpecPageBase,
-    _admitted,
-    _bound,
-    _denial,
-    _refusal_code,
-    _unavailable,
     refusal_tree,
 )
 
@@ -374,145 +352,6 @@ class SpecFormSetView(SpecPageBase):
         or the result, under ``result.value``.
         """
         return self.success_message % {"count": len(result.data)}
-
-    # The two overrides below are the base's ``_page`` and ``post``, as
-    # ``views/utils.py`` has them, with the one step a ``many`` spec cannot
-    # take replaced: ``_found``, which asks the kernel's ``resolve_target``,
-    # and that refuses every ``many`` spec with ``ImproperlyConfigured``, as
-    # ``dispatch`` refuses ``target=`` on one, ``None`` included. The parent
-    # adds that guard to ``_found`` - return ``UNSET`` and the grant for a
-    # ``many`` spec once the route is coerced - and the scope check of
-    # nothing for one to ``_page``, and to ``post`` where the page's own
-    # reading refuses, and then deletes both overrides and ``_no_target``;
-    # this file's tests hold the behaviour either way.
-
-    def _page(
-        self, request: HttpRequest, url_kwargs: Mapping[str, Any], **bound: Any
-    ) -> HttpResponse:
-        """The base's ``_page``, with no target looked for, and the scope check asked of nothing."""
-        spec = self.served_spec()
-        served = self._served(request)
-        principal, grant = _admitted(spec, request, url_kwargs, served)
-        try:
-            target, _ = _no_target(spec, principal, grant, url_kwargs, served)
-        except InvalidArguments as refused:
-            raise BadRequest(str(refused.detail)) from refused
-        pool = base_pool(user=principal, seeds=served.seeds)
-        unavailable = _unavailable(spec, target, served, pool)
-        context: dict[str, Any] = {} if unavailable is None else {"unavailable": unavailable}
-        form = self._form(spec, principal, target, served, **bound)
-        if bound:
-            context["refreshed"] = True
-        context.update(self._target_context(spec, principal, target, served, pool))
-        return self._render_page(form, bool(bound), **context)
-
-    def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-        """The base's ``post``, with no target looked for: a ``many`` call is handed none.
-
-        Nor is the scope check asked before dispatch, which asks it of
-        nothing on every ``many`` call and cannot be told it ran: a grant
-        saying the target was checked is honoured only beside a ``target=``,
-        which a ``many`` call refuses. Asked here too, it would run twice
-        (test_the_scope_check_is_asked_once_a_post). It is asked here only
-        when the page's own reading refuses the post, since dispatch is then
-        never called.
-        """
-        if not self.commits(request):
-            return self._page(request, kwargs, data=request.POST, files=request.FILES)
-        spec = self.served_spec()
-        served = self._served(request)
-        principal, grant = _admitted(spec, request, kwargs, served)
-        target: Any = UNSET
-        form = self._form(spec, principal, target, served, data=request.POST, files=request.FILES)
-        try:
-            try:
-                read = self._arguments(form, spec, kwargs, served)
-            except InvalidArguments:
-                # Refused by the page's own reading - the management form, a
-                # row's coercion - dispatch never runs, and with it the scope
-                # check, so it is asked here first, and only here: a
-                # principal it refuses is denied rather than shown the
-                # formset, as the single page denies one before reading
-                # (test_a_post_the_page_s_reading_refuses_asks_the_scope_check_first).
-                # A route value its reads refuse leaves it unasked, as on
-                # the single page
-                # (test_a_post_refused_at_its_top_level_is_answered_before_the_scope_check),
-                # and the refusal raised is the reading's, never the route's alone
-                # (test_a_route_value_and_a_row_s_coercion_are_refused_in_one_post).
-                with suppress(InvalidArguments):
-                    _no_target(spec, principal, grant, kwargs, served)
-                raise
-            result = dispatch(
-                spec,
-                principal=principal,
-                arguments=_bound(spec, read, served.server),
-                grant=grant,
-                pool_seeds=served.seeds,
-                unknown_arguments=self.unknown_arguments,
-                target=target,
-                call_context=served.call_context,
-            )
-        except (DispatchError, ServiceError) as refused:
-            outcome = refusal_outcome(refused)
-            if outcome is Outcome.DENIED:
-                raise _denial(refused) from refused
-            requested: AdditionalInputRequired | None = None
-            if outcome is Outcome.NEEDS_INPUT:
-                requested = cast("AdditionalInputRequired", refused)
-                check_requested_input(spec, requested.schema, pool_seeds=served.seeds)
-            context = {
-                **_refusal_code(refused),
-                **self._target_context(spec, principal, target, served, None),
-            }
-            if requested is not None:
-                context["requested_input"] = {
-                    "message": requested.message,
-                    "schema": requested.schema,
-                }
-            return self._render_refused(
-                form,
-                refused,
-                target,
-                status=refusal_status(refused),
-                requested=requested,
-                **context,
-            )
-        messages.success(request, self.get_success_message(result), fail_silently=True)
-        if self.wants_fragment(request):
-            return self.fragment_success(result)
-        return HttpResponseRedirect(self.get_success_url(result))
-
-
-def _no_target(
-    spec: ServiceSpec, principal: Any, grant: Grant, url_kwargs: Mapping[str, Any], served: Served
-) -> tuple[Any, Grant]:
-    """``UNSET`` and the grant, once the route is coerced and the scope check asked of nothing.
-
-    The route's kwargs coerced and bound first, as ``_found`` does before it
-    asks ``resolve_target``, so a route value the spec's reads refuse is a
-    ``BadRequest`` on GET, as on every page
-    (test_a_route_value_the_reads_refuse_is_a_bad_request). Then the scope
-    check, by the kernel's ``authorize_scope``, of ``None``, as dispatch asks
-    it of a ``many`` call and as the single page asks it of a create, so a
-    page is never offered to a principal the post would refuse
-    (test_a_principal_the_scope_check_refuses_is_never_offered_the_page).
-    """
-    parameters = spec.parameters()
-    route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
-    arguments = _bound(spec, coerce_flat(parameters, route), served.server)
-    try:
-        authorize_scope(
-            spec,
-            principal,
-            None,
-            grant=grant,
-            arguments=arguments,
-            pool_seeds=served.seeds,
-            call_context=served.call_context,
-        )
-    except (NotPermitted, PrincipalUnavailable) as refused:
-        raise _denial(refused) from refused
-    return UNSET, grant
 
 
 def _check_add_button(label: str, add: Any, commit: Any) -> None:
