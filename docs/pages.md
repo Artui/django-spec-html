@@ -285,6 +285,15 @@ where `form_kwargs` names it; on a GET, the affordances' pool takes
 dispatch's place. So a resolver answering a fresh object answers each step a
 different one. Write seed resolvers that answer the same each time.
 
+**One call context per request.** The page creates one plain dict for each
+request and hands that same object to every kernel call it makes: the
+class-level check, the target's lookup and its object-level or scope check,
+the affordances, the form's `form_kwargs` and dispatch. So a check, a
+condition, `form_kwargs` or the service declaring
+[`call_context`](https://artui.github.io/django-service-specs/dispatching/)
+reads what an earlier stage of the same request put there, and each request
+gets a dict of its own.
+
 The checks are the JSON views': `as_view()` refuses an `async def` hook,
 checks `server_arguments` with the kernel's `check_server_arguments` against
 the declared `pool_seeds`, and refuses a `route_kwargs` filling a name the

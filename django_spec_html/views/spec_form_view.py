@@ -258,6 +258,12 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     ``__init__`` takes a keyword - a queryset scoped by a tenant - is served,
     and the page's form offers the choices the Validator's accepts.
 
+    **One call context per request**: a plain dict the page creates for the
+    request and hands, as the same object, to every kernel call it makes - the
+    class-level check, the target's lookup and its checks, the affordances,
+    the form's keywords and dispatch - so a check, a condition or the service
+    declaring ``call_context`` reads what an earlier stage put there.
+
     **GET asks the spec's affordances** once the target is found: the
     callable conditions always, through the kernel's
     ``unmet_operation_affordance`` on a pool built from the call's seeds,
@@ -371,7 +377,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             # No post to place it on beside the form's: the route names a
             # target its reads refuse, which a post answers at 400 too.
             raise BadRequest(str(refused.detail)) from refused
-        unavailable = _unavailable(spec, principal, target, served.seeds)
+        unavailable = _unavailable(spec, principal, target, served)
         # Absent when every condition is met, as ``code`` is on a refusal
         # that has none, so a template's ``{% if unavailable %}`` reads one
         # context on every answer: test_every_condition_met_leaves_it_out.
@@ -653,7 +659,12 @@ class _Served:
     server: ServerArguments | None
     seeds: PoolSeeds
     call_context: dict[str, Any]
-    """The request's one call context, handed to the form's keywords and to dispatch as this very dict."""
+    """The request's one call context, handed as this very dict to every kernel call the page makes.
+
+    The class-level check, the target's lookup and its checks, the affordances,
+    the form's keywords and dispatch, so a stage reads what an earlier one put
+    there (test_the_checks_the_affordances_the_form_and_the_service_share_one_dict).
+    """
 
 
 def _check_configuration(cls: type[SpecFormView], initkwargs: Mapping[str, Any]) -> None:
@@ -744,7 +755,9 @@ def _admitted(
     refuse_server_owned(url_kwargs, served.route_kwargs, server_names(served.server))
     try:
         principal = request_principal(request)
-        return principal, authorize(spec, principal, pool_seeds=served.seeds)
+        return principal, authorize(
+            spec, principal, pool_seeds=served.seeds, call_context=served.call_context
+        )
     except (NotPermitted, PrincipalUnavailable) as refused:
         raise _denial(refused) from refused
 
@@ -777,6 +790,7 @@ def _found(
             arguments=_bound(spec, coerce_flat(parameters, route), served.server),
             grant=grant,
             pool_seeds=served.seeds,
+            call_context=served.call_context,
         )
     except (NotPermitted, PrincipalUnavailable, ServiceNotFound) as refused:
         raise _denial(refused) from refused
@@ -795,7 +809,7 @@ def _bound(
 
 
 def _unavailable(
-    spec: ServiceSpec, principal: Any, target: Any, seeds: PoolSeeds
+    spec: ServiceSpec, principal: Any, target: Any, served: _Served
 ) -> Affordance | None:
     """The first of the spec's affordances not met for ``target`` now, or ``None``.
 
@@ -817,11 +831,14 @@ def _unavailable(
     A row the kernel finds gone when its condition is reached is ``Http404``,
     as the post's ``ServiceNotFound`` is.
     """
+    seeds = served.seeds
     pool = base_pool(user=principal, seeds=seeds)
     # ``reserved`` from the call's own seeds, or a condition reading a seed
     # added per call is never handed it:
     # test_a_condition_reading_a_per_call_seed_is_asked_with_it.
-    unmet = unmet_operation_affordance(spec, pool, reserved=seeds.reserved)
+    unmet = unmet_operation_affordance(
+        spec, pool, reserved=seeds.reserved, call_context=served.call_context
+    )
     # One branch to coverage, so each condition is held by its own test:
     # test_a_callable_condition_is_named_before_a_row_condition_declared_first
     # (an unmet callable answers before the row is asked) and
@@ -832,7 +849,13 @@ def _unavailable(
     try:
         # ``reserved`` here too, since this asks the callables again:
         # test_the_row_s_conditions_are_asked_with_the_call_s_seeds.
-        enforce_affordances(spec, pool, instance=target, reserved=seeds.reserved)
+        enforce_affordances(
+            spec,
+            pool,
+            instance=target,
+            reserved=seeds.reserved,
+            call_context=served.call_context,
+        )
     except ActionUnavailable as refused:
         # Never ``None`` here, since a spec with no affordances refuses nothing.
         return next(each for each in spec.affordances or () if each.code == refused.code)

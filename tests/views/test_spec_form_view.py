@@ -9,6 +9,7 @@ The module is its own URLconf, since ``resolve_url`` reads the project's.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import re
 import tempfile
@@ -2717,3 +2718,66 @@ class TestASeedResolvedAtEachStep:
         assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
         assert len(resolved) == on_post
         assert len({id(each) for each in resolved}) == on_post
+
+
+class SeesTheContext(PermissionCheck):
+    """Admits every principal and row, recording the call context each question is handed."""
+
+    def __init__(self) -> None:
+        self.contexts: list[tuple[str, Any]] = []
+
+    def has_permission(self, principal: Any, spec: Any, *, call_context: Any) -> bool:
+        self.contexts.append(("class", call_context))
+        return True
+
+    def has_object_permission(
+        self, principal: Any, spec: Any, obj: Any, *, call_context: Any
+    ) -> bool:
+        self.contexts.append(("object", call_context))
+        return True
+
+
+class TestOneCallContextPerRequest:
+    """Every kernel call the page makes for a request is handed the same dict."""
+
+    def test_the_checks_the_affordances_the_form_and_the_service_share_one_dict(
+        self, ada: Any, note: Note
+    ) -> None:
+        check = SeesTheContext()
+        asked: list[tuple[str, Any]] = []
+
+        def open_now(*, call_context: Any) -> bool:
+            asked.append(("affordance", call_context))
+            return True
+
+        def keywords(*, call_context: Any) -> Mapping[str, Any]:
+            asked.append(("form", call_context))
+            return {}
+
+        service = ContextService()
+        spec = row_spec(
+            permissions=[check],
+            validator=FormValidator(NoteTitleForm, form_kwargs=keywords),
+            affordances=[Affordance(code="open", reason="Open.", when=open_now)],
+        )
+        spec = dataclasses.replace(spec, service=service)
+        view = form_view(spec)
+        assert get(view, ada, pk=note.pk).status_code == 200
+        on_get = check.contexts + asked
+        # The class-level check, the row's check, both affordance questions
+        # and the form's keywords.
+        assert [name for name, _ in on_get] == [
+            "class",
+            "object",
+            "affordance",
+            "affordance",
+            "form",
+        ]
+        assert len({id(context) for _, context in on_get}) == 1
+        check.contexts.clear()
+        asked.clear()
+        assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
+        on_post = [*check.contexts, *asked, ("service", service.contexts[0])]
+        assert {name for name, _ in on_post} == {"class", "object", "form", "affordance", "service"}
+        assert len({id(context) for _, context in on_post}) == 1
+        assert on_get[0][1] is not on_post[0][1]
