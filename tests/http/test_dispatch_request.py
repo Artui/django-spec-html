@@ -38,6 +38,7 @@ from tests.http.utils import (
     Conflicting,
     Foreign,
     Seen,
+    asking_for_tenant_spec,
     asking_spec,
     body,
     note_spec,
@@ -407,6 +408,36 @@ class TestAskedInput:
         asking = served(asking_spec({"colour": {"type": "string"}}))
         with pytest.raises(ImproperlyConfigured, match="colour"):
             dispatch_request(asking, post(ada, {"title": "x"}))
+
+    # Two cases size the seed rule to be the one that answers: ``tenant`` is
+    # declared, so the "no parameter declares it" rule has nothing to say, and
+    # it is a well-formed string question, so no shape rule does either. Only
+    # the request's seeds differ. ``check_asked_input`` reading ``pool_seeds``
+    # is held by the first; the second shows the seed, not the key, is what
+    # refuses.
+    @SPEC_OR_SOURCE
+    def test_a_schema_naming_a_key_the_requests_seeds_fill_is_the_services_error(
+        self, ada: Any, served: Any
+    ) -> None:
+        asking = served(asking_for_tenant_spec({"tenant": {"type": "string"}}))
+        with pytest.raises(
+            ImproperlyConfigured, match="a provider or a pool seed fills it"
+        ) as refused:
+            dispatch_request(asking, post(ada, {"title": "x"}), pool_seeds=TENANT_SEEDS)
+        assert "declares no top-level parameter" not in str(refused.value)
+
+    @SPEC_OR_SOURCE
+    def test_the_same_schema_without_that_seed_is_written_as_the_422_body(
+        self, ada: Any, served: Any
+    ) -> None:
+        schema = {"tenant": {"type": "string"}}
+        response = dispatch_request(
+            served(asking_for_tenant_spec(schema)), post(ada, {"title": "x"})
+        )
+        assert (response.status_code, body(response)) == (
+            422,
+            {"detail": "Say which.", "schema": schema},
+        )
 
 
 class TestSources:

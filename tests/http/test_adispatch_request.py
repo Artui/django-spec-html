@@ -36,6 +36,7 @@ from tests.http.utils import (
     SPEC_OR_SOURCE,
     Conflicting,
     Foreign,
+    asking_for_tenant_spec,
     asking_spec,
     body,
     note_spec,
@@ -200,6 +201,32 @@ async def test_a_schema_naming_an_undeclared_key_is_the_services_error_not_a_422
     asking = served(asking_spec({"colour": {"type": "string"}}))
     with pytest.raises(ImproperlyConfigured, match="colour"):
         await adispatch_request(asking, post(ada, {"title": "x"}))
+
+
+@SPEC_OR_SOURCE
+async def test_a_schema_naming_a_key_the_requests_seeds_fill_is_the_services_error(
+    ada: Any, served: Any
+) -> None:
+    # ``tenant`` is declared and well formed, so the seed rule is the one that
+    # answers, not the "no parameter declares it" rule.
+    asking = served(asking_for_tenant_spec({"tenant": {"type": "string"}}))
+    with pytest.raises(ImproperlyConfigured, match="a provider or a pool seed fills it") as refused:
+        await adispatch_request(asking, post(ada, {"title": "x"}), pool_seeds=TENANT_SEEDS)
+    assert "declares no top-level parameter" not in str(refused.value)
+
+
+@SPEC_OR_SOURCE
+async def test_the_same_schema_without_that_seed_is_written_as_the_422_body(
+    ada: Any, served: Any
+) -> None:
+    schema = {"tenant": {"type": "string"}}
+    response = await adispatch_request(
+        served(asking_for_tenant_spec(schema)), post(ada, {"title": "x"})
+    )
+    assert (response.status_code, body(response)) == (
+        422,
+        {"detail": "Say which.", "schema": schema},
+    )
 
 
 async def test_a_list_source_answers_its_presented_rows(ada: Any) -> None:
