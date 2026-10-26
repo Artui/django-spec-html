@@ -461,16 +461,16 @@ wheels = [
 
 [[package]]
 name = "django-service-specs"
-version = "0.16.0"
+version = "0.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django", version = "5.2.18", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "django", version = "6.1.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/94/0f/fdb1cf89d490fac3826c1ccd360e9ffc5df8a46f908e7fac4f7449b857ff/django_service_specs-0.16.0.tar.gz", hash = "sha256:aeea277a1979f085d6e19bf7eeaf13f17976a555e161ce42784a618e910b0989", size = 988460, upload-time = "2026-10-26T14:54:41.536Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/52/5bc0e48bc0ad1c10ce87249a7bec2671d2748e8073220bf285354edc1263/django_service_specs-0.17.0.tar.gz", hash = "sha256:37c71fe5037dfe95befd65ac2598dfcb6fe080548ff84f5c2c1e4a67aec4e287", size = 1001741, upload-time = "2026-10-26T17:46:35.319Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/de/42/a04b9f26b4417bcc4bbf1b92cbee148b78ce91d433f149b0cc996fe818f9/django_service_specs-0.16.0-py3-none-any.whl", hash = "sha256:1fe592ab5e6e4c3372f41c235d32a70dbb0555b85b49bcc5102f20bdfe25f84b", size = 438425, upload-time = "2026-10-26T14:54:39.766Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/4c/24e06b8e26d0c968c20dbad467f3ed50aaded8d9eaba5c60b072c7e6d976/django_service_specs-0.17.0-py3-none-any.whl", hash = "sha256:09c1f42e32c487114b2ca8048825e99b29e227ed7eeec643d4c11cf87c50db98", size = 445803, upload-time = "2026-10-26T17:46:33.851Z" },
 ]
 
 [package.optional-dependencies]
@@ -516,7 +516,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=4.2" },
-    { name = "django-service-specs", specifier = ">=0.15.0" },
+    { name = "django-service-specs", specifier = ">=0.17.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1627,7 +1627,7 @@ wheels = [
 
 [[package]]
 name = "virtualenv"
-version = "21.14.12"
+version = "21.14.13"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "distlib" },
@@ -1639,9 +1639,9 @@ dependencies = [
     { name = "python-discovery" },
     { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c9/2c/1a69b3346931e9a7db9cc00cc0fa847c843a85fa7cf52a598f57261c68df/virtualenv-21.14.12.tar.gz", hash = "sha256:bbcfb78e36c22ad70c6917c4aecb5e63477d3c138e9f88c946f320e31859c76a", size = 5562800, upload-time = "2026-10-21T01:58:51.724Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/aa/bff50daee0488e16d611258a9b6c5a1d0c9e128f8ca424e9f4e1c0444ef2/virtualenv-21.14.13.tar.gz", hash = "sha256:de5307ba4b9a0001d9c8ea02832d38f63ca432880f416c1bface61c4323fd905", size = 5570301, upload-time = "2026-10-22T20:10:16.952Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a0/92/f3b8af2d36ddec4dc61dc25655dc010e419ff456cb4ca0e720c8112f1047/virtualenv-21.14.12-py3-none-any.whl", hash = "sha256:7820aeaef23f1f59a96458edfc7f9d3deac937155718de15f1c9a64471e15551", size = 5556824, upload-time = "2026-10-21T01:58:48.505Z" },
+    { url = "https://files.pythonhosted.org/packages/bb/a9/c10d8a44a29fb94a18b43fdf11f38caca53ae7c9406f11a72b1cb8f624f1/virtualenv-21.14.13-py3-none-any.whl", hash = "sha256:5fbb04138a4861580b78ba9110d529a26bc48fcc93c8ec36bc0202eeed96a788", size = 5557094, upload-time = "2026-10-22T20:10:15.096Z" },
 ]
 
 [[package]]

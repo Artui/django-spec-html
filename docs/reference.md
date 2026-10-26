@@ -18,6 +18,54 @@ This package defines none. The argument reader reads one of the kernel's:
 ## Pages
 
 ::: django_spec_html.views.spec_form_view.SpecFormView
+    options:
+      inherited_members:
+        - as_view
+        - dispatch
+        - get
+        - post
+        - get_context_data
+        - get_success_url
+        - get_success_message
+        - get_pool_seeds
+        - get_server_arguments
+        - wants_fragment
+        - commits
+        - get_fragment_template_names
+        - fragment_success
+        - served_spec
+::: django_spec_html.views.spec_confirm_view.SpecConfirmView
+    options:
+      inherited_members:
+        - as_view
+        - dispatch
+        - get
+        - post
+        - get_context_data
+        - get_success_url
+        - get_pool_seeds
+        - get_server_arguments
+        - wants_fragment
+        - commits
+        - get_fragment_template_names
+        - fragment_success
+        - served_spec
+::: django_spec_html.views.spec_form_set_view.SpecFormSetView
+    options:
+      inherited_members:
+        - as_view
+        - dispatch
+        - get
+        - post
+        - get_context_data
+        - get_success_url
+        - get_pool_seeds
+        - get_server_arguments
+        - wants_fragment
+        - commits
+        - get_fragment_template_names
+        - fragment_success
+        - served_spec
 ::: django_spec_html.types.outcome.Outcome
 
 ## JSON views

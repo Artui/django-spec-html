@@ -131,17 +131,28 @@ def field_map(detail: Any) -> Mapping[Any, Any]:
     return {NON_FIELD_ERRORS: [detail]}
 
 
-def check_asked_input(spec: ServiceSpec | SelectorSpec | SpecSource, refused: Exception) -> None:
+def check_asked_input(
+    spec: ServiceSpec | SelectorSpec | SpecSource, refused: Exception, *, pool_seeds: PoolSeeds
+) -> None:
     """Refuse, as the service's own error, a request for input no route could hear answered.
 
     A 422 body carries the schema a service asked under, and a client builds
     its next call from it. A schema naming a key the closed argument set would
-    refuse, or a shape a transport cannot render, is not the caller's mistake,
-    so it surfaces as the ``ImproperlyConfigured`` it is rather than as a
-    well-formed answer that cannot be answered. Anything else passes.
+    refuse, a key the server fills, or a shape a transport cannot render, is
+    not the caller's mistake, so it surfaces as the ``ImproperlyConfigured`` it
+    is rather than as a well-formed answer that cannot be answered. Anything
+    else passes.
+
+    ``pool_seeds`` are the ones the call was dispatched with, declared and
+    per-request alike: a seed ``get_pool_seeds(request)`` supplies fills its
+    key as surely as one the view declares. It is required, because the
+    kernel's default is no seeds at all, so a caller leaving it out would check
+    against none. The tests holding it are
+    ``test_a_schema_naming_a_key_the_requests_seeds_fill_is_the_services_error``,
+    in ``test_dispatch_request`` and ``test_adispatch_request``.
     """
     if isinstance(refused, AdditionalInputRequired):
-        check_requested_input(spec, refused.schema)
+        check_requested_input(spec, refused.schema, pool_seeds=pool_seeds)
 
 
 def not_found_response() -> JsonResponse:
@@ -426,7 +437,7 @@ def check_request_hooks(
         check_server_arguments(
             spec, server, pool_seeds=_configured(view_class, initkwargs, "pool_seeds")
         )
-        filled = sorted(_route_targets(route_kwargs) & server.names())
+        filled = sorted(route_targets(route_kwargs) & server.names())
         if filled:
             raise ImproperlyConfigured(
                 f"{label}.route_kwargs fills {', '.join(filled)}, which server_arguments "
@@ -550,7 +561,7 @@ def _filled_by(
     return name if name in route_kwargs else None
 
 
-def _route_targets(
+def route_targets(
     route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
 ) -> frozenset[str]:
     """Every parameter ``route_kwargs`` names a kwarg into: a mapping's targets, a tuple's names."""

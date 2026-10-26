@@ -1,0 +1,9 @@
+<div id="withdraw">
+  {% if target_display %}<p>Withdraw <strong>{{ target_display.label }}</strong>?</p>{% endif %}
+  {% if unavailable %}<p>{{ unavailable.reason }}</p>{% endif %}
+  {% if requested_input %}<p class="asked">{{ requested_input.message }}</p>
+  {% else %}{% for error in errors %}<p class="error">{{ error }}</p>{% endfor %}{% endif %}
+  <form method="post" hx-post="" hx-target="#withdraw" hx-swap="outerHTML">{% csrf_token %}
+    <button name="withdraw"{% if unavailable %} disabled{% endif %}>Withdraw it</button>
+  </form>
+</div>

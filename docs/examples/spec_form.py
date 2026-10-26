@@ -8,16 +8,22 @@ a refusal the view does not make.
 
 from __future__ import annotations
 
-from typing import Any
+import dataclasses
+import datetime
+from decimal import Decimal
+from typing import Annotated, Any
 
 from django import forms
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.urls import path, reverse, reverse_lazy
 from django_service_specs import (
+    AdditionalInputRequired,
     Affordance,
     ChangeResult,
+    DataclassPresenter,
     DispatchResult,
+    FieldMarking,
     FormValidator,
     Parameter,
     Parameters,
@@ -31,7 +37,7 @@ from django_service_specs import (
 )
 
 from django_spec_html import SpecFormView
-from tests.adapter_app.models import Author, Book, Status
+from tests.adapter_app.models import Author, Book, Edition, Status
 
 
 # --8<-- [start:form]
@@ -101,8 +107,55 @@ edit_book_spec = ServiceSpec(
 # --8<-- [end:update]
 
 
+# --8<-- [start:partial]
+# The same update as a partial one: a field left blank is left as it is.
+change_book_spec = ServiceSpec(
+    service=edit_book,
+    permissions=[IsSignedIn()],
+    validator=book_validator,
+    instance_selector_spec=edit_book_spec.instance_selector_spec,
+    partial=True,
+)
+# --8<-- [end:partial]
+
+
+# --8<-- [start:keywords]
+class OfferedAuthorsForm(BookForm):
+    """``BookForm``, offering the authors its constructor is handed."""
+
+    def __init__(self, *args: Any, authors: QuerySet[Author], **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["author"].queryset = authors
+
+
+def offered_authors(*, user: Any) -> dict[str, Any]:
+    # Staff add a book by anyone; everyone else by an author already shelved.
+    authors = Author.objects.all()
+    if not user.is_staff:
+        authors = authors.filter(books__isnull=False).distinct()
+    return {"authors": authors}
+
+
+shelve_book_spec = ServiceSpec(
+    service=add_book,
+    permissions=[IsSignedIn()],
+    validator=FormValidator(OfferedAuthorsForm, form_kwargs=offered_authors),
+)
+# --8<-- [end:keywords]
+
+
 # --8<-- [start:request]
+BRANCHES = {"main", "harbour"}
 CLOSED_BRANCHES = {"harbour"}
+
+
+class AtABranch(PermissionCheck):
+    message = "There is no such branch."
+
+    def has_permission(self, principal: Any, spec: Any, *, branch: str) -> bool:
+        # A seed, named by the class-level check: the page asks it with the
+        # one get_pool_seeds adds, before it offers the form.
+        return branch in BRANCHES
 
 
 def branch_open(*, branch: str) -> bool:
@@ -112,7 +165,7 @@ def branch_open(*, branch: str) -> bool:
 
 stock_book_spec = ServiceSpec(
     service=add_book,
-    permissions=[IsSignedIn()],
+    permissions=[IsSignedIn(), AtABranch()],
     validator=book_validator,
     affordances=[
         Affordance(
@@ -144,6 +197,137 @@ class StockBook(SpecFormView):
 # --8<-- [end:request]
 
 
+# --8<-- [start:target]
+@dataclasses.dataclass
+class BookOut:
+    """A book as an operation returns it, and as its page names it."""
+
+    pk: Annotated[int, FieldMarking.handle()]  # another call's input: never shown
+    title: Annotated[str, FieldMarking.label()]  # the name a page calls it by
+    price: Decimal
+    status: Status  # spoken as its display: "Draft", not "draft"
+    published_on: Annotated[datetime.date | None, FieldMarking.hidden()]
+
+
+class WithdrawForm(forms.Form):
+    reason = forms.CharField(max_length=200)
+
+
+def withdraw(*, instance: Book, data: dict[str, Any]) -> Book:
+    instance.status = Status.DRAFT
+    instance.save(update_fields=["status"])
+    return instance
+
+
+# One book: the page shows it, by its title, beside the form.
+withdraw_book_spec = ServiceSpec(
+    service=withdraw,
+    permissions=[IsSignedIn()],
+    validator=FormValidator(WithdrawForm),
+    instance_selector_spec=edit_book_spec.instance_selector_spec,
+    presenter=DataclassPresenter(BookOut),
+)
+
+
+class PublishForm(forms.Form):
+    published_on = forms.DateField()
+
+
+def drafts() -> QuerySet[Book]:
+    return Book.objects.filter(status=Status.DRAFT).order_by("title")
+
+
+def publish(*, collection: QuerySet[Book], data: dict[str, Any]) -> list[int]:
+    published = list(collection.values_list("pk", flat=True))
+    collection.update(status=Status.PUBLISHED, published_on=data["published_on"])
+    return published
+
+
+# Every draft at once: the page counts the set, and names the first few.
+publish_drafts_spec = ServiceSpec(
+    service=publish,
+    permissions=[IsSignedIn()],
+    validator=FormValidator(PublishForm),
+    collection_selector_spec=SelectorSpec(kind=SelectorKind.LIST, selector=drafts),
+    output_selector_spec=SelectorSpec(
+        kind=SelectorKind.LIST,
+        selector=lambda *, result: Book.objects.filter(pk__in=result).order_by("title"),
+        presenter=DataclassPresenter(BookOut),
+    ),
+)
+# --8<-- [end:target]
+
+
+# --8<-- [start:confirm]
+class DiscardForm(forms.Form):
+    reason = forms.CharField(max_length=200, required=False)
+    # The answer to the service's question, declared like any other field:
+    # the page holds it back until the question asks for it.
+    confirmed = forms.BooleanField(required=False, label="Yes, discard them")
+
+
+def discard(*, collection: QuerySet[Book], data: dict[str, Any]) -> list[int]:
+    if not data["confirmed"]:
+        raise AdditionalInputRequired(
+            f"{collection.count()} drafts will be deleted. Confirm to proceed.",
+            schema={"confirmed": {"type": "boolean"}},
+        )
+    discarded = list(collection.values_list("pk", flat=True))
+    collection.delete()
+    return discarded
+
+
+# Every draft, deleted once a person says yes.
+discard_drafts_spec = ServiceSpec(
+    service=discard,
+    permissions=[IsSignedIn()],
+    validator=FormValidator(DiscardForm),
+    collection_selector_spec=publish_drafts_spec.collection_selector_spec,
+    output_selector_spec=publish_drafts_spec.output_selector_spec,
+)
+# --8<-- [end:confirm]
+
+
+# --8<-- [start:refresh]
+class AddEditionForm(forms.Form):
+    # Choosing an author posts the form again, through htmx where it is
+    # loaded, so the books offered below are theirs.
+    author = forms.ModelChoiceField(
+        queryset=Author.objects.all(),
+        widget=forms.Select(
+            attrs={
+                "hx-post": "",
+                "hx-trigger": "change",
+                "hx-target": "closest form",
+                "hx-swap": "outerHTML",
+            }
+        ),
+    )
+    book = forms.ModelChoiceField(queryset=Book.objects.none())
+    number = forms.IntegerField(min_value=1)
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # The books of the author the post names, and none until it names
+        # one: a string from the page's post, the number itself in the form
+        # the Validator binds to the coerced arguments.
+        author = self.data.get(self.add_prefix("author"))
+        if str(author).isdigit():
+            self.fields["book"].queryset = Book.objects.filter(author_id=author)
+
+
+def add_edition(*, data: dict[str, Any]) -> Edition:
+    return Edition.objects.create(book=data["book"], number=data["number"])
+
+
+add_edition_spec = ServiceSpec(
+    service=add_edition,
+    permissions=[IsSignedIn()],
+    validator=FormValidator(AddEditionForm),
+)
+# --8<-- [end:refresh]
+
+
 def books(request: HttpRequest) -> HttpResponse:
     return HttpResponse("The books.")
 
@@ -163,14 +347,8 @@ class AddBookThenShowIt(SpecFormView):
 
 
 urlpatterns = [
-    path(
-        "books/new/",
-        SpecFormView.as_view(
-            spec=add_book_spec,
-            template_name="spec_form.html",
-            success_url=reverse_lazy("books"),
-        ),
-    ),
+    # No template_name: the page is the one this package ships.
+    path("books/new/", SpecFormView.as_view(spec=add_book_spec, success_url=reverse_lazy("books"))),
     path("books/add/", AddBookThenShowIt.as_view()),
     path(
         "books/<int:pk>/edit/",
@@ -178,6 +356,76 @@ urlpatterns = [
             spec=edit_book_spec,
             template_name="spec_form.html",
             success_url=reverse_lazy("books"),
+        ),
+    ),
+    path(
+        "books/<int:pk>/change/",
+        SpecFormView.as_view(
+            spec=change_book_spec,
+            template_name="spec_form.html",
+            success_url=reverse_lazy("books"),
+        ),
+    ),
+    path(
+        "books/shelve/",
+        SpecFormView.as_view(
+            spec=shelve_book_spec,
+            template_name="spec_form.html",
+            success_url=reverse_lazy("books"),
+        ),
+    ),
+    path(
+        "books/<int:pk>/withdraw/",
+        SpecFormView.as_view(
+            spec=withdraw_book_spec,
+            template_name="spec_target.html",
+            success_url=reverse_lazy("books"),
+            # BookOut describes the book withdrawn, so the page shows it.
+            display_target=True,
+        ),
+    ),
+    path(
+        "books/publish-drafts/",
+        SpecFormView.as_view(
+            spec=publish_drafts_spec,
+            template_name="spec_target.html",
+            success_url=reverse_lazy("books"),
+            display_target=True,
+            target_display_limit=3,
+        ),
+    ),
+    path(
+        "books/discard-drafts/",
+        SpecFormView.as_view(
+            spec=discard_drafts_spec,
+            template_name="spec_confirm.html",
+            fragment_template_name="spec_confirm_form.html",
+            success_url=reverse_lazy("books"),
+            display_target=True,
+            asked_fields=("confirmed",),
+        ),
+    ),
+    path(
+        "books/discard-drafts/in-a-dialog/",
+        SpecFormView.as_view(
+            spec=discard_drafts_spec,
+            template_name="spec_confirm_dialog.html",
+            success_url=reverse_lazy("books"),
+            display_target=True,
+            asked_fields=("confirmed",),
+        ),
+    ),
+    path(
+        "editions/new/",
+        SpecFormView.as_view(
+            spec=add_edition_spec,
+            template_name="spec_edition.html",
+            fragment_template_name="spec_edition_form.html",
+            success_url=reverse_lazy("books"),
+            # Only "Add the edition" runs the operation: the author picker
+            # and "Show their books" post the form to re-render it.
+            commit_button="add",
+            success_message="Edition %(number)s added.",
         ),
     ),
     path("branches/<branch>/books/new/", StockBook.as_view()),

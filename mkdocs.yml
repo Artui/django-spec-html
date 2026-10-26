@@ -94,5 +94,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Pages: pages.md
+  - Confirming: confirm.md
+  - Formsets: formsets.md
   - JSON views: http.md
   - API reference: reference.md

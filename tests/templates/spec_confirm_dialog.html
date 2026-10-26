@@ -1,0 +1,25 @@
+<html>
+<body>
+<h1>Drafts</h1>
+{% if not requested_input %}<dialog id="confirm-discard"></dialog>{% endif %}
+{% partialdef spec-form inline %}
+<form id="discard-drafts" method="post" hx-post="" hx-swap="outerHTML">
+  {% csrf_token %}
+  {% if not requested_input %}{{ form.non_field_errors }}{% endif %}
+  {% for field in form %}{% if not requested_input or field.name not in requested_input.schema %}
+    {{ field.errors }}{{ field.label_tag }} {{ field }}
+  {% endif %}{% endfor %}
+  <button name="save">Discard</button>
+</form>
+{% if requested_input %}
+<dialog id="confirm-discard" hx-swap-oob="true" open>
+  <p>{{ requested_input.message }}</p>
+  {% for field in requested_input.fields %}
+  <label><input type="checkbox" name="{{ field.html_name }}" form="discard-drafts"> {{ field.label }}</label>
+  {% endfor %}
+  <button name="save" form="discard-drafts">Discard them</button>
+</dialog>
+{% endif %}
+{% endpartialdef %}
+</body>
+</html>

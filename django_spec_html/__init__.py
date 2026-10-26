@@ -18,11 +18,15 @@ from django_spec_html.http.spec_view import SpecView
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 from django_spec_html.types.outcome import Outcome
 from django_spec_html.version import __version__
+from django_spec_html.views.spec_confirm_view import SpecConfirmView
+from django_spec_html.views.spec_form_set_view import SpecFormSetView
 from django_spec_html.views.spec_form_view import SpecFormView
 
 __all__ = [
     "AsyncSpecView",
     "Outcome",
+    "SpecConfirmView",
+    "SpecFormSetView",
     "SpecFormView",
     "SpecView",
     "UnsupportedMediaType",

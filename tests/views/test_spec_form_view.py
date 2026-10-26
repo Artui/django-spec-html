@@ -9,17 +9,21 @@ The module is its own URLconf, since ``resolve_url`` reads the project's.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import re
 import tempfile
-from collections.abc import Iterator, Mapping
+import types
+from collections.abc import Callable, Iterator, Mapping
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 
 import django
 import pytest
 from django import forms
+from django.contrib import messages
 from django.contrib.auth import get_user_model, login
+from django.contrib.messages import get_messages
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.core.exceptions import (
     BadRequest,
@@ -29,18 +33,25 @@ from django.core.exceptions import (
 )
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.validators import MaxValueValidator
+from django.db import connection
 from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.template import TemplateDoesNotExist
+from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import path, reverse_lazy
 from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy
 from django_service_specs import (
+    DEFAULT_POOL_SEEDS,
     ActionUnavailable,
     AdditionalInputRequired,
     Affordance,
+    DataclassPresenter,
     DispatchError,
     DispatchResult,
+    FieldMarking,
     FormValidator,
     NotPermitted,
     Parameter,
@@ -58,13 +69,14 @@ from django_service_specs import (
     ServiceValidationError,
     UnknownArguments,
     ValidationContext,
+    update_from_input,
 )
 
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
-from django_spec_html.views import spec_form_view
+from django_spec_html.views import utils as views_utils
 from django_spec_html.views.spec_form_view import SpecFormView
 from tests.adapter_app.models import Author as BookAuthor
-from tests.adapter_app.models import Book, Document, Edition
+from tests.adapter_app.models import Book, Document, Edition, Status
 from tests.dispatch.utils import (
     OPEN,
     PK,
@@ -190,6 +202,41 @@ class NoteTitleForm(forms.Form):
 
     title = forms.CharField()
     remark = forms.CharField(required=False, initial="none")
+
+
+RED_CLOSED = "Red is closed."
+
+
+class RedIsClosed(forms.Form):
+    """A required title, and a ``clean()`` rule over an optional colour."""
+
+    title = forms.CharField()
+    colour = forms.ChoiceField(choices=[("red", "Red"), ("blue", "Blue")], required=False)
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        if cleaned.get("colour") == "red":
+            raise forms.ValidationError(RED_CLOSED)
+        return cleaned
+
+
+class SignInForm(forms.ModelForm):
+    """A user's unique username, beside a date-time the shape check reads."""
+
+    class Meta:
+        model = get_user_model()
+        fields = ["username", "last_login"]
+
+
+class Counting(forms.Form):
+    """Counts each ``clean()``, on the class, across every instance a post builds."""
+
+    cleans = 0
+    title = forms.CharField()
+
+    def clean(self) -> dict[str, Any]:
+        type(self).cleans += 1
+        return super().clean() or {}
 
 
 class NoCreating(PermissionCheck):
@@ -841,20 +888,129 @@ class TestClearingAFile:
 
 
 class TestRefusals:
+    def test_a_refused_post_asks_the_scope_check_once(self, ada: Any) -> None:
+        # Asked of a create before the post is read; asked again after a
+        # refusal only on a many page, whose dispatch may not have asked it.
+        class Recorded(PermissionCheck):
+            def __init__(self) -> None:
+                self.scopes: list[Any] = []
+
+            def has_permission(self, principal: Any, spec: Any) -> bool:
+                return True
+
+            def has_scope_permission(self, principal: Any, spec: Any, target: Any) -> bool:
+                self.scopes.append(target)
+                return True
+
+        check = Recorded()
+        response = post(
+            form_view(entry_spec(permissions=[check])), ada, {"title": "a", "count": "x"}
+        )
+        assert response.status_code == 400
+        assert check.scopes == [None]
+
     def test_a_form_wide_clean_error_appears_once(self, ada: Any) -> None:
         spec = entry_spec()
         response = post(form_view(spec), ada, {"title": "shut"})
         assert (response.status_code, refused(response)) == (400, {"__all__": [CLOSED]})
         assert validated(spec) == 1
 
-    def test_the_page_form_s_own_checks_add_nothing_to_dispatch_s_refusal(self, ada: Any) -> None:
+    def test_after_a_shape_refusal_the_form_s_own_checks_answer_too(self, ada: Any) -> None:
         # The shape check refuses the count before the Validator runs, so the
-        # form's ``clean()`` never decided anything: the page shows what
-        # dispatch did, and not what the page's form would have said.
+        # page's own form, built as the Validator's is, adds what its
+        # ``clean()`` finds, and its own word for the count adds nothing.
         spec = entry_spec()
         response = post(form_view(spec), ada, {"title": "shut", "count": "x"})
-        assert (response.status_code, refused(response)) == (400, {"count": [WHOLE]})
+        assert (response.status_code, refused(response)) == (
+            400,
+            {"count": [WHOLE], "__all__": [CLOSED]},
+        )
         assert validated(spec) == 0
+
+    def test_a_blank_required_field_and_a_clean_violation_show_in_one_post(self, ada: Any) -> None:
+        # The shape check answers the blank title, so the
+        # Validator never runs (none of its calls), and the clean() rule the
+        # colour breaks is the page's own form's, in the same post.
+        spec = entry_spec(validator=Watched(RedIsClosed))
+        response = post(form_view(spec), ada, {"title": "", "colour": "red"}).render()
+        assert (response.status_code, refused(response)) == (
+            400,
+            {"title": [REQUIRED], "__all__": [RED_CLOSED]},
+        )
+        assert validated(spec) == 0
+        assert response.content.count(REQUIRED.encode()) == 1
+        assert response.content.count(RED_CLOSED.encode()) == 1
+
+    def test_a_uniqueness_rule_shows_beside_a_shape_refusal(self, ada: Any) -> None:
+        # The date-time is the shape check's, so the Validator never runs, and
+        # the username another user holds is the page's own ModelForm's.
+        make_user("grace")
+        spec = ServiceSpec(
+            service=Record(),
+            permissions=OPEN,
+            validator=Watched(SignInForm),
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=user_by_pk, reads=PK
+            ),
+        )
+        response = post(
+            form_view(spec), ada, {"username": "grace", "last_login": "never"}, pk=ada.pk
+        )
+        assert (response.status_code, refused(response)) == (
+            400,
+            {
+                "last_login": ["Enter a valid date/time."],
+                "username": ["A user with that username already exists."],
+            },
+        )
+        assert validated(spec) == 0
+
+    @pytest.mark.parametrize("pk", ["own", "abc"], ids=["the-row", "a-refused-route"])
+    def test_an_update_page_s_own_unchanged_value_is_never_taken(self, ada: Any, pk: str) -> None:
+        # The page's ModelForm is validated on a copy of her row, so its
+        # uniqueness check leaves her own username out, as the Validator's
+        # does. A route the target's reads refuse finds no row, so the form is
+        # not judged as a create either: the route's refusal, found while
+        # the post is read and before dispatch's shape check, is all that
+        # page shows.
+        spec = ServiceSpec(
+            service=Record(),
+            permissions=OPEN,
+            validator=Watched(SignInForm),
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=user_by_pk, reads=PK
+            ),
+        )
+        route = ada.pk if pk == "own" else pk
+        response = post(form_view(spec), ada, {"username": "ada", "last_login": "never"}, pk=route)
+        expected = (
+            {"last_login": ["Enter a valid date/time."]}
+            if pk == "own"
+            else {"__all__": [f"pk: {WHOLE}"]}
+        )
+        assert (response.status_code, refused(response)) == (400, expected)
+        assert validated(spec) == 0
+
+    @pytest.mark.parametrize(
+        "exc",
+        [ServiceConflict("Busy."), ServiceValidationError("Busy."), ServiceError("Busy.")],
+        ids=["conflict", "service-validation", "service-error"],
+    )
+    def test_a_refusal_after_the_validator_took_the_form_validates_it_no_further(
+        self, ada: Any, exc: Exception
+    ) -> None:
+        # The Validator's form, built as the page's is, took the post, so the
+        # page's form would find nothing it did not: its clean() runs once,
+        # the Validator's, and the refusal is all the page shows.
+        Counting.cleans = 0
+
+        def service(**pool: Any) -> None:
+            raise exc
+
+        spec = ServiceSpec(service=service, permissions=OPEN, validator=FormValidator(Counting))
+        response = post(form_view(spec), ada, {"title": "Hi"})
+        assert refused(response) == {"__all__": ["Busy."]}
+        assert Counting.cleans == 1
 
     def test_a_validator_refusal_appears_once(self, ada: Any) -> None:
         spec = entry_spec()
@@ -965,7 +1121,9 @@ class TestRefusals:
             (ActionUnavailable("Moved while you were editing.", code="moved"), 409),
             (ServiceError("Moved while you were editing."), 422),
             (
-                AdditionalInputRequired("Moved while you were editing.", schema={"type": "object"}),
+                AdditionalInputRequired(
+                    "Moved while you were editing.", schema={"urgent": {"type": "boolean"}}
+                ),
                 422,
             ),
             (Throttled("Moved while you were editing."), 400),
@@ -1005,11 +1163,12 @@ def ranges(request: pytest.FixtureRequest) -> None:
 
 @pytest.mark.usefixtures("ranges")
 class TestAValuePastItsColumn:
-    """A post the Validator refuses for a value no column holds re-renders the page.
+    """A post refused for a value no column holds re-renders the page.
 
-    The page's own form is never validated again to show the refusal: it has
-    none of the Validator's guards, and its own validation would hand the
-    value to the database driver, which raises ``OverflowError``.
+    The page's own form is validated beside an argument refusal under the
+    kernel's ``clean_held_to_their_columns``, the Validator's own guards:
+    validated without them, it would hand the value to the database driver,
+    which raises ``OverflowError``.
     """
 
     def test_a_model_form_s_integer_past_its_column_is_refused_on_the_page(self, ada: Any) -> None:
@@ -1035,12 +1194,22 @@ class TestAValuePastItsColumn:
         self, ada: Any
     ) -> None:
         # The shape check refuses the missing title before the Validator runs,
-        # so nothing has judged the key: the page shows the refusal alone.
+        # so the page's own form judges the key, held to its column as the
+        # Validator's is: refused in the field's words, never handed to the
+        # driver, which raises ``OverflowError`` for it.
         spec = ServiceSpec(
             service=Record(), permissions=OPEN, validator=FormValidator(AssigneesForm)
         )
         response = post(form_view(spec), ada, {"assignees": [2**63]})
-        assert (response.status_code, refused(response)) == (400, {"title": [REQUIRED]})
+        assert (response.status_code, refused(response)) == (
+            400,
+            {
+                "title": [REQUIRED],
+                "assignees": [
+                    f"Select a valid choice. {2**63} is not one of the available choices."
+                ],
+            },
+        )
 
     def test_a_list_s_key_past_its_column_is_refused_on_the_page(self, ada: Any) -> None:
         spec = ServiceSpec(
@@ -1468,7 +1637,11 @@ class TestTheFragmentOnARefusal:
             ({"title": "Hi"}, ServiceConflict("Moved."), 409),
             ({"title": "Hi"}, ActionUnavailable("Moved.", code="moved"), 409),
             ({"title": "Hi"}, ServiceError("Moved."), 422),
-            ({"title": "Hi"}, AdditionalInputRequired("Moved.", schema={"type": "object"}), 422),
+            (
+                {"title": "Hi"},
+                AdditionalInputRequired("Moved.", schema={"urgent": {"type": "boolean"}}),
+                422,
+            ),
             ({"title": "Hi"}, Throttled("Moved."), 400),
             ({"title": "Hi"}, UnsupportedMediaType("Moved."), 415),
         ],
@@ -1536,13 +1709,13 @@ class TestNothingHtmxReachesTheSpec:
         self, ada: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         calls: list[dict[str, Any]] = []
-        real = spec_form_view.dispatch
+        real = views_utils.dispatch
 
         def recording(spec: Any, **kwargs: Any) -> Any:
             calls.append(kwargs)
             return real(spec, **kwargs)
 
-        monkeypatch.setattr(spec_form_view, "dispatch", recording)
+        monkeypatch.setattr(views_utils, "dispatch", recording)
         spec = entry_spec()
         data = {"title": "Hi", "csrfmiddlewaretoken": "token", "save": "Save"}
         post(fragmented(spec), ada, data)
@@ -1826,12 +1999,25 @@ class TestThePagesPoolSeeds:
         assert headed(view.as_view(), ada, "POST", {"title": "Hi"}).status_code == 302
         assert check.tenants == ["acme", "acme"]
 
-    def test_the_class_level_check_is_asked_with_no_seed(self, ada: Any) -> None:
-        # The page asks it before anything else and hands it none, its own
-        # ``pool_seeds`` included; the JSON views hand it the call's.
-        view = form_view(entry_spec(permissions=[SeesTenant()]), pool_seeds=TENANT_SEEDS)
-        with pytest.raises(TypeError, match="missing 1 required keyword-only argument: 'tenant'"):
-            get(view, ada)
+    @pytest.mark.parametrize(
+        ("attributes", "tenant"),
+        [
+            ({"pool_seeds": TENANT_SEEDS}, "tenant-of-ada"),
+            ({"get_pool_seeds": tenant_from_the_header}, "acme"),
+        ],
+        ids=["pool_seeds", "get_pool_seeds"],
+    )
+    def test_the_class_level_check_is_asked_with_the_seed_it_names(
+        self, ada: Any, attributes: dict[str, Any], tenant: str
+    ) -> None:
+        # Asked before anything else, with the seeds the request's call is
+        # resolved with, on GET and on POST; the post's grant hands dispatch
+        # the check already made, so it is asked once per request.
+        check = SeesTenant()
+        view = paged(entry_spec(permissions=[check]), **attributes).as_view()
+        assert headed(view, ada).status_code == 200
+        assert headed(view, ada, "POST", {"title": "Hi"}).status_code == 302
+        assert check.tenants == [tenant, tenant]
 
     def test_the_hook_is_asked_once_per_request(self, ada: Any, note: Note) -> None:
         asked: list[Any] = []
@@ -2268,3 +2454,1628 @@ class TestTheRefusalsCode:
         response = post(form_view(spec), ada, {"title": "shut" if exc is None else "Hi"})
         assert response.status_code in (400, 409, 422)
         assert "code" not in response.context_data
+
+
+class OwnersNoteForm(forms.ModelForm):
+    """A note's title, and an assignee among the users its constructor is told to offer."""
+
+    assignee = forms.ModelChoiceField(queryset=get_user_model().objects.none(), required=False)
+
+    class Meta:
+        model = Note
+        fields = ["title"]
+
+    def __init__(self, *args: Any, owner: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["assignee"].queryset = get_user_model().objects.filter(pk=owner.pk)
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        if cleaned.get("title") == "shut":
+            raise forms.ValidationError(CLOSED)
+        return cleaned
+
+
+class OwnersEntryForm(EntryForm):
+    """``EntryForm``, its ``count`` capped by a keyword only its constructor is handed."""
+
+    def __init__(self, *args: Any, cap: int, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["count"].max_value = cap
+        self.fields["count"].validators.append(MaxValueValidator(cap))
+
+
+class Keywords:
+    """A ``form_kwargs`` recording what each call is handed, the call's context by identity.
+
+    It names a seed, so the view must resolve it, and ``instance`` with a
+    default, so a create, whose pool has none, is asked too.
+    """
+
+    def __init__(self, returns: Callable[[Any], Mapping[str, Any]]) -> None:
+        self.returns = returns
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(
+        self, *, user: Any, tenant: Any, call_context: Any, instance: Any = None
+    ) -> Mapping[str, Any]:
+        self.calls.append(
+            {"user": user, "tenant": tenant, "instance": instance, "context": call_context}
+        )
+        return self.returns(user)
+
+
+def capped(user: Any) -> Mapping[str, Any]:
+    return {"cap": 3}
+
+
+def owned(user: Any) -> Mapping[str, Any]:
+    return {"owner": user}
+
+
+class ContextService:
+    """A service declaring the call's context by name, recording the very dict it is handed."""
+
+    def __init__(self) -> None:
+        self.contexts: list[Any] = []
+
+    def __call__(self, *, call_context: Any) -> None:
+        self.contexts.append(call_context)
+
+
+def keyed_entry_spec(keywords: Keywords, *, row: bool) -> ServiceSpec:
+    """``entry_spec``, or ``row_spec``, validated by ``OwnersEntryForm`` through ``keywords``."""
+    validator = FormValidator(OwnersEntryForm, form_kwargs=keywords)
+    return row_spec(validator=validator) if row else entry_spec(validator=validator)
+
+
+def keyed_note_spec(keywords: Keywords, service: Any = None) -> ServiceSpec:
+    """An update of the note the route names, validated by ``OwnersNoteForm`` through ``keywords``."""
+    return ServiceSpec(
+        service=service or Record(),
+        permissions=OPEN,
+        validator=FormValidator(OwnersNoteForm, form_kwargs=keywords),
+        instance_selector_spec=SelectorSpec(
+            kind=SelectorKind.RETRIEVE, selector=note_by_pk, reads=PK
+        ),
+    )
+
+
+class TestTheFormsKeywords:
+    """The page's form is built with what the Validator's ``form_kwargs`` answers, as dispatch's is."""
+
+    @pytest.mark.parametrize("row", [False, True], ids=["a-create", "a-plain-form-on-a-row"])
+    def test_a_form_whose_init_needs_a_keyword_is_served(
+        self, ada: Any, note: Note, row: bool
+    ) -> None:
+        view = form_view(keyed_entry_spec(Keywords(capped), row=row), pool_seeds=TENANT_SEEDS)
+        route = {"pk": note.pk} if row else {}
+        page = get(view, ada, **route)
+        assert page.status_code == 200
+        assert page.context_data["form"].fields["count"].max_value == 3
+        # The cap only the keyword sets refuses the post, once, in its words.
+        refusal = post(view, ada, {"title": "Hi", "count": "4"}, **route)
+        assert (refusal.status_code, refused(refusal)) == (
+            400,
+            {"count": ["Ensure this value is less than or equal to 3."]},
+        )
+        assert post(view, ada, {"title": "Hi", "count": "2"}, **route).status_code == 302
+
+    def test_a_model_form_whose_init_needs_a_keyword_is_served(self, ada: Any, note: Note) -> None:
+        other = make_user("grace")
+        view = form_view(keyed_note_spec(Keywords(owned)), pool_seeds=TENANT_SEEDS)
+        page = get(view, ada, pk=note.pk)
+        assert page.status_code == 200
+        assert list(page.context_data["form"].fields["assignee"].queryset) == [ada]
+        refusal = post(view, ada, {"title": "Hi", "assignee": other.pk}, pk=note.pk)
+        assert refusal.status_code == 400
+        assert list(refused(refusal)) == ["assignee"]
+        ok = post(view, ada, {"title": "Hi", "assignee": ada.pk}, pk=note.pk)
+        assert ok.status_code == 302
+
+    def test_the_page_and_the_validator_are_handed_the_same_keywords(
+        self, ada: Any, note: Note
+    ) -> None:
+        keywords = Keywords(owned)
+        service = ContextService()
+        view = form_view(keyed_note_spec(keywords, service), pool_seeds=TENANT_SEEDS)
+        page = get(view, ada, pk=note.pk)
+        # A post the Validator's clean() refuses, then one it takes: each asks
+        # ``form_kwargs`` twice, the page's form first and the Validator's after.
+        assert post(view, ada, {"title": "shut"}, pk=note.pk).status_code == 400
+        assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
+        calls = keywords.calls
+        assert len(calls) == 5
+        assert {(each["user"], each["tenant"], each["instance"]) for each in calls} == {
+            (ada, "tenant-of-ada", note)
+        }
+        # The row itself on both sides, never the copy the page's ModelForm edits.
+        assert calls[1]["instance"] is calls[2]["instance"]
+        assert calls[3]["instance"] is calls[4]["instance"]
+        assert page.context_data["form"].instance is not calls[0]["instance"]
+        # One call context per request, the one dispatch is handed too.
+        assert calls[1]["context"] is calls[2]["context"]
+        assert calls[3]["context"] is calls[4]["context"] is service.contexts[0]
+        assert calls[1]["context"] is not calls[3]["context"]
+
+    def test_a_post_whose_route_is_refused_is_built_as_no_row(self, ada: Any, note: Note) -> None:
+        # The target is never found, so the page's form is asked about none,
+        # rather than the marker of a target not yet looked for.
+        keywords = Keywords(owned)
+        view = form_view(keyed_note_spec(keywords), pool_seeds=TENANT_SEEDS)
+        response = post(view, ada, {"title": "Hi"}, pk="abc")
+        assert (response.status_code, refused(response)) == (400, {"__all__": [f"pk: {WHOLE}"]})
+        assert [each["instance"] for each in keywords.calls] == [None]
+
+    def test_an_initial_form_kwargs_answers_sits_under_the_row_s_values(
+        self, ada: Any, note: Note
+    ) -> None:
+        # A plain form on a row takes the row's values as its ``initial``, so
+        # one ``form_kwargs`` answers too is merged under them rather than
+        # passed twice: the disabled field the row never fills keeps it.
+        def initial(user: Any) -> Mapping[str, Any]:
+            return {"cap": 3, "initial": {"code": "K-9", "title": "Not the row's"}}
+
+        view = form_view(keyed_entry_spec(Keywords(initial), row=True), pool_seeds=TENANT_SEEDS)
+        page = get(view, ada, pk=note.pk)
+        assert page.context_data["form"].initial == {"code": "K-9", "title": "One"}
+
+
+def saved(*, instance: Any, data: dict[str, Any]) -> Any:
+    """An update writing what the Validator returned, and nothing it did not, onto the row."""
+    return update_from_input(instance, data)
+
+
+def partial_user_spec() -> ServiceSpec:
+    """``user_spec`` as a partial update, saving what was sent onto the user."""
+    return ServiceSpec(
+        service=saved,
+        permissions=OPEN,
+        validator=FormValidator(UserForm),
+        instance_selector_spec=SelectorSpec(
+            kind=SelectorKind.RETRIEVE, selector=user_by_pk, reads=PK
+        ),
+        partial=True,
+    )
+
+
+def partial_spec() -> ServiceSpec:
+    """A partial write validated by ``NoteTitleForm``, its title required on a whole call.
+
+    No checkbox or multi-select: the browser posts those whatever is ticked,
+    so neither is ever a field the post leaves out.
+    """
+    return entry_spec(validator=Watched(NoteTitleForm), partial=True)
+
+
+class TestAPartialPage:
+    """A ``partial`` spec's page: every field optional to the browser, and a blank one left alone."""
+
+    def test_a_partial_page_renders_no_required_attribute(self, ada: Any) -> None:
+        response = get(form_view(partial_spec()), ada).render()
+        assert b"required" not in field_tag(response, "title")
+        # The class is left as it was: only this form's own attribute changes.
+        assert NoteTitleForm.use_required_attribute is True
+
+    def test_a_whole_page_still_renders_it(self, ada: Any) -> None:
+        response = get(form_view(entry_spec(validator=Watched(NoteTitleForm))), ada).render()
+        assert b"required" in field_tag(response, "title")
+
+    def test_a_refused_partial_post_renders_no_required_attribute_either(self, ada: Any) -> None:
+        def busy(**pool: Any) -> None:
+            raise ServiceConflict("Busy.")
+
+        spec = ServiceSpec(
+            service=busy, permissions=OPEN, validator=Watched(NoteTitleForm), partial=True
+        )
+        response = post(form_view(spec), ada, {"remark": "Later"}).render()
+        assert response.status_code == 409
+        assert b"required" not in field_tag(response, "title")
+
+    def test_a_subset_is_posted_and_only_it_is_validated(self, ada: Any) -> None:
+        spec = partial_spec()
+        assert post(form_view(spec), ada, {"remark": "Later"}).status_code == 302
+        assert received(spec) == {"remark": "Later"}
+
+    def test_a_blank_field_leaves_the_row_s_value_as_it_was(self, ada: Any) -> None:
+        ada.first_name = "Ada"
+        ada.save()
+        response = post(
+            form_view(partial_user_spec()),
+            ada,
+            {"username": "countess", "first_name": ""},
+            pk=ada.pk,
+        )
+        assert response.status_code == 302
+        ada.refresh_from_db()
+        assert (ada.username, ada.first_name) == ("countess", "Ada")
+
+    def test_a_post_with_every_field_blank_dispatches(self, ada: Any) -> None:
+        spec = partial_spec()
+        response = post(form_view(spec), ada, {"title": "", "remark": "", "save": "Save"})
+        assert response.status_code == 302
+        assert received(spec) == {}
+
+    def test_a_shape_refusal_shows_no_word_about_a_field_left_blank(self, ada: Any) -> None:
+        # A blank field on a partial page is one the post leaves alone, so
+        # nothing beside the refusal says it is required.
+        spec = entry_spec(partial=True)
+        response = post(form_view(spec), ada, {"title": "", "count": "x"})
+        assert (response.status_code, refused(response)) == (400, {"count": [WHOLE]})
+        assert validated(spec) == 0
+
+    def test_a_checkbox_and_a_multi_select_are_always_sent(self, ada: Any) -> None:
+        # The browser posts neither when unticked or empty, and the form reads
+        # each as a value all the same, so neither is a field left out.
+        spec = entry_spec(partial=True)
+        assert post(form_view(spec), ada, {}).status_code == 302
+        assert received(spec) == {"urgent": False, "tags": []}
+
+    def test_a_ticked_clear_checkbox_clears_the_file(self, ada: Any) -> None:
+        spec = entry_spec(validator=Watched(CoverForm), partial=True)
+        response = post(form_view(spec), ada, {"cover-clear": "on"})
+        assert response.status_code == 302
+        assert received(spec) == {"cover": False}
+
+
+class TestASeedResolvedAtEachStep:
+    """A ``Grant`` carries no values, so each step naming a seed resolves it again."""
+
+    @pytest.mark.parametrize(
+        ("form_kwargs", "on_get", "on_post"),
+        [
+            (None, 3, 3),
+            (lambda *, tenant: {}, 4, 4),
+        ],
+        ids=["the-check-names-it", "the-check-and-the-form-name-it"],
+    )
+    def test_a_named_seed_is_resolved_at_each_step_that_names_it(
+        self, ada: Any, note: Note, form_kwargs: Any, on_get: int, on_post: int
+    ) -> None:
+        # GET: the class-level check, the target's lookup, the affordances'
+        # pool and the form's keywords; POST: the check, the lookup, the
+        # form's keywords and dispatch. A resolver answering a fresh object
+        # answers each step a different one.
+        resolved: list[object] = []
+
+        def fresh() -> object:
+            resolved.append(object())
+            return resolved[-1]
+
+        spec = row_spec(
+            permissions=[SeesTenant()],
+            validator=FormValidator(NoteTitleForm, form_kwargs=form_kwargs),
+        )
+        view = form_view(spec, pool_seeds=DEFAULT_POOL_SEEDS.extend(tenant=fresh))
+        assert get(view, ada, pk=note.pk).status_code == 200
+        assert len(resolved) == on_get
+        resolved.clear()
+        assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
+        assert len(resolved) == on_post
+        assert len({id(each) for each in resolved}) == on_post
+
+
+class SeesTheContext(PermissionCheck):
+    """Admits every principal and row, recording the call context each question is handed."""
+
+    def __init__(self) -> None:
+        self.contexts: list[tuple[str, Any]] = []
+
+    def has_permission(self, principal: Any, spec: Any, *, call_context: Any) -> bool:
+        self.contexts.append(("class", call_context))
+        return True
+
+    def has_object_permission(
+        self, principal: Any, spec: Any, obj: Any, *, call_context: Any
+    ) -> bool:
+        self.contexts.append(("object", call_context))
+        return True
+
+
+class TestOneCallContextPerRequest:
+    """Every kernel call the page makes for a request is handed the same dict."""
+
+    def test_the_checks_the_affordances_the_form_and_the_service_share_one_dict(
+        self, ada: Any, note: Note
+    ) -> None:
+        check = SeesTheContext()
+        asked: list[tuple[str, Any]] = []
+
+        def open_now(*, call_context: Any) -> bool:
+            asked.append(("affordance", call_context))
+            return True
+
+        def keywords(*, call_context: Any) -> Mapping[str, Any]:
+            asked.append(("form", call_context))
+            return {}
+
+        service = ContextService()
+        spec = row_spec(
+            permissions=[check],
+            validator=FormValidator(NoteTitleForm, form_kwargs=keywords),
+            affordances=[Affordance(code="open", reason="Open.", when=open_now)],
+        )
+        spec = dataclasses.replace(spec, service=service)
+        view = form_view(spec)
+        assert get(view, ada, pk=note.pk).status_code == 200
+        on_get = check.contexts + asked
+        # The class-level check, the row's check, both affordance questions
+        # and the form's keywords.
+        assert [name for name, _ in on_get] == [
+            "class",
+            "object",
+            "affordance",
+            "affordance",
+            "form",
+        ]
+        assert len({id(context) for _, context in on_get}) == 1
+        check.contexts.clear()
+        asked.clear()
+        assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
+        on_post = [*check.contexts, *asked, ("service", service.contexts[0])]
+        assert {name for name, _ in on_post} == {"class", "object", "form", "affordance", "service"}
+        assert len({id(context) for _, context in on_post}) == 1
+        assert on_get[0][1] is not on_post[0][1]
+
+
+@dataclasses.dataclass
+class NoteOut:
+    """A note as the page names it: its title the label, its key a handle, its owner plumbing."""
+
+    pk: Annotated[int, FieldMarking.handle()]
+    title: Annotated[str, FieldMarking.label()]
+    archived: bool
+    owner_id: Annotated[int, FieldMarking.hidden()]
+
+
+@dataclasses.dataclass
+class AuthorOut:
+    pk: Annotated[int, FieldMarking.handle()]
+    name: str
+
+
+@dataclasses.dataclass
+class BookOut:
+    """A book whose author is a nested object, with a handle of its own."""
+
+    title: Annotated[str, FieldMarking.label()]
+    author: AuthorOut
+
+
+@dataclasses.dataclass
+class Ref:
+    pk: Annotated[int, FieldMarking.handle()]
+    name: str
+
+
+@dataclasses.dataclass
+class Shelf:
+    """A row that is no model's, holding an array of objects and an object that may be null."""
+
+    name: Annotated[str, FieldMarking.label()]
+    books: list[Ref]
+    lead: Ref | None
+
+
+@dataclasses.dataclass
+class NestedOnlyBookOut:
+    """An Output marking none of its own fields, only its author's key."""
+
+    title: str
+    author: AuthorOut
+
+
+@dataclasses.dataclass
+class UnmarkedBookOut:
+    """An Output with choices whose displays differ from their values, and no marking."""
+
+    title: str
+    status: Status
+
+
+class Shelved(PermissionCheck):
+    """Admits every principal and every set, recording each set the scope check is asked about."""
+
+    def __init__(self, *, admits: bool = True) -> None:
+        self.sets: list[Any] = []
+        self.admits = admits
+
+    message = "No set may be shelved here."
+
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        return True
+
+    def has_scope_permission(self, principal: Any, spec: Any, target: Any) -> bool:
+        self.sets.append(target)
+        return self.admits
+
+
+def notes_of(principal: Any) -> Any:
+    return Note.objects.filter(owner=principal).order_by("pk")
+
+
+def set_spec(selector: Any = None, **kwargs: Any) -> ServiceSpec:
+    """``entry_spec`` on the set of notes ``selector`` resolves: the signed-in principal's by default."""
+    return entry_spec(
+        collection_selector_spec=SelectorSpec(
+            kind=SelectorKind.LIST,
+            selector=selector or (lambda *, user: notes_of(user)),
+        ),
+        **kwargs,
+    )
+
+
+def shown_view(spec: ServiceSpec, **initkwargs: Any) -> Any:
+    """``form_view``, displaying its target."""
+    return form_view(spec, display_target=True, **initkwargs)
+
+
+def notes(owner: Any, count: int) -> list[Note]:
+    return [Note.objects.create(owner=owner, title=f"Note {each}") for each in range(count)]
+
+
+class TestTheTargetInTheContext:
+    """The row or set the operation acts on is in the context, and nothing for a create."""
+
+    def test_an_update_page_carries_its_row(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        context = get(form_view(row_spec()), ada, pk=note.pk).context_data
+        assert isinstance(context["target"], Note)
+        assert context["target"].pk == note.pk
+
+    def test_a_create_carries_no_target(self, ada: Any) -> None:
+        context = get(form_view(entry_spec()), ada).context_data
+        assert "target" not in context
+        assert "target_count" not in context
+        assert "target_counted_at" not in context
+
+    def test_a_missing_row_allow_none_lets_through_carries_no_target(self, ada: Any) -> None:
+        spec = entry_spec(
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=note_by_pk, reads=PK, allow_none=True
+            )
+        )
+        assert "target" not in get(form_view(spec), ada, pk=404).context_data
+
+    def test_a_refused_post_carries_its_row(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        response = post(form_view(row_spec()), ada, {"title": "far too long"}, pk=note.pk)
+        assert response.status_code == 400
+        assert response.context_data["target"].pk == note.pk
+
+    def test_a_post_whose_route_is_refused_carries_no_target(self, ada: Any) -> None:
+        # The route never found a row, so there is none to show beside the
+        # refusal, and the marker of one not looked for is never handed on.
+        response = post(form_view(row_spec()), ada, {"title": "Hi"}, pk="first")
+        assert response.status_code == 400
+        assert "target" not in response.context_data
+
+    def test_the_fragment_carries_the_target_too(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        view = form_view(row_spec(), fragment_template_name=TEMPLATE)
+        request = signed_in(FACTORY.get("/", headers={"HX-Request": "true"}), ada)
+        assert view(request, pk=note.pk).context_data["target"].pk == note.pk
+
+
+class TestABulkPage:
+    """A ``collection_selector_spec``'s page shows how many rows its set holds, and when it counted."""
+
+    def test_the_set_and_its_count_and_when_it_was_counted(self, ada: Any) -> None:
+        notes(ada, 3)
+        notes(make_user("bob"), 2)
+        before = timezone.now()
+        context = get(form_view(set_spec()), ada).context_data
+        after = timezone.now()
+        assert [note.title for note in context["target"]] == ["Note 0", "Note 1", "Note 2"]
+        assert context["target_count"] == 3
+        assert before <= context["target_counted_at"] <= after
+
+    def test_an_empty_set_is_no_refusal(self, ada: Any) -> None:
+        check = Shelved()
+        response = get(form_view(set_spec(permissions=[check])), ada)
+        assert response.status_code == 200
+        assert response.context_data["target_count"] == 0
+        assert [list(each) for each in check.sets] == [[]]
+
+    def test_an_empty_set_is_still_asked_the_scope_check(self, ada: Any) -> None:
+        spec = set_spec(permissions=[Shelved(admits=False)])
+        with pytest.raises(PermissionDenied, match=r"^No set may be shelved here\.$"):
+            get(form_view(spec), ada)
+
+    def test_it_counts_without_loading_a_row(self, ada: Any) -> None:
+        notes(ada, 12)
+        view = form_view(set_spec())
+        with CaptureQueriesContext(connection) as queries:
+            context = get(view, ada).context_data
+        assert context["target_count"] == 12
+        # One query, a COUNT, and the set handed to the template still unread.
+        assert len(queries) == 1
+        assert "COUNT(" in queries[0]["sql"].upper()
+        assert context["target"]._result_cache is None
+
+    def test_a_set_answered_as_a_list_is_counted_as_one(self, ada: Any) -> None:
+        notes(ada, 2)
+        spec = set_spec(selector=lambda *, user: list(notes_of(user)))
+        context = get(form_view(spec), ada).context_data
+        assert context["target_count"] == 2
+
+    def test_a_refused_post_counts_again(self, ada: Any) -> None:
+        notes(ada, 2)
+        view = form_view(set_spec())
+        assert get(view, ada).context_data["target_count"] == 2
+        notes(ada, 1)
+        before = timezone.now()
+        response = post(view, ada, {"title": "far too long"})
+        assert response.status_code == 400
+        assert response.context_data["target_count"] == 3
+        assert response.context_data["target_counted_at"] >= before
+
+    def test_a_refused_post_counts_the_set_as_it_is_now_not_as_the_service_read_it(
+        self, ada: Any
+    ) -> None:
+        # The service reads the set it was handed, filling its result cache,
+        # then changes what the set holds before it refuses. Not atomic, so
+        # the change stays, and the page counts the set as it is now rather
+        # than reading the cache the service filled.
+        notes(ada, 2)
+
+        def service(*, collection: Any, **pool: Any) -> None:
+            assert len(collection) == 2
+            Note.objects.create(owner=collection[0].owner, title="Added")
+            raise ServiceError("Not now.")
+
+        spec = dataclasses.replace(set_spec(atomic=False), service=service)
+        response = post(form_view(spec), ada, {"title": "Hi"})
+        assert response.status_code == 422
+        assert response.context_data["target_count"] == 3
+
+    def test_a_successful_post_counts_nothing(self, ada: Any) -> None:
+        notes(ada, 2)
+        view = form_view(set_spec())
+        with CaptureQueriesContext(connection) as queries:
+            assert post(view, ada, {"title": "Hi"}).status_code == 302
+        assert not [query for query in queries if "COUNT(" in query["sql"].upper()]
+
+    def test_an_instance_page_carries_no_count(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        context = get(form_view(row_spec()), ada, pk=note.pk).context_data
+        assert "target_count" not in context
+        assert "target_counted_at" not in context
+
+
+class TestTheTargetDisplay:
+    """The target projected for a person through the Output's ``FieldMarking``s."""
+
+    def test_a_row_is_named_by_its_label_with_no_handle_and_nothing_hidden(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        spec = row_spec(presenter=DataclassPresenter(NoteOut))
+        context = get(shown_view(spec), ada, pk=note.pk).context_data
+        assert context["target_display"] == {
+            "label": "Ada's",
+            "fields": {"title": "Ada's", "archived": False},
+            "pairs": tuple({"title": "Ada's", "archived": False}.items()),
+        }
+        # The raw row stays beside it.
+        assert context["target"].pk == note.pk
+
+    def test_a_nested_handle_is_never_shown(self, ada: Any) -> None:
+        author = BookAuthor.objects.create(name="Le Guin")
+        book = Book.objects.create(author=author, title="Lathe", price=Decimal("9.50"))
+        spec = entry_spec(
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE,
+                selector=lambda *, pk: Book.objects.filter(pk=pk),
+                reads=PK,
+            ),
+            presenter=DataclassPresenter(BookOut),
+        )
+        display = get(shown_view(spec), ada, pk=book.pk).context_data["target_display"]
+        assert display == {
+            "label": "Lathe",
+            "fields": {"title": "Lathe", "author": {"name": "Le Guin"}},
+            "pairs": tuple({"title": "Lathe", "author": {"name": "Le Guin"}}.items()),
+        }
+
+    def test_a_row_with_no_label_has_none_in_its_display(self, ada: Any) -> None:
+        @dataclasses.dataclass
+        class Untitled:
+            pk: Annotated[int, FieldMarking.handle()]
+            title: str
+
+        note = Note.objects.create(owner=ada, title="Ada's")
+        spec = row_spec(presenter=DataclassPresenter(Untitled))
+        display = get(shown_view(spec), ada, pk=note.pk).context_data["target_display"]
+        assert display == {"fields": {"title": "Ada's"}, "pairs": tuple({"title": "Ada's"}.items())}
+
+    def test_each_row_of_a_set_is_projected_up_to_the_bound(self, ada: Any) -> None:
+        notes(ada, 5)
+        view = shown_view(set_spec(presenter=DataclassPresenter(NoteOut)), target_display_limit=2)
+        with CaptureQueriesContext(connection) as queries:
+            context = get(view, ada).context_data
+        assert context["target_count"] == 5
+        assert [row["label"] for row in context["target_display"]] == ["Note 0", "Note 1"]
+        assert context["target_display"][0] == {
+            "label": "Note 0",
+            "fields": {"title": "Note 0", "archived": False},
+            "pairs": tuple({"title": "Note 0", "archived": False}.items()),
+        }
+        # The count, then the bounded rows in one query: never the whole set.
+        assert len(queries) == 2
+        assert "COUNT(" in queries[0]["sql"].upper()
+        assert "LIMIT 2" in queries[1]["sql"].upper()
+
+    def test_the_default_bound(self, ada: Any) -> None:
+        assert SpecFormView.target_display_limit == 10
+        notes(ada, SpecFormView.target_display_limit + 1)
+        view = shown_view(set_spec(presenter=DataclassPresenter(NoteOut)))
+        context = get(view, ada).context_data
+        assert len(context["target_display"]) == SpecFormView.target_display_limit
+        assert context["target_count"] == SpecFormView.target_display_limit + 1
+
+    def test_a_set_answered_as_a_list_is_projected_up_to_the_bound(self, ada: Any) -> None:
+        notes(ada, 3)
+        spec = set_spec(
+            selector=lambda *, user: list(notes_of(user)), presenter=DataclassPresenter(NoteOut)
+        )
+        context = get(shown_view(spec, target_display_limit=2), ada).context_data
+        assert [row["label"] for row in context["target_display"]] == ["Note 0", "Note 1"]
+
+    def test_an_empty_set_displays_no_row(self, ada: Any) -> None:
+        context = get(shown_view(set_spec(presenter=DataclassPresenter(NoteOut))), ada).context_data
+        assert context["target_display"] == []
+        assert context["target_count"] == 0
+
+    def test_the_rows_are_presented_in_one_call(self, ada: Any) -> None:
+        notes(ada, 3)
+        presenter = DataclassPresenter(NoteOut)
+        calls: list[int] = []
+        presented_rows = presenter.presented_rows
+
+        def counted(rows: Any, context: Any) -> Any:
+            calls.append(len(rows))
+            return presented_rows(rows, context)
+
+        presenter.presented_rows = counted
+        get(shown_view(set_spec(presenter=presenter)), ada)
+        assert calls == [3]
+
+    @pytest.mark.parametrize(("method", "more"), [("get", 0), ("refused-post", 1)])
+    def test_a_display_resolves_a_seed_once_more_only_on_a_refused_post(
+        self, ada: Any, method: str, more: int
+    ) -> None:
+        # GET's presenter reads the pool the affordances were asked on; a
+        # refused post builds one for it, and only where a display is shown.
+        resolved: list[int] = []
+
+        def tenant(*, user: Any) -> str:
+            resolved.append(1)
+            return "acme"
+
+        seeds = DEFAULT_POOL_SEEDS.extend(tenant=tenant)
+        note = Note.objects.create(owner=ada, title="Ada's")
+
+        def answered(*, display_target: bool) -> int:
+            resolved.clear()
+            spec = row_spec(presenter=DataclassPresenter(NoteOut))
+            view = form_view(spec, pool_seeds=seeds, display_target=display_target)
+            if method == "get":
+                get(view, ada, pk=note.pk)
+            else:
+                post(view, ada, {"title": "far too long"}, pk=note.pk)
+            return len(resolved)
+
+        assert answered(display_target=True) == answered(display_target=False) + more
+
+    def test_an_output_selector_s_presenter_drives_it(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        spec = row_spec(
+            output_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE,
+                selector=lambda *, result: result,
+                presenter=DataclassPresenter(NoteOut),
+            )
+        )
+        display = get(shown_view(spec), ada, pk=note.pk).context_data["target_display"]
+        assert display["label"] == "Ada's"
+
+    def test_an_output_selector_declaring_affordances_still_renders(self, ada: Any) -> None:
+        # The kernel's ``present`` adds each row's answers, which only a row
+        # read through that selector carries; the target was read through the
+        # target selector, so the page presents it without them.
+        note = Note.objects.create(owner=ada, title="Ada's")
+        archivable = ServiceSpec(
+            service=Record(),
+            permissions=OPEN,
+            affordances=[Affordance(code="live", reason="Live.", when=Q(archived=False))],
+        )
+        spec = row_spec(
+            output_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE,
+                selector=lambda *, result: result,
+                presenter=DataclassPresenter(NoteOut),
+                affordances={"archive": archivable},
+            )
+        )
+        response = get(shown_view(spec), ada, pk=note.pk)
+        assert response.status_code == 200
+        assert response.context_data["target_display"]["label"] == "Ada's"
+
+    def test_a_refused_post_carries_the_display(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        spec = row_spec(presenter=DataclassPresenter(NoteOut))
+        response = post(shown_view(spec), ada, {"title": "far too long"}, pk=note.pk)
+        assert response.status_code == 400
+        assert response.context_data["target_display"]["label"] == "Ada's"
+
+    def test_a_handle_inside_an_array_and_beside_a_null_is_never_shown(self, ada: Any) -> None:
+        shelf = Shelf(name="Poetry", books=[Ref(1, "Lathe"), Ref(2, "Earthsea")], lead=None)
+        spec = entry_spec(
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=lambda *, pk: shelf, reads=PK
+            ),
+            presenter=DataclassPresenter(Shelf),
+        )
+        display = get(shown_view(spec), ada, pk=1).context_data["target_display"]
+        assert display == {
+            "label": "Poetry",
+            "fields": {
+                "name": "Poetry",
+                "books": [{"name": "Lathe"}, {"name": "Earthsea"}],
+                "lead": None,
+            },
+            "pairs": tuple(
+                {
+                    "name": "Poetry",
+                    "books": [{"name": "Lathe"}, {"name": "Earthsea"}],
+                    "lead": None,
+                }.items()
+            ),
+        }
+
+    @pytest.mark.parametrize("method", ["get", "refused-post"])
+    def test_the_presenter_is_handed_the_context_dispatch_hands_it(
+        self, ada: Any, method: str
+    ) -> None:
+        # The principal, the target, the request's one call context, and the
+        # call's seeds as ``ambient``, so a presenter written for dispatch -
+        # one building a link from a seed, say - reads what it reads there.
+        seen: list[Any] = []
+
+        class Seeing(DataclassPresenter):
+            def presented(self, value: Any, context: Any) -> Any:
+                seen.append(context)
+                return super().presented(value, context)
+
+        class Asked(PermissionCheck):
+            def has_permission(self, principal: Any, spec: Any, call_context: Any) -> bool:
+                seen.append(call_context)
+                return True
+
+        note = Note.objects.create(owner=ada, title="Ada's")
+        spec = row_spec(permissions=[Asked()], presenter=Seeing(NoteOut))
+        view = shown_view(spec, pool_seeds=TENANT_SEEDS)
+        if method == "get":
+            assert get(view, ada, pk=note.pk).status_code == 200
+        else:
+            assert post(view, ada, {"title": "far too long"}, pk=note.pk).status_code == 400
+        call_context, presented = seen
+        assert presented.principal == ada
+        assert presented.target.pk == note.pk
+        assert presented.call_context is call_context
+        assert presented.ambient["tenant"] == "tenant-of-ada"
+        assert presented.ambient["user"] == ada
+
+
+class Unpresentable(DataclassPresenter):
+    """A presenter that must never be asked: the page did not opt in to displaying its target."""
+
+    def presented(self, value: Any, context: Any) -> Any:
+        raise AssertionError("presented")
+
+    def presented_rows(self, rows: Any, context: Any) -> Any:
+        raise AssertionError("presented_rows")
+
+
+def book_spec(out: type) -> ServiceSpec:
+    return entry_spec(
+        instance_selector_spec=SelectorSpec(
+            kind=SelectorKind.RETRIEVE,
+            selector=lambda *, pk: Book.objects.filter(pk=pk),
+            reads=PK,
+        ),
+        presenter=DataclassPresenter(out),
+    )
+
+
+@dataclasses.dataclass
+class TwoLabelsOut:
+    title: Annotated[str, FieldMarking.label()]
+    archived: Annotated[bool, FieldMarking.label()]
+
+
+class TestDisplayingTheTargetIsOptIn:
+    """``display_target`` turns the display on, and ``as_view()`` checks the Output it reads."""
+
+    def test_it_is_off_by_default(self) -> None:
+        assert SpecFormView.display_target is False
+
+    def test_a_page_not_opted_in_never_presents_its_target(self, ada: Any) -> None:
+        # A marked Output describes the operation's result, which need not be
+        # the target, so presenting the target unasked could fail a page that
+        # served before.
+        note = Note.objects.create(owner=ada, title="Ada's")
+        row = row_spec(presenter=Unpresentable(NoteOut))
+        context = get(form_view(row), ada, pk=note.pk).context_data
+        assert context["target"].pk == note.pk
+        assert "target_display" not in context
+        refused = post(form_view(row), ada, {"title": "far too long"}, pk=note.pk)
+        assert refused.status_code == 400
+        assert "target_display" not in refused.context_data
+        bulk = get(form_view(set_spec(presenter=Unpresentable(NoteOut))), ada).context_data
+        assert bulk["target_count"] == 1
+        assert "target_display" not in bulk
+
+    def test_a_page_not_opted_in_reads_no_row_to_display(self, ada: Any) -> None:
+        notes(ada, 3)
+        view = form_view(set_spec(presenter=DataclassPresenter(NoteOut)))
+        with CaptureQueriesContext(connection) as queries:
+            get(view, ada)
+        assert len(queries) == 1
+        assert "COUNT(" in queries[0]["sql"].upper()
+
+    def test_a_spec_with_no_output_is_refused(self) -> None:
+        with pytest.raises(
+            ImproperlyConfigured,
+            match=r"^SpecFormView displays its target through its spec.s Output, and the spec of "
+            r"Record declares none",
+        ):
+            shown_view(row_spec())
+
+    def test_the_attribute_is_read_on_a_subclass_too(self) -> None:
+        class Shown(SpecFormView):
+            display_target = True
+
+        with pytest.raises(ImproperlyConfigured, match=r"^Shown displays its target"):
+            Shown.as_view(spec=row_spec(), template_name=TEMPLATE, success_url="/done/")
+
+    @pytest.mark.parametrize(
+        "out",
+        [UnmarkedBookOut, NestedOnlyBookOut],
+        ids=["choices-alone", "nested-only"],
+    )
+    def test_an_output_marking_none_of_its_own_fields_is_refused(self, out: type) -> None:
+        # Choices alone would be spoken for an agent, and a nested marking
+        # names the nested object; the row's own markings drive its display.
+        with pytest.raises(
+            ImproperlyConfigured, match=r"marks none of its own fields with a FieldMarking"
+        ):
+            shown_view(book_spec(out))
+
+    def test_an_output_the_projection_refuses_is_refused_naming_the_view(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match=r"^SpecFormView cannot display") as raised:
+            shown_view(row_spec(presenter=DataclassPresenter(TwoLabelsOut)))
+        assert "both 'title' and 'archived' are marked" in str(raised.value)
+        assert isinstance(raised.value.__cause__, ImproperlyConfigured)
+
+    def test_two_labels_are_no_refusal_with_the_display_off(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        spec = row_spec(presenter=DataclassPresenter(TwoLabelsOut))
+        assert get(form_view(spec), ada, pk=note.pk).status_code == 200
+
+
+class TestTheDisplayLimit:
+    @pytest.mark.parametrize("limit", ["3", 2.5, None, True, False, 0, -1], ids=repr)
+    def test_anything_but_a_positive_int_is_refused(self, limit: Any) -> None:
+        with pytest.raises(
+            ImproperlyConfigured,
+            match=rf"^SpecFormView.target_display_limit must be a positive int; got {re.escape(repr(limit))}\.$",
+        ):
+            form_view(entry_spec(), target_display_limit=limit)
+
+    def test_a_subclass_s_limit_is_checked_too(self) -> None:
+        class Unbounded(SpecFormView):
+            target_display_limit = 0
+
+        with pytest.raises(ImproperlyConfigured, match=r"^Unbounded.target_display_limit"):
+            Unbounded.as_view(spec=entry_spec(), template_name=TEMPLATE, success_url="/done/")
+
+    def test_one_is_the_smallest_bound(self, ada: Any) -> None:
+        notes(ada, 2)
+        view = shown_view(set_spec(presenter=DataclassPresenter(NoteOut)), target_display_limit=1)
+        assert len(get(view, ada).context_data["target_display"]) == 1
+
+
+ASK = "3 notes match. Confirm to proceed."
+CONFIRM = {"confirmed": {"type": "boolean"}}
+
+
+class DeleteForm(forms.Form):
+    """A destructive operation's form: a value of its own, and the confirmation it declares."""
+
+    reason = forms.CharField(required=False)
+    confirmed = forms.BooleanField(required=False)
+
+
+class Confirming:
+    """A service that asks until it is confirmed, recording what each call was validated into."""
+
+    def __init__(self, schema: Any = CONFIRM, *, always: bool = False) -> None:
+        self.schema = schema
+        self.always = always
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(self, *, data: dict[str, Any], **pool: Any) -> None:
+        self.calls.append(dict(data))
+        if self.always or not data["confirmed"]:
+            raise AdditionalInputRequired(ASK, schema=self.schema)
+
+
+def confirm_spec(service: Any = None, **kwargs: Any) -> ServiceSpec:
+    kwargs.setdefault("permissions", OPEN)
+    return ServiceSpec(
+        service=Confirming() if service is None else service,
+        validator=FormValidator(DeleteForm),
+        **kwargs,
+    )
+
+
+def confirm_view(spec: ServiceSpec, **attributes: Any) -> Any:
+    """A page holding ``confirmed`` back, set as a class attribute as a host's subclass sets it."""
+    attributes = {
+        "template_name": TEMPLATE,
+        "success_url": "/done/",
+        "asked_fields": ("confirmed",),
+        **attributes,
+    }
+    return type("Confirm", (SpecFormView,), attributes).as_view(spec=spec)
+
+
+def shows(response: Any, name: str) -> bool:
+    """Whether the rendered page carries the field ``name``: its input, and its place in the form."""
+    response.render()
+    rendered = f'name="{name}"'.encode() in response.content
+    assert rendered == (name in response.context_data["form"].fields)
+    return rendered
+
+
+class TestTheConfirmationPage:
+    """``AdditionalInputRequired`` rendered: the bound form again, the fields it asks for revealed."""
+
+    def test_get_holds_the_asked_field_back(self, ada: Any) -> None:
+        response = get(confirm_view(confirm_spec()), ada)
+        assert response.status_code == 200
+        assert not shows(response, "confirmed")
+        assert shows(response, "reason")
+        assert "requested_input" not in response.context_data
+
+    def test_a_post_that_is_asked_reveals_it_at_the_maps_status(self, ada: Any) -> None:
+        response = post(confirm_view(confirm_spec()), ada, {"reason": "Tidy", "save": "Save"})
+        assert response.status_code == 422
+        assert shows(response, "confirmed")
+        # Every value posted is kept, so the confirming post carries them all.
+        assert b'name="reason" value="Tidy"' in response.content
+        assert refused(response) == {"__all__": [ASK]}
+        asked = response.context_data["requested_input"]
+        assert (asked["message"], asked["schema"]) == (ASK, CONFIRM)
+        assert [field.name for field in asked["fields"]] == ["confirmed"]
+
+    def test_the_first_post_answers_no(self, ada: Any) -> None:
+        service = Confirming()
+        post(confirm_view(confirm_spec(service)), ada, {"reason": "Tidy"})
+        # An absent box cleans to False, so a box never shown never answers.
+        assert service.calls == [{"reason": "Tidy", "confirmed": False}]
+
+    def test_the_confirming_post_runs_with_every_value(self, ada: Any) -> None:
+        service = Confirming()
+        view = confirm_view(confirm_spec(service))
+        response = post(view, ada, {"reason": "Tidy", "confirmed": "on", "save": "Save"})
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert service.calls == [{"reason": "Tidy", "confirmed": True}]
+
+    def test_a_re_ask_is_never_ticked_from_the_post(self, ada: Any) -> None:
+        # Asked again after a yes - the set it counted moved, say - the box is
+        # shown empty, so one click never answers a question nobody read.
+        view = confirm_view(confirm_spec(Confirming(always=True)))
+        response = post(view, ada, {"reason": "Tidy", "confirmed": "on"})
+        assert response.status_code == 422
+        assert shows(response, "confirmed")
+        assert b"checked" not in field_tag(response, "confirmed")
+        assert b'name="reason" value="Tidy"' in response.content
+
+    def test_a_multi_select_keeps_every_value_it_posted(self, ada: Any) -> None:
+        # The posted values are copied to clear the box, and a copy of a
+        # request's ``POST`` keeps each value of a key, where a dict keeps one.
+        spec = raising(AdditionalInputRequired(ASK, schema={"urgent": {"type": "boolean"}}))
+        view = confirm_view(spec, asked_fields=("urgent",))
+        response = post(view, ada, {"title": "Hi", "urgent": "on", "tags": ["home", "work"]})
+        assert shows(response, "urgent")
+        assert b"checked" not in field_tag(response, "urgent")
+        assert response.context_data["form"]["tags"].value() == ["home", "work"]
+
+    @pytest.mark.parametrize(
+        "exc",
+        [ServiceError("Moved."), ServiceConflict("Moved."), ServiceValidationError("Moved.")],
+        ids=["service-error", "conflict", "service-validation-error"],
+    )
+    def test_any_other_refusal_holds_it_back(self, ada: Any, exc: Exception) -> None:
+        response = post(confirm_view(confirm_spec(raising_service(exc))), ada, {"reason": "Tidy"})
+        assert refused(response) == {"__all__": ["Moved."]}
+        assert not shows(response, "confirmed")
+        assert "requested_input" not in response.context_data
+
+    def test_a_held_field_a_refusal_names_is_shown_with_it(self, ada: Any) -> None:
+        # Its error would otherwise be placed on a field nobody can see.
+        exc = ServiceValidationError({"confirmed": ["Tick it to go on."]})
+        response = post(confirm_view(confirm_spec(raising_service(exc))), ada, {})
+        assert refused(response) == {"confirmed": ["Tick it to go on."]}
+        assert shows(response, "confirmed")
+        assert b"Tick it to go on." in response.content
+
+    def test_a_question_with_no_schema_reveals_nothing(self, ada: Any) -> None:
+        response = post(confirm_view(confirm_spec(Confirming(schema=None))), ada, {})
+        assert response.status_code == 422
+        assert not shows(response, "confirmed")
+        assert response.context_data["requested_input"] == {
+            "message": ASK,
+            "schema": None,
+            "fields": [],
+        }
+
+    def test_a_key_no_field_declares_is_asked_by_its_message_alone(self, ada: Any) -> None:
+        # A read the spec declares passes the kernel's check, and the page
+        # builds no widget from a schema, so nothing is revealed for it.
+        schema = {"ack": {"type": "boolean"}}
+        spec = confirm_spec(
+            Confirming(schema=schema), reads=Parameters.of(Parameter("ack", "boolean"))
+        )
+        response = post(confirm_view(spec), ada, {})
+        assert (response.status_code, refused(response)) == (422, {"__all__": [ASK]})
+        assert not shows(response, "confirmed")
+        assert response.context_data["requested_input"]["fields"] == []
+
+    def test_an_ordinary_field_asked_for_keeps_its_posted_value(self, ada: Any) -> None:
+        schema = {"reason": {"type": "string"}}
+        response = post(
+            confirm_view(confirm_spec(Confirming(schema=schema))), ada, {"reason": "Tidy"}
+        )
+        assert [field.name for field in response.context_data["requested_input"]["fields"]] == [
+            "reason"
+        ]
+        assert not shows(response, "confirmed")
+        assert b'name="reason" value="Tidy"' in response.content
+
+    def test_its_fields_are_in_the_schema_s_order(self, ada: Any) -> None:
+        # The reverse of the form's, so the order read is the schema's.
+        schema = {"confirmed": {"type": "boolean"}, "reason": {"type": "string"}}
+        response = post(confirm_view(confirm_spec(Confirming(schema=schema))), ada, {})
+        assert shows(response, "confirmed")
+        assert [field.name for field in response.context_data["requested_input"]["fields"]] == [
+            "confirmed",
+            "reason",
+        ]
+
+    def test_the_confirmation_counts_the_set_again(self, ada: Any) -> None:
+        # The count is a time of check: the page that asks says what it found
+        # when the post that asked was made, not what the page's GET counted.
+        notes(ada, 2)
+        spec = confirm_spec(
+            collection_selector_spec=SelectorSpec(
+                kind=SelectorKind.LIST, selector=lambda *, user: notes_of(user)
+            )
+        )
+        view = confirm_view(spec)
+        counted = get(view, ada).context_data
+        assert counted["target_count"] == 2
+        notes(ada, 1)
+        response = post(view, ada, {"reason": "Tidy"})
+        context = response.context_data
+        assert "requested_input" in context
+        assert context["target_count"] == 3
+        assert context["target_counted_at"] > counted["target_counted_at"]
+
+
+def raising_service(exc: Exception) -> Any:
+    def service(**pool: Any) -> None:
+        raise exc
+
+    return service
+
+
+class TestTheQuestionIsChecked:
+    """A schema the kernel's ``check_requested_input`` refuses is raised, never rendered."""
+
+    @pytest.mark.parametrize(
+        ("schema", "named"),
+        [
+            ({"undeclared": {"type": "boolean"}}, "'undeclared'"),
+            ({"confirmed": {"type": "string"}}, "'confirmed'"),
+            ({"confirmed": {"type": "object"}}, "'confirmed'"),
+        ],
+        ids=["undeclared", "a-type-the-field-refuses", "unrenderable"],
+    )
+    @pytest.mark.parametrize("headers", [{}, HTMX], ids=["page", "fragment"])
+    def test_a_question_no_route_could_ask_is_raised(
+        self, ada: Any, schema: Any, named: str, headers: Mapping[str, str]
+    ) -> None:
+        view = confirm_view(confirm_spec(Confirming(schema=schema)))
+        with pytest.raises(ImproperlyConfigured, match=named):
+            hx_post(view, ada, {"reason": "Tidy"}, headers=headers)
+
+    def test_the_call_s_seeds_are_the_ones_it_reads(self, ada: Any) -> None:
+        # A reflected read is filled by the seed of its name, so an answer
+        # under that key would be dropped, and only the call's seeds say the
+        # seed is there: without them, the same spec is asked as any other.
+        def spec() -> ServiceSpec:
+            reads = Parameters.of(Parameter("ack", "boolean", reflected=True))
+            return confirm_spec(Confirming(schema={"ack": {"type": "boolean"}}), reads=reads)
+
+        assert post(confirm_view(spec()), ada, {}).status_code == 422
+        seeded = confirm_view(
+            spec(), get_pool_seeds=lambda self, request: PoolSeeds().extend(ack=lambda: None)
+        )
+        with pytest.raises(ImproperlyConfigured, match="a provider or a pool seed fills it"):
+            post(seeded, ada, {})
+
+    def test_the_map_s_order_decides_what_is_a_question(self, ada: Any) -> None:
+        # A refusal that is a dispatch refusal as well reads as its dispatch
+        # row, failed at 400, so it is no question: nothing is checked or
+        # revealed, and a schema no route could ask is never read.
+        class Both(DispatchError, AdditionalInputRequired): ...
+
+        exc = Both("Moved.")
+        exc.schema = {"undeclared": {"type": "boolean"}}
+        response = post(confirm_view(confirm_spec(raising_service(exc))), ada, {})
+        assert (response.status_code, refused(response)) == (400, {"__all__": ["Moved."]})
+        assert not shows(response, "confirmed")
+        assert "requested_input" not in response.context_data
+
+
+class TestTheConfirmationFragment:
+    """Under htmx the confirmation is the form fragment, at 200, in the target the form swaps."""
+
+    def test_it_is_the_form_fragment_in_place(self, ada: Any) -> None:
+        view = confirm_view(confirm_spec(), template_name=PAGE, fragment_template_name=FRAGMENT)
+        response = hx_post(view, ada, {"reason": "Tidy"})
+        assert (response.status_code, response.template_name) == (200, [FRAGMENT])
+        # No retarget and no reswap: it lands where the form was.
+        assert hx_headers(response) == {}
+        assert shows(response, "confirmed")
+        assert b"<html>" not in response.content
+        assert response.context_data["requested_input"]["message"] == ASK
+
+    def test_its_get_holds_the_field_back_too(self, ada: Any) -> None:
+        view = confirm_view(confirm_spec(), template_name=PAGE, fragment_template_name=FRAGMENT)
+        response = hx_get(view, ada)
+        assert response.template_name == [FRAGMENT]
+        assert not shows(response, "confirmed")
+
+    def test_the_page_and_the_fragment_carry_one_context(self, ada: Any) -> None:
+        def view() -> Any:
+            return confirm_view(confirm_spec(), template_name=PAGE, fragment_template_name=FRAGMENT)
+
+        page = post(view(), ada, {"reason": "Tidy"})
+        fragment = hx_post(view(), ada, {"reason": "Tidy"})
+        assert "requested_input" in page.context_data
+        assert set(fragment.context_data) == set(page.context_data)
+        assert refused(fragment) == refused(page)
+
+
+class TestAskedFields:
+    """``asked_fields`` is checked when the URLconf is imported."""
+
+    def test_it_may_be_passed_to_as_view(self, ada: Any) -> None:
+        view = SpecFormView.as_view(
+            spec=confirm_spec(),
+            template_name=TEMPLATE,
+            success_url="/done/",
+            asked_fields=("confirmed",),
+        )
+        assert not shows(get(view, ada), "confirmed")
+
+    def test_nothing_is_held_back_by_default(self, ada: Any) -> None:
+        assert shows(get(form_view(confirm_spec()), ada), "confirmed")
+
+    @pytest.mark.parametrize(
+        ("asked", "message"),
+        [
+            (
+                "confirmed",
+                "Confirm.asked_fields must be a tuple of the form's field names; got 'confirmed'.",
+            ),
+            (
+                ["confirmed"],
+                "Confirm.asked_fields must be a tuple of the form's field names; got ['confirmed'].",
+            ),
+            (
+                ("confirm",),
+                "Confirm.asked_fields names 'confirm', which DeleteForm does not declare.",
+            ),
+        ],
+        ids=["a-string", "a-list", "no-such-field"],
+    )
+    def test_anything_but_the_form_s_field_names_is_refused(self, asked: Any, message: str) -> None:
+        with pytest.raises(ImproperlyConfigured) as raised:
+            confirm_view(confirm_spec(), asked_fields=asked)
+        assert str(raised.value) == message
+
+    def test_a_required_field_is_refused(self) -> None:
+        # Held back, it is never posted, so every ordinary post would be refused.
+        with pytest.raises(ImproperlyConfigured) as raised:
+            confirm_view(entry_spec(), asked_fields=("title",))
+        assert str(raised.value) == (
+            "Confirm.asked_fields names 'title', which EntryForm requires: a field held back "
+            "until a question asks for it is absent from every other post, so it must be optional."
+        )
+
+    def test_a_disabled_field_is_refused(self) -> None:
+        # Never read from a post, so nobody could answer it either.
+        with pytest.raises(ImproperlyConfigured) as raised:
+            confirm_view(entry_spec(), asked_fields=("code",))
+        assert str(raised.value) == (
+            "Confirm.asked_fields names 'code', which EntryForm disables: "
+            "nobody posting the form could answer it."
+        )
+
+    def test_a_field_the_server_answers_for_is_refused(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as raised:
+            confirm_view(
+                confirm_spec(), server_arguments=ServerArguments(values={"confirmed": True})
+            )
+        assert str(raised.value) == (
+            "Confirm.asked_fields names 'confirmed', which the server answers for: "
+            "nobody posting the form could answer it."
+        )
+
+
+def committing(spec: ServiceSpec, **attributes: Any) -> Any:
+    """A page whose post commits only from its ``save`` button, set as a host's subclass sets it."""
+    attributes = {
+        "template_name": TEMPLATE,
+        "success_url": "/done/",
+        "commit_button": "save",
+        **attributes,
+    }
+    return type("Committing", (SpecFormView,), attributes).as_view(spec=spec)
+
+
+def triggered(name: str, **headers: str) -> dict[str, str]:
+    """An htmx request's headers, naming the element it was issued from."""
+    return {**HTMX, "HTTP_HX_TRIGGER_NAME": name, **headers}
+
+
+def never_dispatched(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Every call the view makes to dispatch, which a post that does not commit makes none of."""
+    calls: list[Any] = []
+    monkeypatch.setattr(views_utils, "dispatch", lambda *args, **kwargs: calls.append(kwargs))
+    return calls
+
+
+class ShelvedBookForm(forms.Form):
+    """A book by an author: the authors ``form_kwargs`` offers, and the books of the one posted."""
+
+    author = forms.ModelChoiceField(queryset=BookAuthor.objects.none())
+    book = forms.ModelChoiceField(queryset=Book.objects.none())
+
+    def __init__(self, *args: Any, authors: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fields["author"].queryset = authors
+        chosen = self.data.get(self.add_prefix("author"))
+        if chosen:
+            self.fields["book"].queryset = Book.objects.filter(author_id=chosen)
+
+
+def offered_authors(*, user: Any) -> Mapping[str, Any]:
+    return {"authors": BookAuthor.objects.exclude(name="Hidden")}
+
+
+class TestAPostThatDoesNotCommit:
+    """``commit_button``: a post without that button re-renders its form, and runs nothing."""
+
+    def test_a_page_that_names_no_button_commits_every_post(self, ada: Any) -> None:
+        # The default: whatever the post carries and whoever issued it, as before.
+        spec = entry_spec()
+        response = post(form_view(spec), ada, {"title": "Hi", "refresh": "Refresh"})
+        assert (response.status_code, response.url) == (302, "/done/")
+        response = hx_post(
+            fragmented(spec), ada, {"title": "Hi", "colour": "red"}, triggered("colour")
+        )
+        assert hx_headers(response) == {"HX-Redirect": "/done/"}
+        assert [call["data"]["title"] for call in spec.service.calls] == ["Hi", "Hi"]
+
+    def test_a_post_with_the_button_commits(self, ada: Any) -> None:
+        spec = entry_spec()
+        response = post(committing(spec), ada, {"title": "Hi", "save": "Save"})
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert received(spec)["title"] == "Hi"
+
+    def test_a_post_without_the_button_neither_dispatches_nor_validates(
+        self, ada: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls = never_dispatched(monkeypatch)
+        spec = entry_spec()
+        # A required title left out and a count no integer field reads: both
+        # refused by the form, and neither shown, since nothing was validated.
+        response = post(committing(spec), ada, {"count": "many", "refresh": "Refresh"}).render()
+        assert response.status_code == 200
+        form = response.context_data["form"]
+        assert form.is_bound
+        assert form.errors == {}
+        assert b"errorlist" not in response.content
+        assert REQUIRED.encode() not in response.content
+        assert WHOLE.encode() not in response.content
+        assert b'value="many"' in response.content
+        assert response.context_data["refreshed"] is True
+        assert calls == []
+        assert validated(spec) == 0
+        assert spec.service.calls == []
+
+    def test_an_htmx_post_without_it_is_the_form_fragment_at_200(self, ada: Any) -> None:
+        spec = entry_spec()
+        view = committing(spec, template_name=PAGE, fragment_template_name=FRAGMENT)
+        response = hx_post(view, ada, {"title": "Hi", "refresh": "Refresh"}).render()
+        assert response.status_code == 200
+        assert response.template_name == [FRAGMENT]
+        assert response.context_data["refreshed"] is True
+        assert b'value="Hi"' in response.content
+        assert varied_on(response) >= MODE_HEADERS
+        assert spec.service.calls == []
+
+    def test_a_trigger_naming_another_posted_control_does_not_commit(self, ada: Any) -> None:
+        # The button's name is in the data, put there by an inherited
+        # ``hx-vals`` say, but the request was issued by the colour picker.
+        spec = entry_spec()
+        data = {"title": "Hi", "colour": "red", "save": "Save"}
+        response = hx_post(fragmented(spec, commit_button="save"), ada, data, triggered("colour"))
+        assert response.status_code == 200
+        assert response.context_data["refreshed"] is True
+        assert spec.service.calls == []
+
+    def test_a_trigger_that_is_the_button_itself_commits(self, ada: Any) -> None:
+        # ``<button name="save" hx-post="">``: the header names it, and its value is posted.
+        spec = entry_spec()
+        data = {"title": "Hi", "save": "Save"}
+        response = hx_post(fragmented(spec, commit_button="save"), ada, data, triggered("save"))
+        assert hx_headers(response) == {"HX-Redirect": "/done/"}
+        assert received(spec)["title"] == "Hi"
+
+    def test_a_trigger_naming_the_form_commits(self, ada: Any) -> None:
+        # ``<form name="entry" hx-post="">`` submitted by its button: the
+        # header names the form, which is no key of the post.
+        spec = entry_spec()
+        data = {"title": "Hi", "save": "Save"}
+        response = hx_post(fragmented(spec, commit_button="save"), ada, data, triggered("entry"))
+        assert hx_headers(response) == {"HX-Redirect": "/done/"}
+        assert received(spec)["title"] == "Hi"
+
+    def test_an_encoded_trigger_name_is_read_decoded(self, ada: Any) -> None:
+        # htmx 2 encodes a name the browser refuses as a header, and says so.
+        spec = entry_spec()
+        data = {"title": "Hi", "grüppe": "a", "save": "Save"}
+        headers = triggered("gr%C3%BCppe", HTTP_HX_TRIGGER_NAME_URI_AUTOENCODED="true")
+        response = hx_post(fragmented(spec, commit_button="save"), ada, data, headers)
+        assert response.context_data["refreshed"] is True
+        assert spec.service.calls == []
+
+    def test_an_unencoded_trigger_name_is_read_as_sent(self, ada: Any) -> None:
+        # No flag, so a ``%`` in the name is the name's own.
+        spec = entry_spec()
+        data = {"title": "Hi", "a%41": "x", "save": "Save"}
+        response = hx_post(fragmented(spec, commit_button="save"), ada, data, triggered("a%41"))
+        assert response.context_data["refreshed"] is True
+        assert spec.service.calls == []
+
+    def test_an_encoded_flag_with_no_name_is_no_trigger(self, ada: Any) -> None:
+        spec = entry_spec()
+        headers = {**HTMX, "HTTP_HX_TRIGGER_NAME_URI_AUTOENCODED": "true"}
+        data = {"title": "Hi", "save": "Save"}
+        response = hx_post(fragmented(spec, commit_button="save"), ada, data, headers)
+        assert hx_headers(response) == {"HX-Redirect": "/done/"}
+
+    def test_a_dependent_choice_is_narrowed_by_the_posted_value(self, ada: Any) -> None:
+        le_guin = BookAuthor.objects.create(name="Le Guin")
+        hidden = BookAuthor.objects.create(name="Hidden")
+        earthsea = Book.objects.create(author=le_guin, title="Earthsea", price=Decimal("9.99"))
+        Book.objects.create(author=hidden, title="Elsewhere", price=Decimal("5.00"))
+        spec = ServiceSpec(
+            service=Record(),
+            permissions=OPEN,
+            validator=FormValidator(ShelvedBookForm, form_kwargs=offered_authors),
+        )
+        view = committing(spec)
+        offered = get(view, ada).context_data["form"].fields
+        assert list(offered["book"].queryset) == []
+        refreshed = post(view, ada, {"author": str(le_guin.pk), "refresh": "Show their books"})
+        # Re-rendered, not refused: the book left blank is not called required.
+        assert refreshed.status_code == 200
+        assert refreshed.context_data["form"].errors == {}
+        fields = refreshed.context_data["form"].fields
+        # Narrowed by ``form_kwargs``, as every form the page builds is, and
+        # by the author the post names.
+        assert list(fields["author"].queryset) == [le_guin]
+        assert list(fields["book"].queryset) == [earthsea]
+        assert spec.service.calls == []
+
+    def test_a_refresh_is_the_page_get_renders_with_the_post_in_it(
+        self, ada: Any, note: Note
+    ) -> None:
+        spec = row_spec(affordances=[CLOSED_TODAY])
+        response = post(committing(spec), ada, {"title": "Draft"}, pk=note.pk)
+        assert response.status_code == 200
+        assert response.context_data["target"] == note
+        assert response.context_data["unavailable"] is CLOSED_TODAY
+        assert response.context_data["form"]["title"].value() == "Draft"
+        assert spec.service.calls == []
+
+    def test_a_refresh_is_admitted_as_get_is(self, ada: Any) -> None:
+        # The page is offered to nobody the spec refuses, refreshed or not.
+        spec = entry_spec(permissions=[Refuse()])
+        with pytest.raises(PermissionDenied, match=r"^Only editors may run this\.$"):
+            post(committing(spec), ada, {"title": "Hi"})
+
+    def test_a_route_the_target_refuses_is_a_bad_request_as_on_get(self, ada: Any) -> None:
+        # GET's answer, since the page a refresh re-renders is GET's; a
+        # committing post leaves the route to dispatch, which answers 400.
+        spec = row_spec()
+        with pytest.raises(BadRequest):
+            post(committing(spec), ada, {"title": "Hi"}, pk="nope")
+        assert spec.service.calls == []
+
+    def test_asked_fields_are_held_back_as_get_holds_them(self, ada: Any) -> None:
+        spec = confirm_spec()
+        view = committing(spec, asked_fields=("confirmed",))
+        response = post(view, ada, {"reason": "Tidy", "confirmed": "on"})
+        assert response.status_code == 200
+        assert not shows(response, "confirmed")
+        assert shows(response, "reason")
+        assert spec.service.calls == []
+
+    def test_every_other_render_carries_no_refreshed(self, ada: Any) -> None:
+        view = committing(entry_spec())
+        refused_ = post(view, ada, {"title": "shut", "save": "Save"})
+        assert refused_.status_code == 400
+        assert "refreshed" not in refused_.context_data
+        assert "refreshed" not in get(view, ada).context_data
+
+
+class TestTheCommitButtonIsChecked:
+    @pytest.mark.parametrize("button", [("save",), ""], ids=["a-tuple", "empty"])
+    def test_anything_but_a_button_s_name_is_refused(self, button: Any) -> None:
+        with pytest.raises(ImproperlyConfigured) as raised:
+            committing(entry_spec(), commit_button=button)
+        assert str(raised.value) == (
+            "Committing.commit_button must be None or the name of the submit button whose post "
+            f"commits; got {button!r}."
+        )
+
+    def test_a_field_s_name_is_refused(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as raised:
+            committing(entry_spec(), commit_button="urgent")
+        assert str(raised.value) == (
+            "Committing.commit_button names 'urgent', a field EntryForm declares: a field is "
+            "posted by every submit, so it cannot say which one commits."
+        )
+
+    def test_it_may_be_passed_to_as_view(self, ada: Any) -> None:
+        spec = entry_spec()
+        view = form_view(spec, commit_button="save")
+        assert post(view, ada, {"title": "Hi"}).status_code == 200
+        assert spec.service.calls == []
+
+
+MESSAGES_STACK = [
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+]
+
+
+@pytest.fixture
+def stack(settings: Any) -> Callable[..., Any]:
+    """Post through Django's handler and the messages middleware, as a project serves the page.
+
+    The session is a signed cookie, which needs no table, since the suite's
+    settings install no sessions app. Each call routes one view, at
+    ``/page/``, through a URLconf of its own.
+    """
+    settings.INSTALLED_APPS = [*settings.INSTALLED_APPS, "django.contrib.messages"]
+    settings.MIDDLEWARE = MESSAGES_STACK
+    settings.SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
+
+    def posted(view: Any, user: Any, data: Mapping[str, Any], **headers: str) -> Any:
+        urls = types.ModuleType("one_page_urls")
+        urls.urlpatterns = [path("page/", view), *urlpatterns]  # ty: ignore[unresolved-attribute]
+        settings.ROOT_URLCONF = urls
+        client = Client()
+        client.force_login(user)
+        return client.post("/page/", data, **headers)
+
+    return posted
+
+
+def sent(response: Any) -> list[tuple[int, str]]:
+    """The messages the request stored, by level and text."""
+    return [(each.level, each.message) for each in get_messages(response.wsgi_request)]
+
+
+ADDED = "Added %(title)s."
+
+
+class TestASuccessMessage:
+    def test_a_success_stores_the_message(self, ada: Any, stack: Any) -> None:
+        response = stack(form_view(entry_spec(), success_message=ADDED), ada, {"title": "Hi"})
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert sent(response) == [(messages.SUCCESS, "Added Hi.")]
+
+    def test_each_success_stores_the_message(
+        self, ada: Any, stack: Any, result_fragment: str
+    ) -> None:
+        # The fragment's two answers: ``HX-Redirect``, and the result in place.
+        redirected = stack(
+            fragmented(entry_spec(), success_message=ADDED), ada, {"title": "Hi"}, **HTMX
+        )
+        assert hx_headers(redirected) == {"HX-Redirect": "/done/"}
+        assert sent(redirected) == [(messages.SUCCESS, "Added Hi.")]
+        in_place = fragmented(
+            entry_spec(returns=7),
+            template_name=None,
+            fragment_template_name=result_fragment,
+            success_message=ADDED,
+        )
+        answered = stack(in_place, ada, {"title": "Hi"}, **HTMX)
+        assert hx_headers(answered) == {"HX-Trigger": "spec-succeeded"}
+        assert sent(answered) == [(messages.SUCCESS, "Added Hi.")]
+
+    @pytest.mark.parametrize(
+        ("view", "data", "status"),
+        [
+            (lambda: form_view(entry_spec(), success_message=ADDED), {"title": "shut"}, 400),
+            (
+                lambda: confirm_view(confirm_spec(), success_message=ADDED),
+                {"reason": "Tidy"},
+                422,
+            ),
+            (lambda: committing(entry_spec(), success_message=ADDED), {"title": "Hi"}, 200),
+        ],
+        ids=["a-refusal", "a-confirmation", "a-post-that-does-not-commit"],
+    )
+    def test_nothing_else_sends_one(
+        self, ada: Any, stack: Any, view: Any, data: Mapping[str, Any], status: int
+    ) -> None:
+        response = stack(view(), ada, data)
+        assert response.status_code == status
+        assert sent(response) == []
+
+    @pytest.mark.parametrize("app", [False, True], ids=["no-app", "the-app-alone"])
+    def test_without_the_middleware_nothing_is_raised(
+        self, ada: Any, settings: Any, app: bool
+    ) -> None:
+        # Django's ``messages.success`` raises ``MessageFailure`` here unless
+        # told to fail silently: the app alone puts no store on the request.
+        if app:
+            settings.INSTALLED_APPS = [*settings.INSTALLED_APPS, "django.contrib.messages"]
+        spec = entry_spec()
+        response = post(form_view(spec, success_message=ADDED), ada, {"title": "Hi"})
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert received(spec)["title"] == "Hi"
+
+    def test_it_is_formatted_with_the_cleaned_data(self, ada: Any, stack: Any) -> None:
+        # ``%d`` and ``True``: the form's cleaned values, not the strings posted.
+        message = "%(title)s, %(count)d, %(urgent)s."
+        data = {"title": "Hi", "count": "3", "urgent": "on"}
+        response = stack(form_view(entry_spec(), success_message=message), ada, data)
+        assert sent(response) == [(messages.SUCCESS, "Hi, 3, True.")]
+
+    def test_an_override_reads_the_result(self, ada: Any, stack: Any) -> None:
+        class SavedAsNumber(SpecFormView):
+            def get_success_message(self, result: DispatchResult) -> str:
+                return f"Saved as number {result.value}."
+
+        view = SavedAsNumber.as_view(
+            spec=entry_spec(returns=7), template_name=TEMPLATE, success_url="/done/"
+        )
+        assert sent(stack(view, ada, {"title": "Hi"})) == [(messages.SUCCESS, "Saved as number 7.")]
+
+    def test_an_empty_message_sends_nothing(self, ada: Any, stack: Any) -> None:
+        response = stack(form_view(entry_spec()), ada, {"title": "Hi"})
+        assert response.status_code == 302
+        assert sent(response) == []

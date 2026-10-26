@@ -40,6 +40,9 @@ dependencies = [
     # kernel's specs, so this package cannot support a Django the kernel does
     # not.
     "django>=4.2",
+    # The page needs 0.17.0: ``form_keywords`` builds the page's form with the
+    # constructor keywords the Validator's form gets, and ``authorize`` takes
+    # ``pool_seeds``, so a class-level check naming a seed is asked with it.
     # The request hooks need 0.15.0: from 0.14.0 a permission check is offered
     # a registered seed by name, which is how a per-call seed reaches the
     # object-level and scope checks, and from 0.15.0 a top-level Validator
@@ -48,7 +51,7 @@ dependencies = [
     # the kernel's root also exported its own copy of the ten JSON names, so
     # one process held two ``SpecView`` classes. Every other name the moved
     # code reads at the kernel's root is public from 0.10.0.
-    "django-service-specs>=0.15.0",
+    "django-service-specs>=0.17.0",
 ]
 
 [project.urls]
@@ -154,7 +157,7 @@ skip-magic-trailing-comma = false
 root = ["./django_spec_html"]
 
 [tool.bumpversion]
-current_version = "0.2.0"
+current_version = "0.3.0"
 allow_dirty = false
 commit = false
 tag = false

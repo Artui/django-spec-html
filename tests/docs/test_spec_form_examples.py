@@ -24,14 +24,17 @@ import pytest
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
+from django.contrib.messages.storage.cookie import CookieStorage
 from django.core.exceptions import PermissionDenied
 from django.core.handlers.exception import response_for_exception
 from django.http import Http404
 from django.middleware.csrf import CsrfViewMiddleware
 from django.template import TemplateSyntaxError, engines
+from django.template.defaultfilters import time
 from django.template.loader import get_template
 from django.test import RequestFactory
 from django.urls import get_resolver
+from django.utils import timezone
 from django_service_specs import (
     ActionUnavailable,
     AdditionalInputRequired,
@@ -52,7 +55,7 @@ from django_service_specs import (
 from django_spec_html import SpecFormView, UnsupportedMediaType
 from django_spec_html.http.utils import refusal_outcome
 from docs.examples import htmx as htmx_example
-from tests.adapter_app.models import Author, Book, Status
+from tests.adapter_app.models import Author, Book, Edition, Status
 
 pytestmark = pytest.mark.django_db
 
@@ -108,6 +111,17 @@ class TestGet:
         assert not response.context_data["form"].is_bound
         for name in ("title", "price", "published_on", "shelves", "csrfmiddlewaretoken"):
             assert f'name="{name}"'.encode() in response.content
+
+    def test_a_page_naming_no_template_renders_the_shipped_one(self, ada: Any) -> None:
+        response = serve(FACTORY.get("/books/new/"), ada).render()
+        assert response.template_name == ["django_spec_html/spec_form.html"]
+        assert response.content.startswith(b"<!DOCTYPE html>")
+        assert b'<button type="submit">Save</button>' in response.content
+
+    def test_a_page_naming_its_own_template_renders_that(self, ada: Any) -> None:
+        response = serve(FACTORY.get("/books/add/"), ada).render()
+        assert response.template_name == ["spec_form.html"]
+        assert response.content.startswith(b'<form method="post">')
 
     def test_anonymous_is_never_offered_the_page(self) -> None:
         # The class-level check the post would run, run first: Django's own
@@ -180,6 +194,20 @@ class TestPost:
         assert response.content.count(NEEDS_A_DATE.encode()) == 1
         assert not Book.objects.exists()
 
+    def test_every_error_shows_in_one_post(self, ada: Any, author: Author) -> None:
+        # The blank title is the shape check's, so the form's own rule about
+        # a published book's date answers beside it rather than next time.
+        data = posted(author, title="", status=Status.PUBLISHED)
+        response = serve(FACTORY.post("/books/new/", data=data), ada).render()
+        assert response.status_code == 400
+        assert response.context_data["form"].errors == {
+            "title": ["This field is required."],
+            "__all__": [NEEDS_A_DATE],
+        }
+        assert response.content.count(b"This field is required.") == 1
+        assert response.content.count(NEEDS_A_DATE.encode()) == 1
+        assert not Book.objects.exists()
+
     def test_a_blank_required_field_is_refused_once(self, ada: Any, author: Author) -> None:
         response = serve(FACTORY.post("/books/new/", data=posted(author, title="")), ada)
         assert response.status_code == 400
@@ -196,6 +224,128 @@ class TestPost:
         assert refused.status_code == 403
 
 
+class TestAPartialUpdate:
+    """``change_book_spec``: the same form, every field optional to the browser."""
+
+    def test_its_page_renders_no_required_attribute(self, ada: Any, author: Author) -> None:
+        book = Book.objects.create(
+            title="The Lathe of Heaven", price=Decimal("9.99"), status=Status.DRAFT, author=author
+        )
+        response = serve(FACTORY.get(f"/books/{book.pk}/change/"), ada).render()
+        assert response.status_code == 200
+        assert b"required" not in response.content
+        whole = serve(FACTORY.get(f"/books/{book.pk}/edit/"), ada).render()
+        assert b"required" in whole.content
+
+    def test_a_blank_field_is_left_as_it_is(self, ada: Any, author: Author) -> None:
+        book = Book.objects.create(
+            title="The Lathe of Heaven", price=Decimal("9.99"), status=Status.DRAFT, author=author
+        )
+        data = posted(author, title="", price="15.00")
+        response = serve(FACTORY.post(f"/books/{book.pk}/change/", data=data), ada)
+        assert (response.status_code, response.url) == (302, "/books/")
+        book.refresh_from_db()
+        assert (book.title, book.price) == ("The Lathe of Heaven", Decimal("15.00"))
+
+
+class TestAFormThatTakesKeywords:
+    """``shelve_book_spec``: the page's form is built with what ``form_kwargs`` answers."""
+
+    def test_the_page_offers_the_authors_the_validator_accepts(
+        self, ada: Any, author: Author
+    ) -> None:
+        Book.objects.create(
+            title="The Lathe of Heaven", price=Decimal("9.99"), status=Status.DRAFT, author=author
+        )
+        unshelved = Author.objects.create(name="Russ")
+        page = serve(FACTORY.get("/books/shelve/"), ada).render()
+        assert list(page.context_data["form"].fields["author"].queryset) == [author]
+        assert f'value="{unshelved.pk}"'.encode() not in page.content
+        response = serve(FACTORY.post("/books/shelve/", data=posted(unshelved)), ada)
+        assert response.status_code == 400
+        assert list(response.context_data["form"].errors) == ["author"]
+
+    def test_staff_are_offered_every_author(self, author: Author) -> None:
+        staff = get_user_model().objects.create_user(username="grace", is_staff=True)
+        response = serve(FACTORY.post("/books/shelve/", data=posted(author)), staff)
+        assert (response.status_code, response.url) == (302, "/books/")
+        assert Book.objects.get().author == author
+
+
+def drafts(author: Author, *titles: str, status: str = Status.DRAFT) -> list[Book]:
+    return [
+        Book.objects.create(title=title, price=Decimal("9.99"), status=status, author=author)
+        for title in titles
+    ]
+
+
+class TestThePageShowsItsTarget:
+    """``withdraw_book_spec`` and ``publish_drafts_spec``, rendered through ``spec_target.html``."""
+
+    def test_a_book_is_named_by_its_title_beside_the_form(self, ada: Any, author: Author) -> None:
+        (book,) = drafts(author, "The Lathe of Heaven", status=Status.PUBLISHED)
+        response = serve(FACTORY.get(f"/books/{book.pk}/withdraw/"), ada).render()
+        assert response.context_data["target"] == book
+        assert response.context_data["target_display"] == {
+            "label": "The Lathe of Heaven",
+            "fields": {"title": "The Lathe of Heaven", "price": "9.99", "status": "Published"},
+            "pairs": tuple(
+                {"title": "The Lathe of Heaven", "price": "9.99", "status": "Published"}.items()
+            ),
+        }
+        content = response.content.decode()
+        assert "<h1>The Lathe of Heaven</h1>" in content
+        assert "<dt>status</dt><dd>Published</dd>" in content
+        # The handle and the hidden field are never shown.
+        assert "<dt>pk</dt>" not in content
+        assert "published_on" not in content
+        assert 'name="reason"' in content
+
+    def test_a_bulk_page_counts_the_set_and_says_when(self, ada: Any, author: Author) -> None:
+        drafts(author, "Earthsea", "Always Coming Home", "Lavinia", "Searoad", "Changing Planes")
+        drafts(author, "The Dispossessed", status=Status.PUBLISHED)
+        response = serve(FACTORY.get("/books/publish-drafts/"), ada).render()
+        context = response.context_data
+        assert context["target_count"] == 5
+        content = response.content.decode()
+        # In the current time zone, as the template's ``time`` filter reads it.
+        at = time(timezone.localtime(context["target_counted_at"]), "H:i")
+        assert f"5 books selected, counted at {at}." in content
+        # The first three, by title, which is the set's own order.
+        assert (
+            "<ul><li>Always Coming Home</li><li>Changing Planes</li><li>Earthsea</li></ul>"
+            in content
+        )
+        assert "The first 3 are shown." in content
+
+    def test_an_empty_set_is_0_selected_not_a_404(self, ada: Any) -> None:
+        response = serve(FACTORY.get("/books/publish-drafts/"), ada).render()
+        assert response.status_code == 200
+        assert "0 books selected, counted at" in response.content.decode()
+        assert response.context_data["target_display"] == []
+
+    def test_the_confirming_post_acts_on_the_set_as_it_is_then(
+        self, ada: Any, author: Author
+    ) -> None:
+        # The page counted two; a third draft arrives before the post, and the
+        # post re-runs the service on the set it finds, never the one counted.
+        drafts(author, "Earthsea", "Lavinia")
+        assert serve(FACTORY.get("/books/publish-drafts/"), ada).context_data["target_count"] == 2
+        drafts(author, "Searoad")
+        data = {"csrfmiddlewaretoken": "token", "save": "Save", "published_on": "2026-10-26"}
+        response = serve(FACTORY.post("/books/publish-drafts/", data=data), ada)
+        assert (response.status_code, response.url) == (302, "/books/")
+        assert not Book.objects.filter(status=Status.DRAFT).exists()
+        assert Book.objects.filter(status=Status.PUBLISHED).count() == 3
+
+    def test_a_refused_post_counts_again(self, ada: Any, author: Author) -> None:
+        drafts(author, "Earthsea")
+        data = {"csrfmiddlewaretoken": "token", "save": "Save", "published_on": ""}
+        response = serve(FACTORY.post("/books/publish-drafts/", data=data), ada).render()
+        assert response.status_code == 400
+        assert "1 book selected, counted at" in response.content.decode()
+
+
 class Anything(forms.Form):
     """A form every post is valid for, so each refusal comes from the service that raises it."""
 
@@ -204,6 +354,16 @@ class Anything(forms.Form):
 
 class TestAnUnavailableBook:
     """``StockBook``: the page asks whether the operation is available before anyone posts."""
+
+    @pytest.mark.parametrize("method", ["get", "post"])
+    def test_a_branch_the_seeded_check_refuses_is_never_offered_the_page(
+        self, ada: Any, author: Author, method: str
+    ) -> None:
+        # The class-level check names the seed, and is asked with it.
+        request = getattr(FACTORY, method)("/branches/nowhere/books/new/", data=posted(author))
+        with pytest.raises(PermissionDenied, match=r"^There is no such branch\.$"):
+            serve(request, ada)
+        assert not Book.objects.exists()
 
     def test_an_open_branch_is_offered_the_form(self, ada: Any) -> None:
         response = serve(FACTORY.get("/branches/main/books/new/"), ada).render()
@@ -312,7 +472,7 @@ def test_the_pages_outcome_table_is_the_one_shipped(ada: Any) -> None:
         ServiceConflict(),
         ActionUnavailable(code="x"),
         ServiceError(),
-        AdditionalInputRequired("x", schema={"type": "object"}),
+        AdditionalInputRequired("x", schema={"note": {"type": "string"}}),
         UnsupportedMediaType(),
         DispatchError(),
     ]
@@ -472,3 +632,206 @@ class TestTurningHtmxOn:
     def test_a_browser_s_success_is_still_the_redirect(self, ada: Any, author: Author) -> None:
         response = self.serve(FACTORY.post("/books/new/", data=posted(author)), ada)
         assert (response.status_code, response.url) == (302, "/books/")
+
+
+DISCARD = "/books/discard-drafts/"
+IN_A_DIALOG = "/books/discard-drafts/in-a-dialog/"
+ASKED = "{count} drafts will be deleted. Confirm to proceed."
+
+
+def discarding(**fields: Any) -> dict[str, Any]:
+    """What the discard page sends, the token and the button included."""
+    return {"csrfmiddlewaretoken": "token", "save": "Save", "reason": "Tidy", **fields}
+
+
+class TestTheConfirmationPage:
+    """``discard_drafts_spec``: asked until confirmed, through ``spec_confirm.html``."""
+
+    @pytest.fixture(autouse=True)
+    def shelf(self, author: Author) -> None:
+        drafts(author, "Earthsea", "Lavinia")
+        drafts(author, "The Dispossessed", status=Status.PUBLISHED)
+
+    def test_the_page_counts_the_set_and_holds_the_box_back(self, ada: Any) -> None:
+        response = serve(FACTORY.get(DISCARD), ada).render()
+        content = response.content.decode()
+        assert response.status_code == 200
+        assert "2 drafts selected, counted at" in content
+        assert "<ul><li>Earthsea</li><li>Lavinia</li></ul>" in content
+        assert 'name="reason"' in content
+        assert 'name="confirmed"' not in content
+
+    def test_a_post_is_asked_and_nothing_is_deleted(self, ada: Any) -> None:
+        response = serve(FACTORY.post(DISCARD, data=discarding()), ada).render()
+        content = response.content.decode()
+        assert response.status_code == 422
+        assert content.count(ASKED.format(count=2)) == 1
+        assert 'name="confirmed"' in content
+        # The template's own reading of the question, from ``requested_input``.
+        assert ">Discard them</button>" in content
+        assert "Yes, discard them" in content
+        assert 'name="reason" value="Tidy"' in content
+        assert Book.objects.filter(status=Status.DRAFT).count() == 2
+
+    def test_the_question_counts_the_set_as_it_is_then(self, ada: Any, author: Author) -> None:
+        assert serve(FACTORY.get(DISCARD), ada).context_data["target_count"] == 2
+        drafts(author, "Searoad")
+        response = serve(FACTORY.post(DISCARD, data=discarding()), ada).render()
+        assert response.context_data["target_count"] == 3
+        content = response.content.decode()
+        assert "3 drafts selected, counted at" in content
+        assert ASKED.format(count=3) in content
+        assert response.context_data["requested_input"]["message"] == ASKED.format(count=3)
+
+    def test_the_confirming_post_deletes_them(self, ada: Any) -> None:
+        data = discarding(confirmed="on")
+        response = serve(FACTORY.post(DISCARD, data=data), ada)
+        assert (response.status_code, response.url) == (302, "/books/")
+        assert list(Book.objects.values_list("title", flat=True)) == ["The Dispossessed"]
+
+    def test_htmx_gets_the_form_with_the_box_held_back(self, ada: Any) -> None:
+        response = serve(FACTORY.get(DISCARD, **HTMX), ada).render()
+        assert response.content.lstrip().startswith(b"<form")
+        assert b'name="confirmed"' not in response.content
+
+    def test_htmx_is_asked_in_place_at_200(self, ada: Any) -> None:
+        response = serve(FACTORY.post(DISCARD, data=discarding(), **HTMX), ada).render()
+        assert response.status_code == 200
+        assert response.content.lstrip().startswith(b"<form")
+        assert b"<h1>" not in response.content
+        assert b'name="confirmed"' in response.content
+        assert b">Discard them</button>" in response.content
+        # In place: no header sends the answer anywhere but the form's target.
+        assert not [name for name in response.headers if name.lower().startswith("hx-")]
+        assert Book.objects.filter(status=Status.DRAFT).count() == 2
+
+    def test_htmx_s_confirming_post_deletes_them(self, ada: Any) -> None:
+        data = discarding(confirmed="on")
+        response = serve(FACTORY.post(DISCARD, data=data, **HTMX), ada)
+        assert (response.status_code, response["HX-Redirect"]) == (200, "/books/")
+        assert not Book.objects.filter(status=Status.DRAFT).exists()
+
+
+class TestAConfirmationInADialog:
+    """``spec_confirm_dialog.html``: the question swapped out of band, into a dialog outside the form."""
+
+    @pytest.fixture(autouse=True)
+    def shelf(self, author: Author, settings: Any) -> None:
+        drafts(author, "Earthsea", "Lavinia")
+        if django.VERSION < (6, 0):
+            settings.TEMPLATES = htmx_example.TEMPLATES
+
+    @staticmethod
+    def form_and_rest(content: bytes) -> tuple[bytes, bytes]:
+        form, _, rest = content.partition(b"</form>")
+        return form, rest
+
+    def test_the_fragment_carries_the_dialog_out_of_band(self, ada: Any) -> None:
+        response = serve(FACTORY.post(IN_A_DIALOG, data=discarding(), **HTMX), ada).render()
+        assert response.status_code == 200
+        assert not [name for name in response.headers if name.lower().startswith("hx-")]
+        form, rest = self.form_and_rest(response.content)
+        assert form.lstrip().startswith(b'<form id="discard-drafts"')
+        # The question is the dialog's, never the form's.
+        assert ASKED.format(count=2).encode() not in form
+        assert b'name="confirmed"' not in form
+        assert b'<dialog id="confirm-discard" hx-swap-oob="true" open>' in rest
+        assert ASKED.format(count=2).encode() in rest
+        # Outside the form, so each control names the form it posts with.
+        assert b'name="confirmed" form="discard-drafts"' in rest
+        assert b'name="save" form="discard-drafts"' in rest
+        assert b'name="reason" value="Tidy"' in form
+
+    def test_no_dialog_before_a_question(self, ada: Any) -> None:
+        response = serve(FACTORY.get(IN_A_DIALOG, **HTMX), ada).render()
+        assert b"<dialog" not in response.content
+        assert b'name="confirmed"' not in response.content
+        assert b'name="reason"' in response.content
+
+    def test_the_page_has_one_dialog_to_swap_into(self, ada: Any) -> None:
+        page = serve(FACTORY.get(IN_A_DIALOG), ada).render().content
+        assert page.count(b'<dialog id="confirm-discard">') == 1
+        asked = serve(FACTORY.post(IN_A_DIALOG, data=discarding()), ada).render()
+        assert asked.status_code == 422
+        assert asked.content.count(b'id="confirm-discard"') == 1
+        assert b'<dialog id="confirm-discard" hx-swap-oob="true" open>' in asked.content
+
+    def test_what_the_dialog_posts_deletes_them(self, ada: Any) -> None:
+        # The ticked box and the button, the form's own fields beside them.
+        data = discarding(confirmed="on")
+        response = serve(FACTORY.post(IN_A_DIALOG, data=data, **HTMX), ada)
+        assert (response.status_code, response["HX-Redirect"]) == (200, "/books/")
+        assert not Book.objects.filter(status=Status.DRAFT).exists()
+
+
+def editions(**fields: Any) -> dict[str, Any]:
+    """What the edition page sends: the token, and the fields and button a test names."""
+    return {"csrfmiddlewaretoken": "token", **fields}
+
+
+class TestAPostThatDoesNotCommit:
+    """``editions/new/``: the author picker and "Show their books" re-render, "Add" commits."""
+
+    @pytest.fixture
+    def shelved(self, author: Author) -> tuple[Book, Book]:
+        theirs = Book.objects.create(title="Earthsea", price=Decimal("9.99"), author=author)
+        other = Author.objects.create(name="Butler")
+        return theirs, Book.objects.create(title="Kindred", price=Decimal("8.00"), author=other)
+
+    def test_the_page_offers_no_book_until_an_author_is_chosen(self, ada: Any) -> None:
+        response = serve(FACTORY.get("/editions/new/"), ada).render()
+        assert list(response.context_data["form"].fields["book"].queryset) == []
+        # The picker posts the form itself, and the button Enter presses,
+        # the first, is the one that commits.
+        assert b'hx-trigger="change"' in response.content
+        assert response.content.index(b'name="add"') < response.content.index(b'name="refresh"')
+
+    def test_show_their_books_re_renders_the_form_with_theirs(
+        self, ada: Any, author: Author, shelved: tuple[Book, Book]
+    ) -> None:
+        data = editions(author=str(author.pk), refresh="Show their books")
+        response = serve(FACTORY.post("/editions/new/", data=data), ada).render()
+        assert response.status_code == 200
+        assert list(response.context_data["form"].fields["book"].queryset) == [shelved[0]]
+        assert response.context_data["refreshed"] is True
+        # Nothing validated: the book and number left blank are not called required.
+        assert b"This field is required." not in response.content
+        assert not Edition.objects.exists()
+
+    def test_the_picker_under_htmx_is_the_form_alone(
+        self, ada: Any, author: Author, shelved: tuple[Book, Book]
+    ) -> None:
+        # What htmx sends for the select's own request: the form's values,
+        # no button, and the select's name as ``HX-Trigger-Name``.
+        headers = {**HTMX, "HTTP_HX_TRIGGER_NAME": "author"}
+        request = FACTORY.post("/editions/new/", data=editions(author=str(author.pk)), **headers)
+        response = serve(request, ada).render()
+        assert response.status_code == 200
+        assert response.content.startswith(b'<form method="post" hx-post=""')
+        assert b"<h1>" not in response.content
+        assert response.context_data["refreshed"] is True
+        assert b"errorlist" not in response.content
+        assert list(response.context_data["form"].fields["book"].queryset) == [shelved[0]]
+        assert not Edition.objects.exists()
+
+    def test_add_commits_and_says_so(
+        self, ada: Any, author: Author, shelved: tuple[Book, Book]
+    ) -> None:
+        data = editions(author=str(author.pk), book=str(shelved[0].pk), number="2", add="Add")
+        request = FACTORY.post("/editions/new/", data=data)
+        # The store the messages middleware puts on a request.
+        request._messages = CookieStorage(request)
+        response = serve(request, ada)
+        assert (response.status_code, response.url) == (302, "/books/")
+        assert Edition.objects.get().number == 2
+        assert [each.message for each in request._messages] == ["Edition 2 added."]
+
+    def test_a_book_by_another_author_is_refused_on_add(
+        self, ada: Any, author: Author, shelved: tuple[Book, Book]
+    ) -> None:
+        # The Validator's form is narrowed by the same post, so the commit is too.
+        data = editions(author=str(author.pk), book=str(shelved[1].pk), number="2", add="Add")
+        response = serve(FACTORY.post("/editions/new/", data=data), ada)
+        assert response.status_code == 400
+        assert list(response.context_data["form"].errors) == ["book"]
+        assert not Edition.objects.exists()

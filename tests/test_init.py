@@ -62,6 +62,8 @@ def test_the_root_serves_the_two_halves_and_the_version() -> None:
     assert sorted(django_spec_html.__all__) == [
         "AsyncSpecView",
         "Outcome",
+        "SpecConfirmView",
+        "SpecFormSetView",
         "SpecFormView",
         "SpecView",
         "UnsupportedMediaType",
