@@ -44,6 +44,7 @@ def dispatch_request(
     grant: Grant | None = None,
     pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS,
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT,
+    view: Any = None,
 ) -> HttpResponse:
     """Dispatch ``spec`` for ``request`` and answer it as JSON: the function a view calls.
 
@@ -66,7 +67,14 @@ def dispatch_request(
        [`check_server_arguments`][django_service_specs.dispatch.check_server_arguments.check_server_arguments]
        once, when it is built, as ``SpecView.as_view()`` does.
     3. [`dispatch`][django_service_specs.dispatch.dispatch.dispatch], with
-       ``grant``, ``pool_seeds`` and ``unknown_arguments`` as given.
+       ``grant``, ``pool_seeds`` and ``unknown_arguments`` as given, and a
+       call context of its own holding ``request`` and ``view``. So a spec
+       callable naming ``request`` - a seed's resolver, a selector, a
+       permission check, an affordance condition, a ``form_kwargs``, the
+       service - is handed this very request, and one naming ``view`` is
+       handed ``view``: the host's own view, which passes itself, as
+       ``SpecView`` does, and ``None`` where it passes nothing
+       (``TestTheRequestAndTheView`` in ``test_dispatch_request``).
     4. **The answer.** A not-found result is 404 with a ``detail``. Otherwise
        the presented value, bare, at ``success_status`` if given, else 204 for
        a service with nothing to present and 200 for everything else - the
@@ -112,6 +120,7 @@ def dispatch_request(
             grant=grant,
             pool_seeds=pool_seeds,
             unknown_arguments=unknown_arguments,
+            call_context={"request": request, "view": view},
         )
         if result.kind == "not_found":
             return not_found_response()

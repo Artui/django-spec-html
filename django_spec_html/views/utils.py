@@ -253,7 +253,7 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
             raise BadRequest(str(refused.detail)) from refused
         # One pool for the affordances and the presenter's context, so the
         # target's display costs no seed resolution of its own on GET.
-        pool = base_pool(user=principal, seeds=served.seeds)
+        pool = _pool(principal, served)
         unavailable = _unavailable(spec, target, served, pool)
         # Absent when every condition is met, as ``code`` is on a refusal
         # that has none, so a template's ``{% if unavailable %}`` reads one
@@ -427,8 +427,10 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         object-level or scope check, the form's ``form_kwargs``, the
         affordances the page asks about, and dispatch. Seed what the
         request carries rather than the request itself, as on ``SpecView``:
-        a spec callable requiring a ``request`` raises ``TypeError`` on every
-        reader that has none.
+        a spec callable naming ``request`` is handed this request here, and
+        ``None`` on every reader that has none. A seed's resolver may name
+        ``request`` or ``view`` and is handed this request and this page
+        (test_a_seed_resolver_reading_the_request_binds).
         """
         return self.pool_seeds
 
@@ -578,12 +580,19 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
 
         The per-call binding must bind and withhold the declared names, and a
         seed added per call may not take one of them; the checks are the
-        JSON views', in ``http/utils.py``.
+        JSON views', in ``http/utils.py``. The call context starts with
+        ``request`` and ``view``, this request and this page, which the kernel
+        hands to every stage naming either.
         """
         label = type(self).__name__
         server = checked_binding(label, self.get_server_arguments(request), self.server_arguments)
         seeds = checked_seeds(label, self.get_pool_seeds(request), self.pool_seeds, server)
-        return Served(route_kwargs=self.route_kwargs, server=server, seeds=seeds, call_context={})
+        return Served(
+            route_kwargs=self.route_kwargs,
+            server=server,
+            seeds=seeds,
+            call_context={"request": request, "view": self},
+        )
 
     def _target_context(
         self,
@@ -622,7 +631,7 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         shown = _display(spec) if self.display_target else None
         presented: PresentationContext | None = None
         if shown is not None:
-            ambient = base_pool(user=principal, seeds=served.seeds) if pool is None else pool
+            ambient = _pool(principal, served) if pool is None else pool
             presented = PresentationContext(
                 principal,
                 target,
@@ -772,7 +781,9 @@ class Served:
     call_context: dict[str, Any]
     """The request's one call context, handed as this very dict to every kernel call the page makes.
 
-    The class-level check, the target's lookup and its checks, the affordances,
+    It starts with ``request`` and ``view``, this request and this page, which
+    the kernel hands to every stage naming either
+    (``TestTheRequestAndTheView`` in each page's tests). The class-level check, the target's lookup and its checks, the affordances,
     the form's keywords and dispatch, so a stage reads what an earlier one put
     there (test_the_checks_the_affordances_the_form_and_the_service_share_one_dict).
     """
@@ -1034,6 +1045,23 @@ def _bound(
     if server is None:
         return arguments
     return apply_server_arguments(spec, arguments, server)
+
+
+def _pool(principal: Any, served: Served) -> dict[str, Any]:
+    """The pool the page's affordances and its display read, built from the call's own seeds.
+
+    Built as dispatch builds its own: the seeds resolve against a pool
+    carrying the call's context, so a resolver naming ``request`` or ``view``
+    is handed this request and this page rather than raising ``TypeError``
+    (test_a_seed_resolver_reading_the_request_binds, on GET and on a refused
+    post that shows its target again). The context then leaves the pool, as
+    it leaves dispatch's: it is no seed, and a presenter's ambient is this
+    pool (test_the_displays_ambient_holds_the_seeds_and_never_the_call_context).
+    The key is the kernel's reserved name, which its root does not export.
+    """
+    pool = base_pool(user=principal, seeds=served.seeds, call_context=served.call_context)
+    del pool["call_context"]
+    return pool
 
 
 def _unavailable(

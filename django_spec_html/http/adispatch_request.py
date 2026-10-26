@@ -45,10 +45,12 @@ async def adispatch_request(
     grant: Grant | None = None,
     pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS,
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT,
+    view: Any = None,
 ) -> HttpResponse:
     """[`dispatch_request`][django_spec_html.http.dispatch_request.dispatch_request], from async code.
 
-    The same principal, arguments, statuses and refusals, reached through
+    The same principal, arguments, call context, statuses and refusals, and
+    the same ``view``, reached through
     [`adispatch`][django_service_specs.dispatch.adispatch.adispatch] and
     [`apresent`][django_service_specs.dispatch.apresent.apresent], so the
     kernel's async rule holds: nothing that may query runs on the event loop.
@@ -76,6 +78,7 @@ async def adispatch_request(
             grant=grant,
             pool_seeds=pool_seeds,
             unknown_arguments=unknown_arguments,
+            call_context={"request": request, "view": view},
         )
         if result.kind == "not_found":
             return not_found_response()

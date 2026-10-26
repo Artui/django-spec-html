@@ -89,7 +89,15 @@ from tests.dispatch.utils import (
     note_by_pk,
 )
 from tests.dispatch_app.models import Note
-from tests.http.utils import FACTORY, SeesTenant, note_spec, signed_in
+from tests.http.utils import (
+    FACTORY,
+    HANDED_STAGES,
+    Handed,
+    SeesTenant,
+    handed_spec,
+    note_spec,
+    signed_in,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -2816,6 +2824,80 @@ class TestOneCallContextPerRequest:
         assert {name for name, _ in on_post} == {"class", "object", "form", "affordance", "service"}
         assert len({id(context) for _, context in on_post}) == 1
         assert on_get[0][1] is not on_post[0][1]
+
+
+class TestTheRequestAndTheView:
+    """The call context starts with the request and this page, so every stage naming either has it."""
+
+    def test_every_stage_is_handed_the_request_and_the_page(self, ada: Any, note: Note) -> None:
+        handed = Handed()
+        view = form_view(handed_spec(handed))
+        request = signed_in(FACTORY.get("/"), ada)
+        assert view(request, pk=note.pk).status_code == 200
+        # The class-level check, the target's selector and its check, both
+        # affordance questions and the form's keywords.
+        assert handed.stages() == HANDED_STAGES - {"service"}
+        page = handed.one_view(request)
+        assert isinstance(page, SpecFormView)
+        assert page.request is request
+        handed.seen.clear()
+        request = signed_in(FACTORY.post("/", data={"title": "Hi"}), ada)
+        assert view(request, pk=note.pk).status_code == 302
+        assert handed.stages() == HANDED_STAGES
+        page = handed.one_view(request)
+        assert isinstance(page, SpecFormView)
+        assert page.request is request
+
+    def test_a_seed_resolver_reading_the_request_binds(self, ada: Any, note: Note) -> None:
+        # A GET builds the pool its affordances and display read, and a
+        # refused post builds one for the target it shows again: both resolve
+        # the seed against the call's context, as dispatch's own pool does.
+        asked: list[Any] = []
+
+        def asker(*, request: Any) -> Any:
+            asked.append(request)
+            return request
+
+        class Seeded(SpecFormView):
+            def get_pool_seeds(self, request: Any) -> PoolSeeds:
+                return self.pool_seeds.extend(asker=asker)
+
+        view = Seeded.as_view(
+            spec=row_spec(presenter=DataclassPresenter(NoteOut)),
+            template_name=TEMPLATE,
+            success_url="/done/",
+            display_target=True,
+        )
+        request = signed_in(FACTORY.get("/"), ada)
+        assert view(request, pk=note.pk).status_code == 200
+        assert asked
+        assert all(each is request for each in asked)
+        asked.clear()
+        request = signed_in(FACTORY.post("/", data={"title": ""}), ada)
+        assert view(request, pk=note.pk).status_code == 400
+        assert asked
+        assert all(each is request for each in asked)
+
+    @pytest.mark.parametrize(("method", "status"), [("get", 200), ("post", 400)])
+    def test_the_displays_ambient_holds_the_seeds_and_never_the_call_context(
+        self, ada: Any, note: Note, method: str, status: int
+    ) -> None:
+        # The page's pool is built carrying the context, for its resolvers,
+        # and the context leaves it before a presenter reads it as ambient.
+        ambients: list[Mapping[str, Any]] = []
+
+        class Recording(DataclassPresenter):
+            def presented(self, value: Any, context: Any) -> Any:
+                ambients.append(context.ambient)
+                return super().presented(value, context)
+
+        view = shown_view(row_spec(presenter=Recording(NoteOut)))
+        request = getattr(FACTORY, method)("/", data={"title": ""})
+        assert view(signed_in(request, ada), pk=note.pk).status_code == status
+        assert ambients
+        for ambient in ambients:
+            assert "user" in ambient
+            assert "call_context" not in ambient
 
 
 @dataclasses.dataclass

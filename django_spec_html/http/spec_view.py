@@ -37,7 +37,9 @@ class SpecView(SpecViewBase):
     tenant or a locale middleware resolved reaches a permission check, a
     selector or a Validator; and ``get_server_arguments(request)`` for the
     values the server answers for, which outrank whatever the client sent and
-    whose names are the declared ``server_arguments``' own.
+    whose names are the declared ``server_arguments``' own. The view passes
+    itself to ``dispatch_request`` as ``view=``, so a spec callable naming
+    ``request`` or ``view`` is handed this request and this view.
 
     ``as_view()`` checks the configuration when the view is built, so a view
     with no spec, an ``async def`` hook, ``route_kwargs`` naming a parameter
@@ -83,6 +85,7 @@ class SpecView(SpecViewBase):
             success_status=self.success_status,
             pool_seeds=pool_seeds,
             unknown_arguments=self.unknown_arguments,
+            view=self,
         )
 
     # Every method a spec may be served on is the same call; which of them

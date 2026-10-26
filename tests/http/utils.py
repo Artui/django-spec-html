@@ -7,12 +7,15 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
+from django import forms
 from django.contrib.auth.models import AnonymousUser
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponseBase
 from django.test import AsyncRequestFactory, RequestFactory
 from django_service_specs import (
     AdditionalInputRequired,
+    Affordance,
+    FormValidator,
     Output,
     Parameter,
     Parameters,
@@ -206,3 +209,90 @@ def limited_spec(**kwargs: Any) -> SelectorSpec:
         reads=Parameters.of(Parameter("limit", "integer")),
         **kwargs,
     )
+
+
+class TitleForm(forms.Form):
+    """One required ``title``, so a post without one is refused by the form."""
+
+    title = forms.CharField(max_length=20)
+
+
+@dataclass
+class Handed:
+    """The ``request`` and ``view`` each stage of one call was handed, in the order the stages ran.
+
+    Each stage of ``handed_spec`` names both, so a stage the transport left
+    them out of is handed ``None`` by the kernel, and one it never reached is
+    missing from ``stages()``.
+    """
+
+    seen: list[tuple[str, Any, Any]] = field(default_factory=list)
+
+    def record(self, stage: str, request: Any, view: Any) -> None:
+        self.seen.append((stage, request, view))
+
+    def stages(self) -> set[str]:
+        return {stage for stage, _, _ in self.seen}
+
+    def one_view(self, request: HttpRequest) -> Any:
+        """The one view every stage was handed, each beside this very ``request``."""
+        assert self.seen
+        for stage, handed, _ in self.seen:
+            assert handed is request, stage
+        assert len({id(view) for _, _, view in self.seen}) == 1, self.seen
+        return self.seen[0][2]
+
+
+class HandedCheck(PermissionCheck):
+    """Admits every principal and row, recording what each question is handed."""
+
+    def __init__(self, handed: Handed) -> None:
+        self.handed = handed
+
+    def has_permission(self, principal: Any, spec: Any, *, request: Any, view: Any) -> bool:
+        self.handed.record("class", request, view)
+        return True
+
+    def has_object_permission(
+        self, principal: Any, spec: Any, obj: Any, *, request: Any, view: Any
+    ) -> bool:
+        self.handed.record("object", request, view)
+        return True
+
+
+def handed_spec(handed: Handed, **kwargs: Any) -> ServiceSpec:
+    """A write on the note ``pk`` names, every stage of which names ``request`` and ``view``.
+
+    The target's selector, both permission questions, an affordance
+    condition, the ``FormValidator``'s ``form_kwargs`` and the service each
+    record what they are handed in ``handed``. ``kwargs`` replace any of them.
+    """
+
+    def row(*, pk: int, request: Any, view: Any) -> QuerySet[Note]:
+        handed.record("selector", request, view)
+        return note_by_pk(pk=pk)
+
+    def open_now(*, request: Any, view: Any) -> bool:
+        handed.record("affordance", request, view)
+        return True
+
+    def keywords(*, request: Any, view: Any) -> dict[str, Any]:
+        handed.record("form", request, view)
+        return {}
+
+    def service(*, data: Any, request: Any, view: Any) -> None:
+        handed.record("service", request, view)
+
+    kwargs.setdefault("service", service)
+    kwargs.setdefault("permissions", [HandedCheck(handed)])
+    kwargs.setdefault("validator", FormValidator(TitleForm, form_kwargs=keywords))
+    kwargs.setdefault(
+        "instance_selector_spec",
+        SelectorSpec(kind=SelectorKind.RETRIEVE, selector=row, reads=PK),
+    )
+    kwargs.setdefault("affordances", [Affordance(code="open", reason="Open.", when=open_now)])
+    return ServiceSpec(**kwargs)
+
+
+HANDED_STAGES = frozenset({"selector", "class", "object", "affordance", "form", "service"})
+"""Every stage of ``handed_spec`` a call reaching its service runs."""

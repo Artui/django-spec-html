@@ -46,7 +46,7 @@ from django_spec_html.views.spec_form_view import SpecFormView
 from django_spec_html.views.utils import SpecPageBase
 from tests.adapter_app.models import Author
 from tests.dispatch.utils import OPEN, Record, Refuse, Titled, make_user
-from tests.http.utils import FACTORY, signed_in
+from tests.http.utils import FACTORY, Handed, handed_spec, signed_in
 
 pytestmark = pytest.mark.django_db
 
@@ -868,3 +868,24 @@ class TestTheFragment:
     def test_a_success_is_hx_redirect(self, ada: Any) -> None:
         response = post(self.view(many_spec()), ada, posted({"title": "One"}), **HTMX)
         assert (response.status_code, response["HX-Redirect"]) == (200, "/done/")
+
+
+def test_every_stage_is_handed_the_request_and_the_page(ada: Any) -> None:
+    # A batch has no target, so no selector and no object-level question:
+    # the class-level check, the affordance, the form's keywords and the
+    # service are what name the two here.
+    handed = Handed()
+    view = formset_view(handed_spec(handed, many=True, instance_selector_spec=None))
+    request = signed_in(FACTORY.get("/"), ada)
+    assert view(request).status_code == 200
+    assert handed.stages() == {"class", "affordance", "form"}
+    page = handed.one_view(request)
+    assert isinstance(page, SpecFormSetView)
+    assert page.request is request
+    handed.seen.clear()
+    request = signed_in(FACTORY.post("/", data=posted({"title": "One"})), ada)
+    assert view(request).status_code == 302
+    assert handed.stages() == {"class", "affordance", "form", "service"}
+    page = handed.one_view(request)
+    assert isinstance(page, SpecFormSetView)
+    assert page.request is request

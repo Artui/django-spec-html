@@ -46,6 +46,7 @@ class AsyncSpecView(SpecViewBase):
             success_status=self.success_status,
             pool_seeds=pool_seeds,
             unknown_arguments=self.unknown_arguments,
+            view=self,
         )
 
     get = head = post = put = patch = delete = answer

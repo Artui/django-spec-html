@@ -61,7 +61,7 @@ from tests.dispatch.utils import (
     note_by_pk,
 )
 from tests.dispatch_app.models import Note
-from tests.http.utils import FACTORY, signed_in
+from tests.http.utils import FACTORY, HANDED_STAGES, Handed, handed_spec, signed_in
 
 pytestmark = pytest.mark.django_db
 
@@ -617,3 +617,27 @@ class TestASuccessMessage:
         view = SpecConfirmView(success_message="%(target)s.")
         result = DispatchResult(kind="instance", instance="Buy milk", data={})
         assert view.get_success_message(result) == "Buy milk."
+
+
+def test_every_stage_is_handed_the_request_and_the_page(ada: Any, note: Note) -> None:
+    # No Validator, so no form's keywords: the target's selector, both
+    # checks, the affordance and the service are what name the two here.
+    handed = Handed()
+
+    def service(*, request: Any, view: Any) -> None:
+        handed.record("service", request, view)
+
+    view = confirm_view(handed_spec(handed, validator=None, service=service))
+    request = signed_in(FACTORY.get("/"), ada)
+    assert view(request, pk=note.pk).status_code == 200
+    assert handed.stages() == HANDED_STAGES - {"form", "service"}
+    page = handed.one_view(request)
+    assert isinstance(page, SpecConfirmView)
+    assert page.request is request
+    handed.seen.clear()
+    request = signed_in(FACTORY.post("/", data=PRESSED), ada)
+    assert view(request, pk=note.pk).status_code == 302
+    assert handed.stages() == HANDED_STAGES - {"form"}
+    page = handed.one_view(request)
+    assert isinstance(page, SpecConfirmView)
+    assert page.request is request

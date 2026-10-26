@@ -38,6 +38,7 @@ from django_service_specs import (
     ServiceNotFound,
     ServiceValidationError,
     Unrestricted,
+    dispatch,
 )
 
 from django_spec_html import SpecView, UnsupportedMediaType, error_response
@@ -223,12 +224,16 @@ class TestWhatTheRequestCarries:
         with pytest.raises(ImproperlyConfigured, match="the declared binding was checked"):
             Unbound.as_view()(request, team="red")
 
-    def test_no_request_seed_is_registered_by_default(self, ada: Any) -> None:
-        # So a spec callable requiring one raises, as it does on every reader
-        # with no request at all.
+    def test_a_callable_naming_request_is_handed_this_one_with_no_seed_registered(
+        self, ada: Any
+    ) -> None:
+        # The request reaches it through the call's context, not as a seed: a
+        # reader with no request hands it ``None`` rather than refusing.
         assert "request" not in SpecView.pool_seeds.reserved
+        handed: list[Any] = []
 
         def needs_request(*, request: Any) -> Any:
+            handed.append(request)
             return Note.objects.none()
 
         spec = SelectorSpec(
@@ -236,8 +241,13 @@ class TestWhatTheRequestCarries:
         )
         request = FACTORY.get("/")
         request.user = ada
-        with pytest.raises(TypeError, match="required keyword-only argument: 'request'"):
-            SpecView.as_view(spec=spec)(request)
+        assert SpecView.as_view(spec=spec)(request).status_code == 200
+        assert len(handed) == 1
+        assert handed[0] is request
+        # A reader with no request, here the kernel's own ``dispatch`` as the
+        # other transports call it, hands the same callable ``None``.
+        dispatch(spec, principal=ada, arguments={})
+        assert handed[1:] == [None]
 
 
 def _status_table() -> dict[str, int]:
