@@ -1,0 +1,11 @@
+{% if target_count is not None %}
+  <p>{{ target_count }} book{{ target_count|pluralize }} selected, counted at {{ target_counted_at|time:"H:i" }}.</p>
+  {% if target_display %}
+    <ul>{% for book in target_display %}<li>{{ book.label }}</li>{% endfor %}</ul>
+    {% if target_count > target_display|length %}<p>The first {{ target_display|length }} are shown.</p>{% endif %}
+  {% endif %}
+{% elif target_display %}
+  <h1>{{ target_display.label }}</h1>
+  <dl>{% for name, value in target_display.fields.items %}<dt>{{ name }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+{% endif %}
+<form method="post">{% csrf_token %}{{ form }}<button name="save">Save</button></form>

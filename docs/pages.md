@@ -241,6 +241,86 @@ spec, whose list of rows no form posts, and a view with neither a
 make of the request's hooks, [below](#what-the-request-carries). The view is
 **sync only** in this release.
 
+## What the page acts on
+
+**The page shows its target**, the row or set the operation acts on, in the
+context beside the form, on GET and on every refused post it re-renders, the
+fragment included:
+
+| Key | Holds | Present |
+| --- | --- | --- |
+| `target` | the row an `instance_selector_spec` found, or the set a `collection_selector_spec` resolved | wherever there is a target: absent for a create, and for a missing row `allow_none` lets through |
+| `target_count` | how many rows the set holds | for a set |
+| `target_counted_at` | when it counted them, `django.utils.timezone.now()` | for a set |
+| `target_display` | the target as a person reads it, below | where the spec's Output marks a field |
+
+A key with nothing to hold is absent rather than `None`, as `unavailable` is.
+
+```python
+--8<--
+docs/examples/spec_form.py:target
+--8<--
+```
+
+The URLconf routes the first as `books/<int:pk>/withdraw/` and the second as
+`books/publish-drafts/`, with `target_display_limit=3`, both rendering this
+template:
+
+```html
+--8<--
+tests/templates/spec_target.html
+--8<--
+```
+
+### A bulk page
+
+A spec with a `collection_selector_spec` acts on a set, and its page says how
+many rows the set holds. **An empty set is no refusal**: its scope check is
+still asked, there is no not-found exit, and the page above says "0 books
+selected" where an instance page answers 404. A queryset is counted with a
+`COUNT` on a fresh clone of it, so no row is read to count it; a set a
+selector answers as a list is counted with `len()`.
+
+**The count is a time-of-check, not a promise.** The rows may change between
+the page and its post, so the context carries when the set was counted, and a
+template says "5 books selected, counted at 14:02" rather than "5 books will
+be published". The post does not replay what the page counted: it re-runs the
+service on the set it finds then, and a refused post counts the set again. A
+successful post counts nothing. So nothing about the count belongs in a hidden
+input.
+
+### The target's display
+
+`target_display` is the target projected for a person by the
+[`FieldMarking`][django_service_specs.output.field_marking.FieldMarking]s on the
+spec's Output - its own presenter's, or its `output_selector_spec`'s - which
+is where the kernel keeps what an operation returns:
+
+- the target is presented through that presenter, with the request's
+  principal, the target and its one call context;
+- then projected by the kernel's `project_payload`: a `HIDDEN` field is
+  dropped, and a choice is spoken as its display;
+- and every `HANDLE` is dropped as well, at any depth. An agent keeps a handle
+  to pass to another tool, and a person is never shown one.
+
+A row's display is a dict: its `fields`, and `label`, the value of the field
+marked `LABEL`, where one is. Above, the book is named "The Lathe of Heaven"
+and its fields are its title, its price and its status, read as "Published":
+the key is a handle and the publication date is hidden. **A set's display is
+a list of those, one per row, for at most `target_display_limit` rows**, 10
+by default: the first that many in the set's own order, read by one query
+bounded by a `LIMIT`, and presented by one call of the presenter's
+`presented_rows()`. `target_count` still counts every row, so a template can
+say how many it left out.
+
+**A spec whose Output marks no field has no `target_display`**, and neither
+has a spec with no Output; that is no error. Choices alone are not markings.
+The raw `target` stays beside the display either way, for a template that
+wants both. The Output must describe the target's rows, since the target is
+presented through it: a bulk operation whose service returns something else
+re-reads its rows with an `output_selector_spec`, as `publish_drafts_spec`
+does.
+
 ## What the request carries
 
 The page reads the request as [the JSON views](http.md#what-the-request-carries)

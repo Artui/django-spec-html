@@ -15,7 +15,7 @@ import re
 import tempfile
 from collections.abc import Callable, Iterator, Mapping
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 
 import django
 import pytest
@@ -31,9 +31,11 @@ from django.core.exceptions import (
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.validators import MaxValueValidator
+from django.db import connection
 from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.template import TemplateDoesNotExist
+from django.test.utils import CaptureQueriesContext
 from django.urls import path, reverse_lazy
 from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy
@@ -42,8 +44,10 @@ from django_service_specs import (
     ActionUnavailable,
     AdditionalInputRequired,
     Affordance,
+    DataclassPresenter,
     DispatchError,
     DispatchResult,
+    FieldMarking,
     FormValidator,
     NotPermitted,
     Parameter,
@@ -68,7 +72,7 @@ from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 from django_spec_html.views import spec_form_view
 from django_spec_html.views.spec_form_view import SpecFormView
 from tests.adapter_app.models import Author as BookAuthor
-from tests.adapter_app.models import Book, Document, Edition
+from tests.adapter_app.models import Book, Document, Edition, Status
 from tests.dispatch.utils import (
     OPEN,
     PK,
@@ -2781,3 +2785,411 @@ class TestOneCallContextPerRequest:
         assert {name for name, _ in on_post} == {"class", "object", "form", "affordance", "service"}
         assert len({id(context) for _, context in on_post}) == 1
         assert on_get[0][1] is not on_post[0][1]
+
+
+@dataclasses.dataclass
+class NoteOut:
+    """A note as the page names it: its title the label, its key a handle, its owner plumbing."""
+
+    pk: Annotated[int, FieldMarking.handle()]
+    title: Annotated[str, FieldMarking.label()]
+    archived: bool
+    owner_id: Annotated[int, FieldMarking.hidden()]
+
+
+@dataclasses.dataclass
+class AuthorOut:
+    pk: Annotated[int, FieldMarking.handle()]
+    name: str
+
+
+@dataclasses.dataclass
+class BookOut:
+    """A book whose author is a nested object, with a handle of its own."""
+
+    title: Annotated[str, FieldMarking.label()]
+    author: AuthorOut
+
+
+@dataclasses.dataclass
+class Ref:
+    pk: Annotated[int, FieldMarking.handle()]
+    name: str
+
+
+@dataclasses.dataclass
+class Shelf:
+    """A row that is no model's, holding an array of objects and an object that may be null."""
+
+    name: Annotated[str, FieldMarking.label()]
+    books: list[Ref]
+    lead: Ref | None
+
+
+@dataclasses.dataclass
+class UnmarkedBookOut:
+    """An Output with choices whose displays differ from their values, and no marking."""
+
+    title: str
+    status: Status
+
+
+class Shelved(PermissionCheck):
+    """Admits every principal and every set, recording each set the scope check is asked about."""
+
+    def __init__(self, *, admits: bool = True) -> None:
+        self.sets: list[Any] = []
+        self.admits = admits
+
+    message = "No set may be shelved here."
+
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        return True
+
+    def has_scope_permission(self, principal: Any, spec: Any, target: Any) -> bool:
+        self.sets.append(target)
+        return self.admits
+
+
+def notes_of(principal: Any) -> Any:
+    return Note.objects.filter(owner=principal).order_by("pk")
+
+
+def set_spec(selector: Any = None, **kwargs: Any) -> ServiceSpec:
+    """``entry_spec`` on the set of notes ``selector`` resolves: the signed-in principal's by default."""
+    return entry_spec(
+        collection_selector_spec=SelectorSpec(
+            kind=SelectorKind.LIST,
+            selector=selector or (lambda *, user: notes_of(user)),
+        ),
+        **kwargs,
+    )
+
+
+def notes(owner: Any, count: int) -> list[Note]:
+    return [Note.objects.create(owner=owner, title=f"Note {each}") for each in range(count)]
+
+
+class TestTheTargetInTheContext:
+    """The row or set the operation acts on is in the context, and nothing for a create."""
+
+    def test_an_update_page_carries_its_row(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        context = get(form_view(row_spec()), ada, pk=note.pk).context_data
+        assert isinstance(context["target"], Note)
+        assert context["target"].pk == note.pk
+
+    def test_a_create_carries_no_target(self, ada: Any) -> None:
+        context = get(form_view(entry_spec()), ada).context_data
+        assert "target" not in context
+        assert "target_count" not in context
+        assert "target_counted_at" not in context
+
+    def test_a_missing_row_allow_none_lets_through_carries_no_target(self, ada: Any) -> None:
+        spec = entry_spec(
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=note_by_pk, reads=PK, allow_none=True
+            )
+        )
+        assert "target" not in get(form_view(spec), ada, pk=404).context_data
+
+    def test_a_refused_post_carries_its_row(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        response = post(form_view(row_spec()), ada, {"title": "far too long"}, pk=note.pk)
+        assert response.status_code == 400
+        assert response.context_data["target"].pk == note.pk
+
+    def test_a_post_whose_route_is_refused_carries_no_target(self, ada: Any) -> None:
+        # The route never found a row, so there is none to show beside the
+        # refusal, and the marker of one not looked for is never handed on.
+        response = post(form_view(row_spec()), ada, {"title": "Hi"}, pk="first")
+        assert response.status_code == 400
+        assert "target" not in response.context_data
+
+    def test_the_fragment_carries_the_target_too(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        view = form_view(row_spec(), fragment_template_name=TEMPLATE)
+        request = signed_in(FACTORY.get("/", headers={"HX-Request": "true"}), ada)
+        assert view(request, pk=note.pk).context_data["target"].pk == note.pk
+
+
+class TestABulkPage:
+    """A ``collection_selector_spec``'s page shows how many rows its set holds, and when it counted."""
+
+    def test_the_set_and_its_count_and_when_it_was_counted(self, ada: Any) -> None:
+        notes(ada, 3)
+        notes(make_user("bob"), 2)
+        before = timezone.now()
+        context = get(form_view(set_spec()), ada).context_data
+        after = timezone.now()
+        assert [note.title for note in context["target"]] == ["Note 0", "Note 1", "Note 2"]
+        assert context["target_count"] == 3
+        assert before <= context["target_counted_at"] <= after
+
+    def test_an_empty_set_is_no_refusal(self, ada: Any) -> None:
+        check = Shelved()
+        response = get(form_view(set_spec(permissions=[check])), ada)
+        assert response.status_code == 200
+        assert response.context_data["target_count"] == 0
+        assert [list(each) for each in check.sets] == [[]]
+
+    def test_an_empty_set_is_still_asked_the_scope_check(self, ada: Any) -> None:
+        spec = set_spec(permissions=[Shelved(admits=False)])
+        with pytest.raises(PermissionDenied, match=r"^No set may be shelved here\.$"):
+            get(form_view(spec), ada)
+
+    def test_it_counts_without_loading_a_row(self, ada: Any) -> None:
+        notes(ada, 12)
+        view = form_view(set_spec())
+        with CaptureQueriesContext(connection) as queries:
+            context = get(view, ada).context_data
+        assert context["target_count"] == 12
+        # One query, a COUNT, and the set handed to the template still unread.
+        assert len(queries) == 1
+        assert "COUNT(" in queries[0]["sql"].upper()
+        assert context["target"]._result_cache is None
+
+    def test_a_set_answered_as_a_list_is_counted_as_one(self, ada: Any) -> None:
+        notes(ada, 2)
+        spec = set_spec(selector=lambda *, user: list(notes_of(user)))
+        context = get(form_view(spec), ada).context_data
+        assert context["target_count"] == 2
+
+    def test_a_refused_post_counts_again(self, ada: Any) -> None:
+        notes(ada, 2)
+        view = form_view(set_spec())
+        assert get(view, ada).context_data["target_count"] == 2
+        notes(ada, 1)
+        before = timezone.now()
+        response = post(view, ada, {"title": "far too long"})
+        assert response.status_code == 400
+        assert response.context_data["target_count"] == 3
+        assert response.context_data["target_counted_at"] >= before
+
+    def test_a_refused_post_counts_the_set_as_it_is_now_not_as_the_service_read_it(
+        self, ada: Any
+    ) -> None:
+        # The service reads the set it was handed, filling its result cache,
+        # then changes what the set holds before it refuses. Not atomic, so
+        # the change stays, and the page counts the set as it is now rather
+        # than reading the cache the service filled.
+        notes(ada, 2)
+
+        def service(*, collection: Any, **pool: Any) -> None:
+            assert len(collection) == 2
+            Note.objects.create(owner=collection[0].owner, title="Added")
+            raise ServiceError("Not now.")
+
+        spec = dataclasses.replace(set_spec(atomic=False), service=service)
+        response = post(form_view(spec), ada, {"title": "Hi"})
+        assert response.status_code == 422
+        assert response.context_data["target_count"] == 3
+
+    def test_a_successful_post_counts_nothing(self, ada: Any) -> None:
+        notes(ada, 2)
+        view = form_view(set_spec())
+        with CaptureQueriesContext(connection) as queries:
+            assert post(view, ada, {"title": "Hi"}).status_code == 302
+        assert not [query for query in queries if "COUNT(" in query["sql"].upper()]
+
+    def test_an_instance_page_carries_no_count(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        context = get(form_view(row_spec()), ada, pk=note.pk).context_data
+        assert "target_count" not in context
+        assert "target_counted_at" not in context
+
+
+class TestTheTargetDisplay:
+    """The target projected for a person through the Output's ``FieldMarking``s."""
+
+    def test_a_row_is_named_by_its_label_with_no_handle_and_nothing_hidden(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        spec = row_spec(presenter=DataclassPresenter(NoteOut))
+        context = get(form_view(spec), ada, pk=note.pk).context_data
+        assert context["target_display"] == {
+            "label": "Ada's",
+            "fields": {"title": "Ada's", "archived": False},
+        }
+        # The raw row stays beside it.
+        assert context["target"].pk == note.pk
+
+    def test_a_nested_handle_is_never_shown(self, ada: Any) -> None:
+        author = BookAuthor.objects.create(name="Le Guin")
+        book = Book.objects.create(author=author, title="Lathe", price=Decimal("9.50"))
+        spec = entry_spec(
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE,
+                selector=lambda *, pk: Book.objects.filter(pk=pk),
+                reads=PK,
+            ),
+            presenter=DataclassPresenter(BookOut),
+        )
+        display = get(form_view(spec), ada, pk=book.pk).context_data["target_display"]
+        assert display == {
+            "label": "Lathe",
+            "fields": {"title": "Lathe", "author": {"name": "Le Guin"}},
+        }
+
+    def test_a_row_with_no_label_has_none_in_its_display(self, ada: Any) -> None:
+        @dataclasses.dataclass
+        class Untitled:
+            pk: Annotated[int, FieldMarking.handle()]
+            title: str
+
+        note = Note.objects.create(owner=ada, title="Ada's")
+        spec = row_spec(presenter=DataclassPresenter(Untitled))
+        display = get(form_view(spec), ada, pk=note.pk).context_data["target_display"]
+        assert display == {"fields": {"title": "Ada's"}}
+
+    def test_each_row_of_a_set_is_projected_up_to_the_bound(self, ada: Any) -> None:
+        notes(ada, 5)
+        view = form_view(set_spec(presenter=DataclassPresenter(NoteOut)), target_display_limit=2)
+        with CaptureQueriesContext(connection) as queries:
+            context = get(view, ada).context_data
+        assert context["target_count"] == 5
+        assert [row["label"] for row in context["target_display"]] == ["Note 0", "Note 1"]
+        assert context["target_display"][0] == {
+            "label": "Note 0",
+            "fields": {"title": "Note 0", "archived": False},
+        }
+        # The count, then the bounded rows in one query: never the whole set.
+        assert len(queries) == 2
+        assert "COUNT(" in queries[0]["sql"].upper()
+        assert "LIMIT 2" in queries[1]["sql"].upper()
+
+    def test_the_default_bound(self, ada: Any) -> None:
+        assert SpecFormView.target_display_limit == 10
+        notes(ada, SpecFormView.target_display_limit + 1)
+        view = form_view(set_spec(presenter=DataclassPresenter(NoteOut)))
+        context = get(view, ada).context_data
+        assert len(context["target_display"]) == SpecFormView.target_display_limit
+        assert context["target_count"] == SpecFormView.target_display_limit + 1
+
+    def test_a_set_answered_as_a_list_is_projected_up_to_the_bound(self, ada: Any) -> None:
+        notes(ada, 3)
+        spec = set_spec(
+            selector=lambda *, user: list(notes_of(user)), presenter=DataclassPresenter(NoteOut)
+        )
+        context = get(form_view(spec, target_display_limit=2), ada).context_data
+        assert [row["label"] for row in context["target_display"]] == ["Note 0", "Note 1"]
+
+    def test_an_empty_set_displays_no_row(self, ada: Any) -> None:
+        context = get(form_view(set_spec(presenter=DataclassPresenter(NoteOut))), ada).context_data
+        assert context["target_display"] == []
+        assert context["target_count"] == 0
+
+    def test_the_rows_are_presented_in_one_call(self, ada: Any) -> None:
+        notes(ada, 3)
+        presenter = DataclassPresenter(NoteOut)
+        calls: list[int] = []
+        presented_rows = presenter.presented_rows
+
+        def counted(rows: Any, context: Any) -> Any:
+            calls.append(len(rows))
+            return presented_rows(rows, context)
+
+        presenter.presented_rows = counted
+        get(form_view(set_spec(presenter=presenter)), ada)
+        assert calls == [3]
+
+    def test_a_spec_with_no_output_has_no_display(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        assert "target_display" not in get(form_view(row_spec()), ada, pk=note.pk).context_data
+        assert "target_display" not in get(form_view(set_spec()), ada).context_data
+
+    def test_an_output_marking_nothing_has_no_display(self, ada: Any) -> None:
+        # Its choices alone would be spoken for an agent; a person's display
+        # is driven by the markings, and this output declares none.
+        author = BookAuthor.objects.create(name="Le Guin")
+        book = Book.objects.create(author=author, title="Lathe", price=Decimal("9.50"))
+        spec = entry_spec(
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE,
+                selector=lambda *, pk: Book.objects.filter(pk=pk),
+                reads=PK,
+            ),
+            presenter=DataclassPresenter(UnmarkedBookOut),
+        )
+        assert "target_display" not in get(form_view(spec), ada, pk=book.pk).context_data
+
+    def test_an_output_selector_s_presenter_drives_it(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        spec = row_spec(
+            output_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE,
+                selector=lambda *, result: result,
+                presenter=DataclassPresenter(NoteOut),
+            )
+        )
+        display = get(form_view(spec), ada, pk=note.pk).context_data["target_display"]
+        assert display["label"] == "Ada's"
+
+    def test_an_output_selector_declaring_affordances_still_renders(self, ada: Any) -> None:
+        # The kernel's ``present`` adds each row's answers, which only a row
+        # read through that selector carries; the target was read through the
+        # target selector, so the page presents it without them.
+        note = Note.objects.create(owner=ada, title="Ada's")
+        archivable = ServiceSpec(
+            service=Record(),
+            permissions=OPEN,
+            affordances=[Affordance(code="live", reason="Live.", when=Q(archived=False))],
+        )
+        spec = row_spec(
+            output_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE,
+                selector=lambda *, result: result,
+                presenter=DataclassPresenter(NoteOut),
+                affordances={"archive": archivable},
+            )
+        )
+        response = get(form_view(spec), ada, pk=note.pk)
+        assert response.status_code == 200
+        assert response.context_data["target_display"]["label"] == "Ada's"
+
+    def test_a_refused_post_carries_the_display(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="Ada's")
+        spec = row_spec(presenter=DataclassPresenter(NoteOut))
+        response = post(form_view(spec), ada, {"title": "far too long"}, pk=note.pk)
+        assert response.status_code == 400
+        assert response.context_data["target_display"]["label"] == "Ada's"
+
+    def test_a_handle_inside_an_array_and_beside_a_null_is_never_shown(self, ada: Any) -> None:
+        shelf = Shelf(name="Poetry", books=[Ref(1, "Lathe"), Ref(2, "Earthsea")], lead=None)
+        spec = entry_spec(
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=lambda *, pk: shelf, reads=PK
+            ),
+            presenter=DataclassPresenter(Shelf),
+        )
+        display = get(form_view(spec), ada, pk=1).context_data["target_display"]
+        assert display == {
+            "label": "Poetry",
+            "fields": {
+                "name": "Poetry",
+                "books": [{"name": "Lathe"}, {"name": "Earthsea"}],
+                "lead": None,
+            },
+        }
+
+    def test_the_presenter_is_handed_the_principal_the_target_and_the_call_context(
+        self, ada: Any
+    ) -> None:
+        seen: list[Any] = []
+
+        class Seeing(DataclassPresenter):
+            def presented(self, value: Any, context: Any) -> Any:
+                seen.append(context)
+                return super().presented(value, context)
+
+        class Asked(PermissionCheck):
+            def has_permission(self, principal: Any, spec: Any, call_context: Any) -> bool:
+                seen.append(call_context)
+                return True
+
+        note = Note.objects.create(owner=ada, title="Ada's")
+        spec = row_spec(permissions=[Asked()], presenter=Seeing(NoteOut))
+        get(form_view(spec), ada, pk=note.pk)
+        call_context, presented = seen
+        assert presented.principal == ada
+        assert presented.target.pk == note.pk
+        assert presented.call_context is call_context
