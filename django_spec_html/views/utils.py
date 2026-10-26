@@ -184,8 +184,8 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View):
         """The page GET renders, its form bound by ``bound`` for a post that does not commit.
 
         One path for both, so a post that does not commit is admitted, finds
-        its target, asks the affordances and holds ``asked_fields`` back as
-        GET does, and renders what GET renders with the post's values in it
+        its target, asks the affordances and holds back what GET
+        holds back, and renders what GET renders with the post's values in it
         (test_a_refresh_is_the_page_get_renders_with_the_post_in_it). Bound,
         the form is built from the post through ``form_kwargs`` like every
         other, so a choice its constructor narrows by a posted value is
@@ -286,14 +286,24 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View):
                 check_requested_input(spec, requested.schema, pool_seeds=served.seeds)
             # The target is shown again, and a set counted again, here and
             # never on a success: a post that redirects renders nothing.
+            context = {
+                **_refusal_code(refused),
+                **self._target_context(spec, principal, target, served, None),
+            }
+            if requested is not None:
+                # What a page shows of a question whatever it renders; the
+                # hook adds what its form can answer it with.
+                context["requested_input"] = {
+                    "message": requested.message,
+                    "schema": requested.schema,
+                }
             return self._render_refused(
                 form,
                 refused,
                 target,
                 status=refusal_status(refused),
                 requested=requested,
-                **_refusal_code(refused),
-                **self._target_context(spec, principal, target, served, None),
+                **context,
             )
         # Never ``not_found``: the target was found before dispatch, which
         # looks nothing up when handed it, and where the route's value was
@@ -666,7 +676,8 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View):
 
         ``target`` is what the post found, or ``UNSET`` where its route was
         refused; ``requested`` is the question a refusal asks, its schema
-        checked already, or ``None``.
+        checked already, or ``None``. A question is in ``context`` already as
+        ``requested_input``, its message and its schema.
         """
 
 

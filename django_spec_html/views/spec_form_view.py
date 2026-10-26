@@ -446,8 +446,8 @@ class SpecFormView(SpecPageBase):
         refusal is placed on it.
 
         Then ``asked_fields`` are held back, but for those ``requested`` asks
-        for, as ``_hold_back`` reads them, and a question is in the context as
-        ``requested_input``: its message, its schema, and the form's bound
+        for, as ``_hold_back`` reads them, and a question's
+        ``requested_input``, its message and its schema, takes the form's bound
         fields it names, in the schema's order. A key no field of the form
         declares is asked by the message alone, since the page builds no
         widget from a schema
@@ -484,11 +484,9 @@ class SpecFormView(SpecPageBase):
             schema = requested.schema
         _hold_back(form, self.asked_fields, schema)
         if requested is not None:
-            context["requested_input"] = {
-                "message": requested.message,
-                "schema": requested.schema,
-                "fields": [form[name] for name in schema if name in form.fields],
-            }
+            context["requested_input"]["fields"] = [
+                form[name] for name in schema if name in form.fields
+            ]
         return self._rendered(self.get_context_data(form=form, **context), status=status)
 
 
