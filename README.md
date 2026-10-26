@@ -36,7 +36,9 @@ pip install django-spec-html
 ```
 
 Python 3.10 or later, Django 4.2 or later, and `django-service-specs` 0.17.0 or
-later, which it installs. Neither package needs an entry in `INSTALLED_APPS`.
+later, which it installs. The JSON views need no entry in `INSTALLED_APPS`; the
+pages' default templates are found as any app's are, so list `django_spec_html`
+there to use them, or give each page a `template_name` of its own.
 
 ## Quickstart
 

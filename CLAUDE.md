@@ -58,7 +58,8 @@ Non-negotiable. They keep the package navigable, and they are the kernel's.
    public surface in `__all__`. Internal modules import from leaf paths, never
    from the package's `__init__`.
 7. **The package root is a table of contents, not a drawer.** It holds
-   `__init__.py` and `version.py`. Everything else lives in a subpackage named
+   `__init__.py` and `version.py`, and `templates/`, which Django's
+   app-directories loader finds only there. Everything else lives in a subpackage named
    for a **concern**: `http/` (a spec as plain-Django JSON, and the request
    readers both halves use) and `views/` (a spec as a page). `types/` is the
    one standing subpackage, for value types, when there are any.
@@ -75,6 +76,7 @@ Non-negotiable. They keep the package navigable, and they are the kernel's.
 | Subpackage | Holds |
 | --- | --- |
 | `views/` | `SpecFormView`, a spec served as the page its form is, with what only that page needs (the fields it holds back, the question it asks); `SpecFormSetView`, a `many` spec served as a formset of its form; `SpecConfirmView`, a spec with no Validator served as a target and a button; `utils.py` for `SpecPageBase`, the private base every page view subclasses (admission, the target and its display, dispatch, the refusal, the success and its message, the fragment wrapper, the commit rule), whose hooks a subclass supplies and `as_view()` refuses a class missing, and the form readers both form pages share (`form_values`, `without_errors`) |
+| `templates/django_spec_html/` | the pages' default templates: `base.html`, which the three pages extend; `spec_form.html`, `spec_form_set.html` and `spec_confirm.html`, each including its form from a `*_fragment.html` of its own, which an htmx request is answered with on every Django; `target.html`, the target pane two of them share. Held by `tests/views/test_default_templates.py`, which mirrors no Python file |
 | `types/` | `Outcome`, the ways a page's post ends; it imports nothing else in the package (rule 8) |
 | `http/` | the JSON views (`SpecView`, `AsyncSpecView`, `dispatch_request`, `adispatch_request`), `error_response`, and the request readers both halves use: `request_arguments`, `route_arguments`, `request_principal`, `add_argument_errors`; `UnsupportedMediaType`, beside its raiser; `utils.py` for `SpecViewBase`, the helpers the entry points share, and `REFUSAL_STATUSES`, the status map the page reads too, with each refusal's `Outcome` |
 

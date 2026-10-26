@@ -27,8 +27,10 @@ pip install django-spec-html
 ```
 
 It installs [`django-service-specs`](https://artui.github.io/django-service-specs/), the kernel whose specs it serves,
-from 0.17.0, on Python 3.10 and Django 4.2 or later. Neither package needs an
-entry in `INSTALLED_APPS`.
+from 0.17.0, on Python 3.10 and Django 4.2 or later. The JSON views need no
+entry in `INSTALLED_APPS`; the pages' default templates are found as any app's
+are, so list `django_spec_html` there to use them, or give each page a
+`template_name` of its own ([the page's template](pages.md#the-pages-template)).
 
 Both halves were the kernel's, and moved here so the kernel carries no
 transport: the JSON views as kernel 0.11.0 shipped them, and `SpecFormView`

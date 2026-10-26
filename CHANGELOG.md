@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A page's template is optional.** `SpecFormView`, `SpecFormSetView` and
+  `SpecConfirmView` default `template_name` to a template this package ships:
+  `django_spec_html/spec_form.html`, `spec_form_set.html` and
+  `spec_confirm.html`, each extending `django_spec_html/base.html`. They are
+  plain, escaped documents with no stylesheet, script or htmx attribute. They
+  render the target pane, an unmet affordance's reason with the form disabled,
+  the form or formset with its errors, a question's message, a refusal's
+  `code`, and a submit button posting `commit_button`'s name. Each page's form
+  is a file of its own (`*_fragment.html`), which an htmx request is answered
+  with on every Django. The templates are found as any app's are, so list
+  `django_spec_html` in `INSTALLED_APPS` with `APP_DIRS` on; `as_view()` raises
+  `ImproperlyConfigured` when no engine finds them. Override any of them the
+  Django way, or set `template_name` as before.
 - **`SpecFormSetView` serves a `many` spec as a formset of its form**: each form
   a row, sent as one list under `many_argument`, a form left blank sending no
   row, and a refusal of row *i* placed on the form that sent it. The page shows

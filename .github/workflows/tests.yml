@@ -107,9 +107,10 @@ jobs:
           import django
           from django.conf import settings
 
-          # The package defines no models and needs no app listed: a project
-          # imports its views from a URLconf, after django.setup() against
-          # configured settings, so it is imported that way here.
+          # The package defines no models, and an app entry only lets the
+          # loader find its default templates: a project imports its views
+          # from a URLconf, after django.setup() against configured settings,
+          # so it is imported that way here.
           settings.configure(
               SECRET_KEY="x",
               INSTALLED_APPS=[
