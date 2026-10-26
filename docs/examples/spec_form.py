@@ -15,14 +15,17 @@ from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.urls import path, reverse, reverse_lazy
 from django_service_specs import (
+    Affordance,
     ChangeResult,
     DispatchResult,
     FormValidator,
     Parameter,
     Parameters,
     PermissionCheck,
+    PoolSeeds,
     SelectorKind,
     SelectorSpec,
+    ServerArguments,
     ServiceSpec,
     update_from_input,
 )
@@ -98,6 +101,49 @@ edit_book_spec = ServiceSpec(
 # --8<-- [end:update]
 
 
+# --8<-- [start:request]
+CLOSED_BRANCHES = {"harbour"}
+
+
+def branch_open(*, branch: str) -> bool:
+    # ``branch`` is a seed, so every transport serving this spec seeds its own.
+    return branch not in CLOSED_BRANCHES
+
+
+stock_book_spec = ServiceSpec(
+    service=add_book,
+    permissions=[IsSignedIn()],
+    validator=book_validator,
+    affordances=[
+        Affordance(
+            code="branch_closed",
+            reason="This branch is closed for stocktaking.",
+            when=branch_open,
+        ),
+    ],
+)
+
+
+class StockBook(SpecFormView):
+    spec = stock_book_spec
+    template_name = "spec_form_available.html"
+    success_url = reverse_lazy("books")
+    # Every route under ``branches/<branch>/`` captures ``branch``, which this
+    # spec reads as a seed rather than an argument: drop it, and hold every
+    # other kwarg strict.
+    route_kwargs = {"branch": None}
+    # A book stocked at a branch starts as a draft, whatever the form posts:
+    # the status field renders disabled, and the posted value is dropped.
+    server_arguments = ServerArguments(values={"status": Status.DRAFT})
+
+    def get_pool_seeds(self, request: HttpRequest) -> PoolSeeds:
+        # What the request carries, never the request itself.
+        return self.pool_seeds.extend(branch=lambda: self.kwargs["branch"])
+
+
+# --8<-- [end:request]
+
+
 def books(request: HttpRequest) -> HttpResponse:
     return HttpResponse("The books.")
 
@@ -134,6 +180,7 @@ urlpatterns = [
             success_url=reverse_lazy("books"),
         ),
     ),
+    path("branches/<branch>/books/new/", StockBook.as_view()),
     path("books/", books, name="books"),
     path("books/<int:pk>/", book, name="book"),
 ]

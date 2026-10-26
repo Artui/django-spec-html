@@ -180,8 +180,116 @@ status.
 `as_view()` refuses, when the URLconf is imported, a view with no
 `ServiceSpec`, a spec whose Validator is not a `FormValidator`, a `many`
 spec, whose list of rows no form posts, and a view with neither a
-`success_url` nor its own `get_success_url`. The view is **sync
-only** in this release.
+`success_url` nor its own `get_success_url`; then every check the JSON views
+make of the request's hooks, [below](#what-the-request-carries). The view is
+**sync only** in this release.
+
+## What the request carries
+
+The page reads the request as [the JSON views](http.md#what-the-request-carries)
+do, with the same attributes and hooks, checked by the same code:
+
+- **`route_kwargs`** says which URL kwargs fill which parameters, a mapping
+  to rename or drop (`{"branch": None}`) or a tuple of names to allow, as on
+  [`SpecView`](http.md#kwargs-a-spec-does-not-read). `as_view()` refuses a
+  bare string and a target or an allowed name the spec does not declare, and
+  two kwargs filling one parameter are refused on the request that captures
+  both.
+- **`get_pool_seeds(request)`**, `pool_seeds` unless overridden, answers the
+  seeds this request's call is resolved with. It is asked once per request,
+  and every step that resolves a spec callable is handed what it answered:
+  the target's lookup and its object-level or scope check, the affordances
+  [below](#an-operation-that-is-unavailable), and dispatch. Seed what the
+  request carries, never the request itself. **The class-level check is the
+  exception**: the page asks `has_permission` before it reads anything else,
+  and asks it with no seed at all, its own `pool_seeds` included, so a check
+  naming a seed raises `TypeError` on the page. The JSON views hand that check
+  its seeds.
+- **`get_server_arguments(request)`**, `server_arguments` unless overridden,
+  answers the kernel's
+  [`ServerArguments`][django_service_specs.types.server_arguments.ServerArguments],
+  and three readers of the call read the server's value for each name it
+  answers for: the page's form, the target's lookup and dispatch. **A field of
+  the page's form that the binding binds renders disabled, showing the
+  server's value; one it withholds renders disabled and empty**, on GET and
+  on a refused post alike, so the page never shows a value the client posted
+  for it. A disabled field is not read from the post, so a value the client
+  was never offered is never coerced or refused; the binding is laid over the
+  post's arguments before dispatch, and over the route's before the target is
+  found, so a target selector reading a bound parameter finds the row by the
+  server's value. Anything else a template shows - the row's own fields, say -
+  is what it is.
+
+The checks are the JSON views': `as_view()` refuses an `async def` hook,
+checks `server_arguments` with the kernel's `check_server_arguments` against
+the declared `pool_seeds`, and refuses a `route_kwargs` filling a name the
+binding answers for. On each request, a per-call binding that binds or
+withholds other names than the declared one, a seed added per call under a
+bound or withheld name, and a route capture filling a name the server answers
+for are each refused as `ImproperlyConfigured`, the last pointing at
+`route_kwargs={name: None}`.
+
+```python
+--8<--
+docs/examples/spec_form.py:request
+--8<--
+```
+
+The URLconf routes it as `branches/<branch>/books/new/`. Its status renders
+disabled with `draft` selected, and a posted status is dropped: every book it
+adds is a draft.
+
+## An operation that is unavailable
+
+A spec's [`Affordance`][django_service_specs.types.affordance.Affordance]
+conditions say whether the operation is possible right now, and **the page
+asks them on GET**, after it has found the target, so it never offers a form
+whose post the spec would refuse at 409:
+
+- **The callable conditions are asked always**, through the kernel's
+  `unmet_operation_affordance`, on a pool `base_pool` builds from the call's
+  own seeds. So a condition reading a seed `get_pool_seeds` adds, as
+  `branch_open` above reads `branch`, is asked with it.
+- **When the target is a row and every callable condition is met, the
+  conditions on the row are asked too**, as dispatch asks them. A target of
+  `None` - a create, or a missing row `allow_none` lets through - is no row,
+  and no row condition is asked about it.
+- **The first unmet one is in the context as `unavailable`**: the
+  `Affordance` itself, whose `code` and `reason` a template reads. **When
+  every condition is met, `unavailable` is absent** from the context, not
+  `None`. The fragment renders from the same context, so an `hx-get` that
+  loads the form carries it too.
+
+**Every callable condition is asked twice on a GET with a row**: once alone,
+then again with the row's conditions, since the kernel's `enforce_affordances`
+asks them all as dispatch does. Each seed is resolved twice as well, once for
+the target's lookup and once for the affordances' pool. Write conditions and
+seed resolvers that may be asked more than once and answer the same.
+
+The callable conditions are asked first, without a row, so where both kinds
+are unmet and the row's is declared first, the page names the callable while
+the post is refused with the row's: dispatch asks in declaration order. **The
+page's answer is advice, and the post's refusal is the authority**: the POST
+is unchanged, dispatch asks every condition again, and a condition that
+changed between the two requests is answered by the 409.
+
+**A refused post carries the refusal's `code`** in its context, beside the
+form, for a refusal that has one: `ActionUnavailable`, whose `code` is the
+one the [JSON body](http.md#refusals) carries beside its `detail`. It is
+absent for every other refusal. The fragment's context carries it too, so a
+template branches on the stable code rather than on the message.
+
+There is no default template yet, so a host's template says it:
+
+```html
+--8<--
+tests/templates/spec_form_available.html
+--8<--
+```
+
+On the closed branch above, the page says why and disables the form, and a
+post made anyway comes back at 409 with the reason among the form's errors and
+the link to another branch beside it.
 
 <a id="htmx"></a>
 ## An htmx request

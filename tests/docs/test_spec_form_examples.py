@@ -202,6 +202,59 @@ class Anything(forms.Form):
     note = forms.CharField(required=False)
 
 
+class TestAnUnavailableBook:
+    """``StockBook``: the page asks whether the operation is available before anyone posts."""
+
+    def test_an_open_branch_is_offered_the_form(self, ada: Any) -> None:
+        response = serve(FACTORY.get("/branches/main/books/new/"), ada).render()
+        assert response.status_code == 200
+        assert "unavailable" not in response.context_data
+        assert b"<fieldset>" in response.content
+        assert b'class="unavailable"' not in response.content
+
+    def test_a_closed_branch_s_page_says_why_and_disables_the_form(self, ada: Any) -> None:
+        response = serve(FACTORY.get("/branches/harbour/books/new/"), ada).render()
+        assert response.status_code == 200
+        unavailable = response.context_data["unavailable"]
+        assert (unavailable.code, unavailable.reason) == (
+            "branch_closed",
+            "This branch is closed for stocktaking.",
+        )
+        assert (
+            b'<p class="unavailable" data-code="branch_closed">'
+            b"This branch is closed for stocktaking.</p>"
+        ) in response.content
+        assert b"<fieldset disabled>" in response.content
+
+    def test_a_post_to_a_closed_branch_is_refused_with_its_code(
+        self, ada: Any, author: Author
+    ) -> None:
+        # The page's answer is advice; the post is refused as dispatch refuses it.
+        response = serve(FACTORY.post("/branches/harbour/books/new/", data=posted(author)), ada)
+        response.render()
+        assert (response.status_code, response.context_data["code"]) == (409, "branch_closed")
+        assert b"This branch is closed for stocktaking." in response.content
+        assert b"Choose another branch." in response.content
+        assert not Book.objects.exists()
+
+    def test_a_post_to_an_open_branch_adds_the_book_as_a_draft(
+        self, ada: Any, author: Author
+    ) -> None:
+        # The posted status is dropped, and the server's is the book's.
+        data = posted(author, status=Status.PUBLISHED, published_on="1974-10-25")
+        response = serve(FACTORY.post("/branches/main/books/new/", data=data), ada)
+        assert (response.status_code, response.url) == (302, "/books/")
+        book = Book.objects.get()
+        assert (book.title, book.status) == ("The Dispossessed", Status.DRAFT)
+
+    def test_the_status_the_server_answers_for_renders_disabled(self, ada: Any) -> None:
+        response = serve(FACTORY.get("/branches/main/books/new/"), ada).render()
+        select = re.search(rb'<select name="status"[^>]*>', response.content)
+        assert select is not None
+        assert b"disabled" in select.group(0)
+        assert b'<option value="draft" selected>' in response.content
+
+
 def _outcome_table() -> dict[str, tuple[str, str, str]]:
     """The page's outcome table, as ``{class name: (outcome, page, fragment)}``."""
     page = (ROOT / "docs" / "pages.md").read_text()
