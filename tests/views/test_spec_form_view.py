@@ -29,6 +29,7 @@ from django.core.exceptions import (
 )
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.template import TemplateDoesNotExist
 from django.urls import path, reverse_lazy
@@ -37,14 +38,19 @@ from django.utils.translation import gettext_lazy
 from django_service_specs import (
     ActionUnavailable,
     AdditionalInputRequired,
+    Affordance,
     DispatchError,
     DispatchResult,
     FormValidator,
     NotPermitted,
+    Parameter,
+    Parameters,
     PermissionCheck,
+    PoolSeeds,
     PrincipalUnavailable,
     SelectorKind,
     SelectorSpec,
+    ServerArguments,
     ServiceConflict,
     ServiceError,
     ServiceNotFound,
@@ -1658,3 +1664,499 @@ class TestConfiguration:
     def test_a_misspelt_setting_is_djangos_own_refusal(self) -> None:
         with pytest.raises(TypeError, match="invalid keyword 'sepc'"):
             SpecFormView.as_view(sepc=entry_spec())
+
+
+def paged(spec: ServiceSpec, name: str = "Paged", **attributes: Any) -> Any:
+    """A subclass setting ``attributes``, as a host's does, so an attribute no view reads is a red."""
+    attributes = {"spec": spec, "template_name": TEMPLATE, "success_url": "/done/", **attributes}
+    return type(name, (SpecFormView,), attributes)
+
+
+def headed(view: Any, user: Any, method: str = "GET", data: Any = None, **url_kwargs: Any) -> Any:
+    """A request carrying ``X-Tenant: acme``, for a hook reading what the request carries."""
+    headers = {"HTTP_X_TENANT": "acme"}
+    if method == "GET":
+        request = FACTORY.get("/", **headers)
+    else:
+        request = FACTORY.post("/", data=data or {}, **headers)
+    return view(signed_in(request, user), **url_kwargs)
+
+
+def tenant_from_the_header(self: Any, request: Any) -> PoolSeeds:
+    return self.pool_seeds.extend(tenant=lambda: request.headers["X-Tenant"])
+
+
+class SeesTenantOnTheRow(PermissionCheck):
+    """Admits every row, recording the ``tenant`` seed its object-level check was asked with."""
+
+    def __init__(self) -> None:
+        self.tenants: list[Any] = []
+
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        return True
+
+    def has_object_permission(self, principal: Any, spec: Any, obj: Any, *, tenant: Any) -> bool:
+        self.tenants.append(tenant)
+        return True
+
+
+@pytest.fixture
+def note(ada: Any) -> Note:
+    return Note.objects.create(owner=ada, title="One")
+
+
+class TestThePagesRouteKwargs:
+    def test_a_kwarg_mapped_to_none_is_dropped(self, ada: Any) -> None:
+        view = paged(entry_spec(), route_kwargs={"org": None}).as_view()
+        assert get(view, ada, org="acme").status_code == 200
+        assert post(view, ada, {"title": "Hi"}, org="acme").status_code == 302
+
+    def test_a_kwarg_is_renamed_to_the_parameter_it_fills(self, ada: Any, note: Note) -> None:
+        spec = row_spec()
+        view = paged(spec, route_kwargs={"note": "pk"}).as_view()
+        assert get(view, ada, note=str(note.pk)).context_data["form"].initial["title"] == "One"
+        assert post(view, ada, {"title": "Hi"}, note=str(note.pk)).status_code == 302
+        assert spec.service.calls[0]["instance"] == note
+
+    def test_a_renamed_kwarg_that_does_not_parse_is_the_clients_400(self, ada: Any) -> None:
+        view = paged(row_spec(), route_kwargs={"note": "pk"}).as_view()
+        with pytest.raises(BadRequest):
+            get(view, ada, note="four")
+
+    def test_a_tuple_allows_its_names_and_drops_the_rest(self, ada: Any, note: Note) -> None:
+        view = paged(row_spec(), route_kwargs=("pk",)).as_view()
+        response = get(view, ada, org="acme", pk=str(note.pk))
+        assert response.context_data["form"].initial["title"] == "One"
+
+    def test_a_bare_string_is_refused_at_as_view(self) -> None:
+        with pytest.raises(TypeError, match="route_kwargs is a tuple of names"):
+            paged(entry_spec(), route_kwargs="org").as_view()
+
+    def test_a_target_the_spec_does_not_declare_is_refused_at_as_view(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match="maps a kwarg to team, which the spec"):
+            paged(entry_spec(), route_kwargs={"org": "team"}).as_view()
+
+    def test_an_allowed_name_the_spec_does_not_declare_is_refused_at_as_view(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match="allows team, which the spec"):
+            paged(row_spec(), route_kwargs=("pk", "team")).as_view()
+
+    def test_route_kwargs_passed_to_as_view_are_checked_there_too(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match="maps a kwarg to team, which the spec"):
+            form_view(entry_spec(), route_kwargs={"org": "team"})
+
+    def test_two_kwargs_onto_one_parameter_are_refused_per_request(
+        self, ada: Any, note: Note
+    ) -> None:
+        view = paged(row_spec(), route_kwargs={"note": "pk"}).as_view()
+        assert get(view, ada, pk=str(note.pk)).status_code == 200
+        with pytest.raises(ImproperlyConfigured, match="fills pk from more than one kwarg"):
+            get(view, ada, pk=str(note.pk), note=str(note.pk))
+        with pytest.raises(ImproperlyConfigured, match="fills pk from more than one kwarg"):
+            post(view, ada, {"title": "Hi"}, pk=str(note.pk), note=str(note.pk))
+
+    def test_a_kwarg_the_mapping_does_not_name_is_still_refused(self, ada: Any) -> None:
+        view = paged(entry_spec(), route_kwargs={"org": None}).as_view()
+        with pytest.raises(ImproperlyConfigured, match="The route captures team,"):
+            get(view, ada, org="acme", team="a")
+
+
+class TestThePagesPoolSeeds:
+    @pytest.mark.parametrize(
+        ("binding", "name"),
+        [
+            (ServerArguments(values={"title": "S"}), "title"),
+            (ServerArguments(withheld=frozenset({"count"})), "count"),
+        ],
+        ids=["bound", "withheld"],
+    )
+    def test_a_per_call_seed_occupying_a_name_the_binding_answers_for_is_refused(
+        self, ada: Any, binding: ServerArguments, name: str
+    ) -> None:
+        def seeded(self: Any, request: Any) -> PoolSeeds:
+            return self.pool_seeds.extend(**{name: lambda: "seeded"})
+
+        view = paged(
+            entry_spec(), "Seeded", server_arguments=binding, get_pool_seeds=seeded
+        ).as_view()
+        for answer in (lambda: get(view, ada), lambda: post(view, ada, {"title": "Hi"})):
+            with pytest.raises(ImproperlyConfigured) as refused_:
+                answer()
+            assert str(refused_.value).startswith(
+                f"Seeded.get_pool_seeds() adds {name}, which server_arguments binds or withholds"
+            )
+
+    def test_a_seed_from_the_request_reaches_the_row_s_check_and_the_service(
+        self, ada: Any, note: Note
+    ) -> None:
+        check = SeesTenantOnTheRow()
+        spec = row_spec(permissions=[check])
+        view = paged(spec, get_pool_seeds=tenant_from_the_header).as_view()
+        assert headed(view, ada, pk=str(note.pk)).status_code == 200
+        assert headed(view, ada, "POST", {"title": "Hi"}, pk=str(note.pk)).status_code == 302
+        # The view's own seeds name no tenant at all.
+        assert check.tenants == ["acme", "acme"]
+        assert spec.service.calls[0]["tenant"] == "acme"
+
+    def test_a_seed_from_the_request_reaches_the_scope_check(self, ada: Any) -> None:
+        class SeesTenantInScope(PermissionCheck):
+            def __init__(self) -> None:
+                self.tenants: list[Any] = []
+
+            def has_permission(self, principal: Any, spec: Any) -> bool:
+                return True
+
+            def has_scope_permission(
+                self, principal: Any, spec: Any, scope: Any, *, tenant: Any
+            ) -> bool:
+                self.tenants.append(tenant)
+                return True
+
+        check = SeesTenantInScope()
+        view = paged(entry_spec(permissions=[check]), get_pool_seeds=tenant_from_the_header)
+        assert headed(view.as_view(), ada).status_code == 200
+        assert headed(view.as_view(), ada, "POST", {"title": "Hi"}).status_code == 302
+        assert check.tenants == ["acme", "acme"]
+
+    def test_the_hook_is_asked_once_per_request(self, ada: Any, note: Note) -> None:
+        asked: list[Any] = []
+
+        def counted(self: Any, request: Any) -> PoolSeeds:
+            asked.append(request)
+            return self.pool_seeds
+
+        view = paged(row_spec(), get_pool_seeds=counted).as_view()
+        get(view, ada, pk=str(note.pk))
+        post(view, ada, {"title": "Hi"}, pk=str(note.pk))
+        assert len(asked) == 2
+
+    @pytest.mark.parametrize("hook", ["get_pool_seeds", "get_server_arguments"])
+    def test_an_async_hook_is_refused_at_as_view(self, hook: str) -> None:
+        async def asynchronous(self: Any, request: Any) -> Any: ...
+
+        with pytest.raises(ImproperlyConfigured) as refused_:
+            paged(entry_spec(), "Hooked", **{hook: asynchronous}).as_view()
+        # The page is sync, so the JSON view's note on AsyncSpecView is not its.
+        assert str(refused_.value) == (
+            f"Hooked.{hook} is async, and the view calls it without awaiting it, so it "
+            "would answer a coroutine: define it with def."
+        )
+        with pytest.raises(ImproperlyConfigured, match=f"SpecFormView.{hook} is async"):
+            form_view(entry_spec(), **{hook: asynchronous})
+
+
+class TestThePagesServerArguments:
+    def test_a_bound_value_outranks_a_malformed_posted_one(self, ada: Any) -> None:
+        # Malformed, so a value coerced before the binding drops it is refused
+        # as the client's 400 for a name it was never offered.
+        spec = entry_spec()
+        view = paged(spec, server_arguments=ServerArguments(values={"count": 3})).as_view()
+        assert post(view, ada, {"title": "Hi", "count": "abc"}).status_code == 302
+        assert received(spec)["count"] == 3
+
+    def test_a_bound_value_outranks_a_posted_one(self, ada: Any) -> None:
+        spec = entry_spec()
+        view = paged(spec, server_arguments=ServerArguments(values={"title": "S"})).as_view()
+        assert post(view, ada, {"title": "client"}).status_code == 302
+        assert received(spec)["title"] == "S"
+
+    def test_a_withheld_name_is_dropped_however_malformed(self, ada: Any) -> None:
+        spec = entry_spec()
+        withheld = ServerArguments(withheld=frozenset({"count"}))
+        view = paged(spec, server_arguments=withheld).as_view()
+        assert post(view, ada, {"title": "Hi", "count": "abc"}).status_code == 302
+        assert received(spec)["count"] is None
+
+    def test_a_route_capturing_a_withheld_name_is_refused(self, ada: Any) -> None:
+        withheld = ServerArguments(withheld=frozenset({"count"}))
+        view = paged(entry_spec(), server_arguments=withheld).as_view()
+        for answer in (
+            lambda: get(view, ada, count="abc"),
+            lambda: post(view, ada, {"title": "Hi"}, count="abc"),
+        ):
+            with pytest.raises(ImproperlyConfigured) as refused_:
+                answer()
+            assert str(refused_.value).startswith(
+                "The route captures count, which server_arguments answers for. "
+                "Drop each with route_kwargs={'count': None}"
+            )
+
+    def test_a_route_kwarg_mapped_onto_a_bound_name_is_refused_at_as_view(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as refused_:
+            paged(
+                row_spec(),
+                route_kwargs={"note": "pk", "org": None},
+                server_arguments=ServerArguments(values={"pk": 1}),
+            ).as_view()
+        assert str(refused_.value).startswith(
+            "Paged.route_kwargs fills pk, which server_arguments answers for."
+        )
+
+    def test_an_allowed_name_the_server_withholds_is_refused_at_as_view(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match="route_kwargs fills count, which"):
+            paged(
+                entry_spec(),
+                route_kwargs=("count",),
+                server_arguments=ServerArguments(withheld=frozenset({"count"})),
+            ).as_view()
+
+    def test_the_target_is_found_by_the_server_s_value(self, ada: Any, note: Note) -> None:
+        # The route's pk is dropped and the server's finds the row, so the
+        # page and dispatch see one value.
+        spec = row_spec()
+        view = paged(
+            spec,
+            route_kwargs={"pk": None},
+            server_arguments=ServerArguments(values={"pk": note.pk}),
+        ).as_view()
+        assert get(view, ada, pk="999").context_data["form"].initial["title"] == "One"
+        assert post(view, ada, {"title": "Hi", "pk": "999"}, pk="999").status_code == 302
+        assert spec.service.calls[0]["instance"] == note
+
+    def test_a_binding_that_cannot_mean_what_it_says_is_refused_at_as_view(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match="ServerArguments names nope, which the"):
+            paged(entry_spec(), server_arguments=ServerArguments(values={"nope": 1})).as_view()
+        with pytest.raises(ImproperlyConfigured, match="ServerArguments names nope, which the"):
+            form_view(entry_spec(), server_arguments=ServerArguments(values={"nope": 1}))
+
+    def test_the_check_reads_the_view_s_declared_seeds(self) -> None:
+        # ``tenant`` is free under the default seeds and a seed's under these.
+        spec = entry_spec(
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE,
+                selector=note_in_tenant,
+                reads=Parameters.of(Parameter("pk", "integer"), Parameter("tenant", "string")),
+            )
+        )
+        bound = ServerArguments(values={"tenant": "acme"})
+        paged(spec, server_arguments=bound).as_view()
+        with pytest.raises(ImproperlyConfigured, match="which a registered pool seed occupies"):
+            paged(spec, server_arguments=bound, pool_seeds=TENANT_SEEDS).as_view()
+
+    def test_a_view_with_no_spec_is_refused_as_one_whatever_it_binds(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as refused_:
+            SpecFormView.as_view(
+                server_arguments=ServerArguments(values={"pk": 1}), success_url="/done/"
+            )
+        assert str(refused_.value) == (
+            "SpecFormView.as_view() needs a ServiceSpec, the write a form posts; got NoneType."
+        )
+
+    def test_a_per_call_binding_of_the_same_names_is_served(self, ada: Any, note: Note) -> None:
+        def from_the_header(self: Any, request: Any) -> ServerArguments:
+            return ServerArguments(values={"pk": int(request.headers["X-Note"])})
+
+        spec = row_spec()
+        view = paged(
+            spec,
+            server_arguments=ServerArguments(values={"pk": 0}),
+            get_server_arguments=from_the_header,
+        ).as_view()
+        headers = {"HTTP_X_NOTE": str(note.pk)}
+        page = view(signed_in(FACTORY.get("/?pk=abc", **headers), ada))
+        assert page.context_data["form"].initial["title"] == "One"
+        posted = view(signed_in(FACTORY.post("/", data={"title": "Hi"}, **headers), ada))
+        assert posted.status_code == 302
+        assert spec.service.calls[0]["instance"] == note
+
+    @pytest.mark.parametrize(
+        ("declared", "served", "described"),
+        [
+            (
+                ServerArguments(values={"title": "S"}),
+                None,
+                "binds nothing and withholds nothing, where server_arguments binds title "
+                "and withholds nothing.",
+            ),
+            (
+                ServerArguments(values={"title": "S"}),
+                ServerArguments(withheld=frozenset({"title"})),
+                "binds nothing and withholds title, where server_arguments binds title "
+                "and withholds nothing.",
+            ),
+            (
+                ServerArguments(withheld=frozenset({"count"})),
+                None,
+                "binds nothing and withholds nothing, where server_arguments binds nothing "
+                "and withholds count.",
+            ),
+            (
+                None,
+                ServerArguments(values={"title": "S"}, withheld=frozenset({"nope"})),
+                "binds title and withholds nope, where server_arguments binds nothing "
+                "and withholds nothing.",
+            ),
+        ],
+        ids=["dropping", "withholding-a-bound-name", "releasing", "undeclared"],
+    )
+    def test_a_per_call_binding_of_other_names_is_refused(
+        self,
+        ada: Any,
+        declared: ServerArguments | None,
+        served: ServerArguments | None,
+        described: str,
+    ) -> None:
+        view = paged(
+            entry_spec(),
+            "PerCall",
+            server_arguments=declared,
+            get_server_arguments=lambda self, request: served,
+        ).as_view()
+        for answer in (lambda: get(view, ada), lambda: post(view, ada, {"title": "Hi"})):
+            with pytest.raises(ImproperlyConfigured) as refused_:
+                answer()
+            assert str(refused_.value).startswith(f"PerCall.get_server_arguments() {described}")
+
+    def test_an_empty_binding_and_none_stand_for_each_other(self, ada: Any) -> None:
+        view = paged(
+            entry_spec(),
+            server_arguments=ServerArguments(),
+            get_server_arguments=lambda self, request: None,
+        ).as_view()
+        assert get(view, ada).status_code == 200
+        assert post(view, ada, {"title": "Hi"}).status_code == 302
+
+
+CLOSED_TODAY = Affordance(code="closed", reason="Entries are closed today.", when=lambda: False)
+"""A callable condition, unmet whatever the call: the operation is unavailable now."""
+
+UNTITLED = Affordance(
+    code="titled", reason="Only an untitled note is edited here.", when=Q(title="")
+)
+"""A condition on the row, unmet for any note with a title."""
+
+OPEN_TODAY = Affordance(code="open", reason="Entries are open.", when=lambda: True)
+
+
+def note_in_tenant(*, pk: int, tenant: str = "") -> Any:
+    return Note.objects.filter(pk=pk)
+
+
+def open_for(*, tenant: str) -> bool:
+    return tenant != "acme"
+
+
+def unavailable_of(response: Any) -> Any:
+    return response.context_data.get("unavailable", "absent")
+
+
+class TestUnavailableOnGet:
+    """The page asks the kernel, before anyone posts, whether the operation is available."""
+
+    def test_an_unmet_condition_is_in_the_page_s_context(self, ada: Any) -> None:
+        view = form_view(entry_spec(affordances=[CLOSED_TODAY]))
+        response = get(view, ada)
+        assert response.status_code == 200
+        unavailable = response.context_data["unavailable"]
+        assert (unavailable.code, unavailable.reason) == ("closed", "Entries are closed today.")
+
+    def test_an_unmet_condition_is_in_the_fragment_s_context(self, ada: Any) -> None:
+        response = hx_get(fragmented(entry_spec(affordances=[CLOSED_TODAY])), ada)
+        assert response.template_name == [FRAGMENT]
+        assert response.context_data["unavailable"] is CLOSED_TODAY
+
+    @pytest.mark.parametrize("ask", [get, hx_get], ids=["page", "fragment"])
+    def test_a_condition_on_the_row_is_asked_of_the_row(
+        self, ada: Any, note: Note, ask: Any
+    ) -> None:
+        view = fragmented(row_spec(affordances=[OPEN_TODAY, UNTITLED]))
+        assert ask(view, ada, pk=str(note.pk)).context_data["unavailable"] is UNTITLED
+
+    @pytest.mark.parametrize("ask", [get, hx_get], ids=["page", "fragment"])
+    def test_every_condition_met_leaves_it_out(self, ada: Any, note: Note, ask: Any) -> None:
+        note.title = ""
+        note.save()
+        view = fragmented(row_spec(affordances=[OPEN_TODAY, UNTITLED]))
+        response = ask(view, ada, pk=str(note.pk))
+        assert unavailable_of(response) == "absent"
+
+    def test_a_callable_condition_is_named_before_a_row_condition_declared_first(
+        self, ada: Any, note: Note
+    ) -> None:
+        # The callable conditions are asked first, with no row, so the page
+        # names one where the post, asking in declaration order, names the
+        # row's: both are unmet, and the post's 409 stays the authority.
+        view = form_view(row_spec(affordances=[UNTITLED, CLOSED_TODAY]))
+        assert get(view, ada, pk=str(note.pk)).context_data["unavailable"] is CLOSED_TODAY
+        posted = post(view, ada, {"title": "Hi"}, pk=str(note.pk))
+        assert (posted.status_code, posted.context_data["code"]) == (409, "titled")
+
+    def test_no_row_asks_no_row_condition(self, ada: Any) -> None:
+        # A missing row ``allow_none`` lets through is ``None``, which the
+        # kernel refuses to ask a row condition about.
+        spec = entry_spec(
+            affordances=[UNTITLED],
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=note_by_pk, reads=PK, allow_none=True
+            ),
+        )
+        assert unavailable_of(get(form_view(spec), ada, pk=404)) == "absent"
+
+    def test_a_create_asks_no_row_condition(self, ada: Any) -> None:
+        # A create resolves ``None`` too: no row to ask about.
+        response = get(form_view(entry_spec(affordances=[UNTITLED])), ada)
+        assert unavailable_of(response) == "absent"
+
+    def test_a_row_gone_before_its_condition_is_asked_is_404(self, ada: Any, note: Note) -> None:
+        class Deletes(PermissionCheck):
+            def has_permission(self, principal: Any, spec: Any) -> bool:
+                return True
+
+            def has_object_permission(self, principal: Any, spec: Any, obj: Any) -> bool:
+                Note.objects.filter(pk=obj.pk).delete()
+                return True
+
+        view = form_view(row_spec(permissions=[Deletes()], affordances=[UNTITLED]))
+        with pytest.raises(Http404):
+            get(view, ada, pk=str(note.pk))
+
+    def test_a_condition_reading_a_per_call_seed_is_asked_with_it(self, ada: Any) -> None:
+        when = Affordance(code="tenant", reason="Not for this tenant.", when=open_for)
+        view = paged(entry_spec(affordances=[when]), get_pool_seeds=tenant_from_the_header)
+        assert headed(view.as_view(), ada).context_data["unavailable"] is when
+
+    def test_the_page_no_longer_offers_what_the_post_refuses(self, ada: Any) -> None:
+        # Served before, the page offered the form with no reason, and the
+        # post then answered 409.
+        view = form_view(entry_spec(affordances=[CLOSED_TODAY]), template_name=AVAILABLE)
+        page = get(view, ada).render()
+        assert page.status_code == 200
+        assert b'<p class="unavailable" data-code="closed">Entries are closed today.</p>' in (
+            page.content
+        )
+        assert b"<fieldset disabled>" in page.content
+        refused_ = post(view, ada, {"title": "Hi"})
+        assert (refused_.status_code, refused(refused_)) == (
+            409,
+            {"__all__": ["Entries are closed today."]},
+        )
+
+
+AVAILABLE = "spec_form_available.html"
+
+
+class TestTheRefusalsCode:
+    @pytest.mark.parametrize("ask", [post, hx_post], ids=["page", "fragment"])
+    def test_an_unmet_condition_still_refuses_the_post_with_its_code(
+        self, ada: Any, ask: Any
+    ) -> None:
+        spec = entry_spec(affordances=[CLOSED_TODAY])
+        response = ask(fragmented(spec), ada, {"title": "Hi"})
+        assert response.status_code == (409 if ask is post else 200)
+        assert response.context_data["code"] == "closed"
+        assert spec.service.calls == []
+
+    @pytest.mark.parametrize("ask", [post, hx_post], ids=["page", "fragment"])
+    def test_a_service_s_action_unavailable_carries_its_code(self, ada: Any, ask: Any) -> None:
+        view = fragmented(raising(ActionUnavailable("Moved.", code="moved")))
+        assert ask(view, ada, {"title": "Hi"}).context_data["code"] == "moved"
+
+    @pytest.mark.parametrize(
+        "exc",
+        [ServiceConflict("Moved."), ServiceError("Moved."), None],
+        ids=["conflict", "service-error", "invalid"],
+    )
+    def test_a_refusal_with_no_code_leaves_it_out(self, ada: Any, exc: Any) -> None:
+        spec = entry_spec() if exc is None else raising(exc)
+        response = post(form_view(spec), ada, {"title": "shut" if exc is None else "Hi"})
+        assert response.status_code in (400, 409, 422)
+        assert "code" not in response.context_data

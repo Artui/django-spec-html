@@ -7,7 +7,6 @@ from collections.abc import Mapping
 from io import BytesIO
 from typing import Any, NoReturn
 
-from django.core.exceptions import ImproperlyConfigured
 from django.http import HttpRequest, QueryDict
 from django.http.multipartparser import MultiPartParser
 from django.utils.datastructures import MultiValueDict
@@ -26,6 +25,7 @@ from django_service_specs import (
 
 from django_spec_html.http.route_arguments import route_arguments
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
+from django_spec_html.http.utils import refuse_server_owned, server_names, without
 
 _CSRF_FIELD = "csrfmiddlewaretoken"
 """The field ``{% csrf_token %}`` renders into a form: Django's, and never an argument."""
@@ -145,55 +145,19 @@ def request_arguments(
             [`route_arguments`][django_spec_html.http.route_arguments.route_arguments].
     """
     route = route_arguments(parameters, url_kwargs, route_kwargs=route_kwargs)
-    owned = frozenset() if server_arguments is None else server_arguments.names()
-    _refuse_server_owned(url_kwargs, route_kwargs, owned)
+    owned = server_names(server_arguments)
+    refuse_server_owned(url_kwargs, route_kwargs, owned)
     if request.method in ("GET", "HEAD"):
         read = {**_flat(parameters, request.GET), **route}
-        return coerce_flat(parameters, _without(read, owned))
+        return coerce_flat(parameters, without(read, owned))
     if request.content_type == "application/json":
         return {
-            **_without(_json_object(request), owned),
+            **without(_json_object(request), owned),
             **coerce_flat(parameters, route),
         }
     fields, uploads = _form(request)
     read = {**_flat(parameters, fields), **_uploads(parameters, uploads), **route}
-    return coerce_flat(parameters, _without(read, owned))
-
-
-def _refuse_server_owned(
-    url_kwargs: Mapping[str, Any] | None,
-    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
-    owned: frozenset[str],
-) -> None:
-    """Refuse every captured kwarg that would fill a name the server answers for, by its captured name.
-
-    Named as the route captured it, so the refusal says which kwarg to drop,
-    whether it fills the name under its own or through a mapping.
-    """
-    filling = sorted(name for name in url_kwargs or {} if _filled_by(name, route_kwargs) in owned)
-    if filling:
-        raise ImproperlyConfigured(
-            f"The route captures {', '.join(filling)}, which server_arguments answers for. "
-            f"Drop each with route_kwargs={dict.fromkeys(filling)!r}, or leave it out of "
-            "server_arguments: the route is the host's, and may not contradict the host's "
-            "own binding."
-        )
-
-
-def _filled_by(
-    name: str, route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None
-) -> str | None:
-    """The parameter the captured kwarg ``name`` fills under ``route_kwargs``, or ``None`` if dropped."""
-    if route_kwargs is None:
-        return name
-    if isinstance(route_kwargs, Mapping):
-        return route_kwargs.get(name, name)
-    return name if name in route_kwargs else None
-
-
-def _without(arguments: Mapping[str, Any], names: frozenset[str]) -> dict[str, Any]:
-    """``arguments`` with every name in ``names`` left out: the ones the server answers for."""
-    return {key: value for key, value in arguments.items() if key not in names}
+    return coerce_flat(parameters, without(read, owned))
 
 
 def _flat(parameters: Parameters, source: QueryDict) -> dict[str, Any]:

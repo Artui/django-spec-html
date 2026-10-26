@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import datetime
 import math
 from collections.abc import Callable, Mapping
@@ -40,6 +41,8 @@ from django_service_specs import (
     DEFAULT_POOL_SEEDS,
     NON_FIELD_ERRORS,
     UNSET,
+    ActionUnavailable,
+    Affordance,
     DispatchError,
     DispatchResult,
     FormValidator,
@@ -49,21 +52,36 @@ from django_service_specs import (
     Parameters,
     PoolSeeds,
     PrincipalUnavailable,
+    ServerArguments,
     ServiceError,
     ServiceNotFound,
     ServiceSpec,
     ServiceValidationError,
     UnknownArguments,
+    apply_server_arguments,
     authorize,
+    base_pool,
     coerce_flat,
     dispatch,
+    enforce_affordances,
     resolve_target,
+    unmet_operation_affordance,
 )
 
 from django_spec_html.http.add_argument_errors import add_argument_errors
 from django_spec_html.http.request_principal import request_principal
 from django_spec_html.http.route_arguments import route_arguments
-from django_spec_html.http.utils import field_map, refusal_outcome, refusal_status
+from django_spec_html.http.utils import (
+    check_request_hooks,
+    checked_binding,
+    checked_seeds,
+    field_map,
+    refusal_outcome,
+    refusal_status,
+    refuse_server_owned,
+    server_names,
+    without,
+)
 from django_spec_html.types.outcome import Outcome
 
 _TYPED: Final = (forms.IntegerField, forms.DateField, forms.DateTimeField)
@@ -216,6 +234,28 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     route's kwargs whichever wrapper answers, so a spec cannot tell the two
     apart.
 
+    **The request is read through the same attributes and hooks as**
+    ``SpecView``**'s**, checked by the same code in ``http/utils.py``:
+    ``route_kwargs`` says which URL kwargs fill which parameters;
+    ``get_pool_seeds(request)``, asked once per request, answers the seeds
+    the target's lookup and its object-level or scope check, the affordances
+    and dispatch are handed; and ``get_server_arguments(request)`` answers the binding, laid
+    over the route's arguments before the target is found and over the
+    post's before dispatch. A form field naming a name the binding answers
+    for has its posted value dropped before anything is coerced.
+
+    **GET asks the spec's affordances** once the target is found: the
+    callable conditions always, through the kernel's
+    ``unmet_operation_affordance`` on a pool built from the call's seeds,
+    and, with none of those unmet and a row to ask about, the conditions on
+    the row, as dispatch asks them. The first unmet ``Affordance`` is in the
+    context as ``unavailable``, for a template to read its ``code`` and
+    ``reason``; it is absent when every condition is met. The POST is
+    unchanged, and dispatch's 409 stays the authority. **A refused post's
+    context carries** ``code``, the ``ActionUnavailable``'s, for a refusal
+    carrying one, as ``error_response`` puts it in the JSON body; it is
+    absent for every other.
+
     **A re-rendered form carries the refusal and nothing else**: the page says
     what dispatch decided. The page's own form is never validated: its
     errors start empty and the refusal is placed on them, so nothing the
@@ -238,8 +278,16 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         template_name: The page's template, as for any Django template view.
         success_url: Where a successful post redirects, read by
             ``get_success_url``: a path, a ``reverse_lazy``, or a URL name.
-        pool_seeds: The seeds the spec's callables are resolved with.
+        pool_seeds: The seeds the spec's callables are resolved with, unless
+            ``get_pool_seeds`` answers others for a request.
         unknown_arguments: What becomes of an argument no parameter declares.
+        route_kwargs: Which URL kwargs fill which parameters: ``None`` for
+            the strict rule, a mapping from a captured name to the parameter
+            it fills or to ``None`` to drop it, or a tuple of names to allow,
+            as ``route_arguments`` reads it.
+        server_arguments: The kernel's ``ServerArguments`` the server answers
+            for, checked at ``as_view()``. Its values may vary per request,
+            through ``get_server_arguments``, and its names may not.
         fragment_template_name: The template an htmx request's form is
             answered with, for a fragment in another file or under another
             name; ``None``, the default, addresses ``<template_name>#spec-form``.
@@ -250,14 +298,26 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     fragment_template_name: str | None = None
     pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None
+    server_arguments: ServerArguments | None = None
 
     @classonlymethod
     def as_view(cls, **initkwargs: Any) -> Callable[..., HttpResponseBase]:
-        """Django's ``as_view``, then the spec and the redirect checked, once, for every request."""
+        """Django's ``as_view``, then the spec, the redirect and the request hooks checked, once, for every request.
+
+        The spec and the redirect first, so a view with no spec is refused as
+        one whatever else it sets. Then the checks ``SpecView`` makes of the
+        same attributes, by the same code: both hooks plain ``def``,
+        ``route_kwargs`` naming only parameters the spec declares and no bare
+        string, ``server_arguments`` through the kernel's
+        ``check_server_arguments`` against the declared ``pool_seeds``, and
+        no route kwarg filling a name the binding answers for.
+        """
         # Django's own check of the keywords first, so a misspelt ``sepc=`` is
         # refused as the typo it is rather than read as a view with no spec.
         view = super().as_view(**initkwargs)
         _check_configuration(cls, initkwargs)
+        check_request_hooks(cls, initkwargs, initkwargs.get("spec", cls.spec))
         return view
 
     def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
@@ -274,14 +334,21 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         """The page, with an unbound form showing the target row, for a principal admitted to it."""
         spec = self.served_spec()
-        principal, grant = _admitted(spec, request, kwargs)
+        served = self._served(request)
+        principal, grant = _admitted(spec, request, kwargs, served)
         try:
-            target, _ = _found(spec, principal, grant, kwargs, self.pool_seeds)
+            target, _ = _found(spec, principal, grant, kwargs, served)
         except InvalidArguments as refused:
             # No post to place it on beside the form's: the route names a
             # target its reads refuse, which a post answers at 400 too.
             raise BadRequest(str(refused.detail)) from refused
-        return self._rendered(self.get_context_data(form=_page_form(spec, target)), status=200)
+        unavailable = _unavailable(spec, principal, target, served.seeds)
+        # Absent when every condition is met, as ``code`` is on a refusal
+        # that has none, so a template's ``{% if unavailable %}`` reads one
+        # context on every answer: test_every_condition_met_leaves_it_out.
+        context = {} if unavailable is None else {"unavailable": unavailable}
+        form = _page_form(spec, target)
+        return self._rendered(self.get_context_data(form=form, **context), status=200)
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         """Dispatch the posted form: a redirect on success, the form re-rendered on a refusal."""
@@ -294,7 +361,8 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         # included. A form's constructor may query, for choices it builds, so
         # it waits too. The grant hands dispatch the check already made, so it
         # runs once.
-        principal, grant = _admitted(spec, request, kwargs)
+        served = self._served(request)
+        principal, grant = _admitted(spec, request, kwargs, served)
         # Then the target, found as the page finds it, so the form a refused
         # post re-renders shows the row - its held file, and the clear
         # checkbox beside it - and the object-level and scope checks and a
@@ -305,16 +373,16 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         # test_a_url_kwarg_the_shape_check_refuses_is_a_prefixed_non_field_error.
         target: Any = UNSET
         with suppress(InvalidArguments):
-            target, grant = _found(spec, principal, grant, kwargs, self.pool_seeds)
+            target, grant = _found(spec, principal, grant, kwargs, served)
         form = _page_form(spec, target, data=request.POST, files=request.FILES)
         try:
-            arguments = _form_arguments(form, spec.parameters(), kwargs)
+            read = _form_arguments(form, spec.parameters(), kwargs, served)
             result = dispatch(
                 spec,
                 principal=principal,
-                arguments=arguments,
+                arguments=_bound(spec, read, served.server),
                 grant=grant,
-                pool_seeds=self.pool_seeds,
+                pool_seeds=served.seeds,
                 unknown_arguments=self.unknown_arguments,
                 target=target,
             )
@@ -327,7 +395,10 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             if refusal_outcome(refused) is Outcome.DENIED:
                 raise _denial(refused) from refused
             return self._render_refused(
-                form, _refusal_tree(refused), status=refusal_status(refused)
+                form,
+                _refusal_tree(refused),
+                status=refusal_status(refused),
+                **_refusal_code(refused),
             )
         # Never ``not_found``: the target was found before dispatch, which
         # looks nothing up when handed it, and where the route's value was
@@ -347,6 +418,28 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         Override it to read ``result``, such as the row a create returned.
         """
         return resolve_url(self.success_url)
+
+    def get_pool_seeds(self, request: HttpRequest) -> PoolSeeds:
+        """The seeds this request's call is resolved with: ``pool_seeds`` unless overridden.
+
+        Read once per request and handed to every step that resolves a spec
+        callable: the target's lookup and its object-level or scope check,
+        the affordances the page asks about, and dispatch. Seed what the
+        request carries rather than the request itself, as on ``SpecView``:
+        a spec callable requiring a ``request`` raises ``TypeError`` on every
+        reader that has none.
+        """
+        return self.pool_seeds
+
+    def get_server_arguments(self, request: HttpRequest) -> ServerArguments | None:
+        """The values the server answers for on this request's call: ``server_arguments`` unless overridden.
+
+        The names it binds and withholds are the declared
+        ``server_arguments``' own, which ``as_view`` checked; only the values
+        may vary per request, and the kernel's ``apply_server_arguments``
+        checks each on every call.
+        """
+        return self.server_arguments
 
     def wants_fragment(self, request: HttpRequest) -> bool:
         """Whether ``request`` is answered with a fragment rather than the page.
@@ -432,8 +525,20 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         response["HX-Trigger"] = _SUCCEEDED
         return response
 
+    def _served(self, request: HttpRequest) -> _Served:
+        """What both hooks answer for ``request``, checked as ``SpecView`` checks them, once.
+
+        The per-call binding must bind and withhold the declared names, and a
+        seed added per call may not take one of them; the checks are the
+        JSON views', in ``http/utils.py``.
+        """
+        label = type(self).__name__
+        server = checked_binding(label, self.get_server_arguments(request), self.server_arguments)
+        seeds = checked_seeds(label, self.get_pool_seeds(request), self.pool_seeds, server)
+        return _Served(route_kwargs=self.route_kwargs, server=server, seeds=seeds)
+
     def _render_refused(
-        self, form: forms.BaseForm, detail: Mapping[Any, Any], *, status: int
+        self, form: forms.BaseForm, detail: Mapping[Any, Any], *, status: int, **context: Any
     ) -> HttpResponse:
         """The page again, the bound form carrying ``detail`` and nothing else.
 
@@ -454,7 +559,7 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         bound._errors = ErrorDict(renderer=form.renderer)
         bound.cleaned_data = {}
         add_argument_errors(form, detail)
-        return self._rendered(self.get_context_data(form=form), status=status)
+        return self._rendered(self.get_context_data(form=form, **context), status=status)
 
     def _rendered(self, context: dict[str, Any], *, status: int) -> HttpResponse:
         """``context`` as the page at ``status``, or as the form's fragment at 200.
@@ -476,6 +581,15 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     def served_spec(self) -> ServiceSpec:
         """``spec``, which ``as_view`` refused to build a view without."""
         return cast("ServiceSpec", self.spec)
+
+
+@dataclasses.dataclass(frozen=True)
+class _Served:
+    """What a request's hooks answered, read once and handed to every step that reads the route or a seed."""
+
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None
+    server: ServerArguments | None
+    seeds: PoolSeeds
 
 
 def _check_configuration(cls: type[SpecFormView], initkwargs: Mapping[str, Any]) -> None:
@@ -548,18 +662,20 @@ def _form_class(spec: ServiceSpec) -> type[forms.BaseForm]:
 
 
 def _admitted(
-    spec: ServiceSpec, request: HttpRequest, url_kwargs: Mapping[str, Any]
+    spec: ServiceSpec, request: HttpRequest, url_kwargs: Mapping[str, Any], served: _Served
 ) -> tuple[Any, Grant]:
     """The principal and its grant, once the route and the class-level check pass.
 
     The route first, as ``SpecView`` refuses it on any method: a route
     capturing a kwarg the spec does not declare is wrong for every request and
     every principal, and a page served anyway fails only once someone has
-    filled it in. Then the principal the spec's class-level check admits, so
-    neither the page nor anything the post reaches is offered to one it
-    refuses.
+    filled it in. A route capturing a name the server answers for is the
+    host's too, refused by the rule ``request_arguments`` refuses it by. Then
+    the principal the spec's class-level check admits, so neither the page
+    nor anything the post reaches is offered to one it refuses.
     """
-    route_arguments(spec.parameters(), url_kwargs)
+    route_arguments(spec.parameters(), url_kwargs, route_kwargs=served.route_kwargs)
+    refuse_server_owned(url_kwargs, served.route_kwargs, server_names(served.server))
     try:
         principal = request_principal(request)
         return principal, authorize(spec, principal)
@@ -572,7 +688,7 @@ def _found(
     principal: Any,
     grant: Grant,
     url_kwargs: Mapping[str, Any],
-    pool_seeds: PoolSeeds,
+    served: _Served,
 ) -> tuple[Any, Grant]:
     """The row, set or ``None`` the post acts on, and the grant vouching for it.
 
@@ -582,22 +698,83 @@ def _found(
     which the scope check is asked about. The route's kwargs are coerced as a
     post's are, since a route captures strings and the target's reads are
     typed; a value they refuse raises ``InvalidArguments``, for the caller to
-    answer.
+    answer. The server's binding is laid over them as dispatch's arguments
+    are, so a target selector reading a bound parameter finds the row by the
+    server's value, the one dispatch is then handed.
     """
     parameters = spec.parameters()
+    route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
     try:
         resolved = resolve_target(
             spec,
             principal=principal,
-            arguments=coerce_flat(parameters, route_arguments(parameters, url_kwargs)),
+            arguments=_bound(spec, coerce_flat(parameters, route), served.server),
             grant=grant,
-            pool_seeds=pool_seeds,
+            pool_seeds=served.seeds,
         )
     except (NotPermitted, PrincipalUnavailable, ServiceNotFound) as refused:
         raise _denial(refused) from refused
     if isinstance(resolved, DispatchResult):
         raise Http404
     return resolved
+
+
+def _bound(
+    spec: ServiceSpec, arguments: Mapping[str, Any], server: ServerArguments | None
+) -> Mapping[str, Any]:
+    """``arguments`` under ``server``, by the kernel's ``apply_server_arguments``, or as they are with no binding."""
+    if server is None:
+        return arguments
+    return apply_server_arguments(spec, arguments, server)
+
+
+def _unavailable(
+    spec: ServiceSpec, principal: Any, target: Any, seeds: PoolSeeds
+) -> Affordance | None:
+    """The first of the spec's affordances not met for ``target`` now, or ``None``.
+
+    Asked as the kernel says a transport offering an operation asks: the
+    callable conditions through ``unmet_operation_affordance``, on a pool
+    ``base_pool`` builds from the call's own seeds, with ``reserved`` from
+    the same ones, so a condition reading a seed ``get_pool_seeds`` added
+    sees it. Then, with none of those unmet and a row to ask about, the
+    conditions on the row, by the kernel's ``enforce_affordances``, which
+    dispatch runs. Its ``ActionUnavailable`` carries the unmet affordance's
+    ``code``, and a spec's codes are unique, which ``ServiceSpec`` refuses
+    otherwise, so the code finds the very ``Affordance``.
+
+    The callables are asked first, so where a row condition declared before
+    an unmet callable is unmet too, this names the callable while the post
+    is refused with the row's, in declaration order. The answer is advice:
+    dispatch asks every condition again, and its refusal is the authority.
+
+    A row the kernel finds gone when its condition is reached is ``Http404``,
+    as the post's ``ServiceNotFound`` is.
+    """
+    pool = base_pool(user=principal, seeds=seeds)
+    unmet = unmet_operation_affordance(spec, pool, reserved=seeds.reserved)
+    # One branch to coverage, so each condition is held by its own test:
+    # test_a_callable_condition_is_named_before_a_row_condition_declared_first
+    # (an unmet callable answers before the row is asked) and
+    # test_no_row_asks_no_row_condition (``None`` is no row, and the kernel
+    # refuses to ask a row condition about it).
+    if unmet is not None or not isinstance(target, models.Model):
+        return unmet
+    try:
+        enforce_affordances(spec, pool, instance=target, reserved=seeds.reserved)
+    except ActionUnavailable as refused:
+        # Never ``None`` here, since a spec with no affordances refuses nothing.
+        return next(each for each in spec.affordances or () if each.code == refused.code)
+    except ServiceNotFound as refused:
+        raise _denial(refused) from refused
+    return None
+
+
+def _refusal_code(refused: DispatchError | ServiceError) -> dict[str, str]:
+    """The refusal's ``code`` under that name, for a refusal carrying one, as ``error_response`` puts it in the body."""
+    if isinstance(refused, ActionUnavailable):
+        return {"code": refused.code}
+    return {}
 
 
 def _denial(refused: DispatchError | ServiceError) -> PermissionDenied | Http404:
@@ -651,9 +828,15 @@ def _page_form(spec: ServiceSpec, target: Any, **bound: Any) -> forms.BaseForm:
 
 
 def _form_arguments(
-    form: forms.BaseForm, parameters: Parameters, url_kwargs: Mapping[str, Any]
+    form: forms.BaseForm, parameters: Parameters, url_kwargs: Mapping[str, Any], served: _Served
 ) -> dict[str, Any]:
-    """The arguments a bound form's post carries, read as the form reads it, route merged last."""
+    """The arguments a bound form's post carries, read as the form reads it, route merged last.
+
+    A field naming a parameter the server answers for is dropped before
+    anything is coerced, as ``request_arguments`` drops one, so a value the
+    client was never offered is never refused as the client's; the caller
+    lays the binding over the result.
+    """
     read: dict[str, Any] = {}
     for name, field in form.fields.items():
         if field.disabled:
@@ -693,7 +876,8 @@ def _form_arguments(
     # in the same call, so one refusal carries every problem, once
     # ``route_arguments`` - the check ``request_arguments`` makes too - has
     # refused any the spec does not declare.
-    return coerce_flat(parameters, {**read, **route_arguments(parameters, url_kwargs)})
+    route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
+    return coerce_flat(parameters, {**without(read, server_names(served.server)), **route})
 
 
 def _wire(field: forms.Field, value: Any) -> Any:

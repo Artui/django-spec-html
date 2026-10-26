@@ -1,0 +1,5 @@
+{% if unavailable %}<p class="unavailable" data-code="{{ unavailable.code }}">{{ unavailable.reason }}</p>{% endif %}
+<form method="post">{% csrf_token %}
+  {% if code == "branch_closed" %}<p class="next"><a href="/branches/">Choose another branch.</a></p>{% endif %}
+  <fieldset{% if unavailable %} disabled{% endif %}>{{ form }}<button name="save">Save</button></fieldset>
+</form>

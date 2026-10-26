@@ -10,7 +10,11 @@ the answer are separate functions: the read may query, and the answer never
 does.
 
 ``SpecView`` and ``AsyncSpecView`` likewise differ only in their handlers, so
-everything else about them is ``SpecViewBase``.
+everything else about them is ``SpecViewBase``. Its checks of the request's
+hooks are functions here rather than its methods - ``check_request_hooks``,
+``checked_binding``, ``checked_seeds``, ``refuse_server_owned`` - because
+``SpecFormView``, which is no ``SpecViewBase``, reads the request by the same
+rules and calls the same code.
 
 ``REFUSAL_STATUSES`` is the one map from a refusal to its status and its
 outcome, read by ``error_response`` and by ``SpecFormView``, so a refused post
@@ -289,35 +293,16 @@ class SpecViewBase(View):
         # Django's own check of the keywords first, so a misspelt ``sepc=`` is
         # refused as the typo it is rather than read as a view with no spec.
         view = super().as_view(**initkwargs)
-        label = cls.__name__
         spec = initkwargs.get("spec", cls.spec)
         # The spec before everything that reads it, so a view with no spec is
         # refused as one rather than by a later check failing to read it.
-        answered_methods(spec, initkwargs.get("methods", cls.methods), label=label)
-        for hook in ("get_pool_seeds", "get_server_arguments"):
-            if inspect.iscoroutinefunction(initkwargs.get(hook, getattr(cls, hook))):
-                raise ImproperlyConfigured(
-                    f"{label}.{hook} is async, and the view calls it without awaiting it, so "
-                    "it would answer a coroutine: define it with def. AsyncSpecView runs it "
-                    "off the event loop, in an executor hop."
-                )
-        route_kwargs = initkwargs.get("route_kwargs", cls.route_kwargs)
-        if route_kwargs is not None:
-            # No URL kwargs: what is left is the setting's own check.
-            route_arguments(kernel_spec(spec).parameters(), None, route_kwargs=route_kwargs)
-        server = initkwargs.get("server_arguments", cls.server_arguments)
-        if server is not None:
-            check_server_arguments(
-                spec, server, pool_seeds=initkwargs.get("pool_seeds", cls.pool_seeds)
-            )
-            filled = sorted(_route_targets(route_kwargs) & server.names())
-            if filled:
-                raise ImproperlyConfigured(
-                    f"{label}.route_kwargs fills {', '.join(filled)}, which server_arguments "
-                    "answers for. The route is the host's, and may not contradict the host's "
-                    "own binding: map the kwarg to None to drop it, or leave the name out of "
-                    "server_arguments."
-                )
+        answered_methods(spec, initkwargs.get("methods", cls.methods), label=cls.__name__)
+        check_request_hooks(
+            cls,
+            initkwargs,
+            spec,
+            remedy=" AsyncSpecView runs it off the event loop, in an executor hop.",
+        )
         return view
 
     def setup(self, request: HttpRequest, *args: Any, **kwargs: Any) -> None:
@@ -374,20 +359,9 @@ class SpecViewBase(View):
         Raises:
             ImproperlyConfigured: the bound names or the withheld ones differ.
         """
-        served = self.get_server_arguments(request)
-        # Two halves compared at once, each held by its own test:
-        # test_a_per_call_binding_dropping_a_declared_name_is_refused fails
-        # without the bound names, and
-        # test_a_per_call_binding_releasing_a_withheld_name_is_refused without
-        # the withheld ones.
-        if _split(served) != _split(self.server_arguments):
-            raise ImproperlyConfigured(
-                f"{type(self).__name__}.get_server_arguments() {_described(served)}, where "
-                f"server_arguments {_described(self.server_arguments)}. Only the declared "
-                "binding was checked when the view was built: declare every name the hook "
-                "binds or withholds, and vary only the values."
-            )
-        return served
+        return checked_binding(
+            type(self).__name__, self.get_server_arguments(request), self.server_arguments
+        )
 
     def served_hooks(self, request: HttpRequest) -> tuple[ServerArguments | None, PoolSeeds]:
         """What both hooks answer for ``request``, refused where the seeds meet the binding.
@@ -406,26 +380,174 @@ class SpecViewBase(View):
                 declared ones, or a per-call seed occupies one of them.
         """
         served = self.served_server_arguments(request)
-        seeds = self.get_pool_seeds(request)
-        bound, withheld = _split(served)
-        # Only the seeds beyond the declared ``pool_seeds``: the as_view check
-        # read those, and lets a Validator field named like one be bound,
-        # since the field is the caller's argument and the seed keeps the
-        # service's parameter of its name. Each part is held by its own test:
-        # test_a_per_call_seed_occupying_a_bound_name_is_refused (the bound
-        # names), test_a_per_call_seed_occupying_a_withheld_name_is_refused
-        # (the withheld ones), and
-        # test_a_declared_seed_a_bound_validator_field_shares_a_name_with_is_served
-        # (the declared seeds left out).
-        occupied = sorted((bound | withheld) & (seeds.names - self.pool_seeds.names))
-        if occupied:
-            raise ImproperlyConfigured(
-                f"{type(self).__name__}.get_pool_seeds() adds {', '.join(occupied)}, which "
-                "server_arguments binds or withholds, and the check when the view was built "
-                "never saw a seed added per request: declare it in pool_seeds, where that "
-                "check reads it, or leave the name to the binding."
-            )
+        seeds = checked_seeds(
+            type(self).__name__, self.get_pool_seeds(request), self.pool_seeds, served
+        )
         return served, seeds
+
+
+def check_request_hooks(
+    view_class: type[View],
+    initkwargs: Mapping[str, Any],
+    spec: ServiceSpec | SelectorSpec | SpecSource,
+    *,
+    remedy: str = "",
+) -> None:
+    """Refuse, when the URLconf is imported, a view whose request hooks could not serve a request.
+
+    The checks every view reading the request makes once its spec is known
+    to be one, in this order: both hooks are plain ``def``; ``route_kwargs``
+    names only parameters ``spec`` declares, and is no bare string;
+    ``server_arguments`` passes the kernel's ``check_server_arguments``
+    against the view's declared ``pool_seeds``; and ``route_kwargs`` fills
+    no name the binding answers for. Each is read from ``initkwargs`` first
+    and the class second, as ``as_view`` reads every attribute. ``remedy``
+    ends the async hook's refusal, for a view with more to say about where
+    a hook runs.
+
+    Raises:
+        ImproperlyConfigured: an ``async def`` hook, a ``route_kwargs`` or a
+            binding the spec cannot honour, or a route filling a bound name.
+        TypeError: ``route_kwargs`` is a bare string.
+    """
+    label = view_class.__name__
+    for hook in ("get_pool_seeds", "get_server_arguments"):
+        if inspect.iscoroutinefunction(_configured(view_class, initkwargs, hook)):
+            raise ImproperlyConfigured(
+                f"{label}.{hook} is async, and the view calls it without awaiting it, so "
+                f"it would answer a coroutine: define it with def.{remedy}"
+            )
+    route_kwargs = _configured(view_class, initkwargs, "route_kwargs")
+    if route_kwargs is not None:
+        # No URL kwargs: what is left is the setting's own check.
+        route_arguments(kernel_spec(spec).parameters(), None, route_kwargs=route_kwargs)
+    server = _configured(view_class, initkwargs, "server_arguments")
+    if server is not None:
+        check_server_arguments(
+            spec, server, pool_seeds=_configured(view_class, initkwargs, "pool_seeds")
+        )
+        filled = sorted(_route_targets(route_kwargs) & server.names())
+        if filled:
+            raise ImproperlyConfigured(
+                f"{label}.route_kwargs fills {', '.join(filled)}, which server_arguments "
+                "answers for. The route is the host's, and may not contradict the host's "
+                "own binding: map the kwarg to None to drop it, or leave the name out of "
+                "server_arguments."
+            )
+
+
+def checked_binding(
+    label: str, served: ServerArguments | None, declared: ServerArguments | None
+) -> ServerArguments | None:
+    """``served``, a hook's per-call binding, refused unless it binds and withholds what ``declared`` does.
+
+    The check when the view was built read the declared binding alone, and
+    every check but the value's own reads only which names are bound and
+    which withheld. So a per-call binding naming another name would reach
+    dispatch unchecked, one naming fewer would hand a client a name the
+    server answers for, and one withholding a name the declared binding
+    binds could withhold a parameter no call can do without. ``None`` binds
+    and withholds nothing, as an empty binding does, so either may stand for
+    the other.
+
+    Raises:
+        ImproperlyConfigured: the bound names or the withheld ones differ.
+    """
+    # Two halves compared at once, each held by its own test:
+    # test_a_per_call_binding_dropping_a_declared_name_is_refused fails
+    # without the bound names, and
+    # test_a_per_call_binding_releasing_a_withheld_name_is_refused without
+    # the withheld ones.
+    if _split(served) != _split(declared):
+        raise ImproperlyConfigured(
+            f"{label}.get_server_arguments() {_described(served)}, where "
+            f"server_arguments {_described(declared)}. Only the declared "
+            "binding was checked when the view was built: declare every name the hook "
+            "binds or withholds, and vary only the values."
+        )
+    return served
+
+
+def checked_seeds(
+    label: str, seeds: PoolSeeds, declared: PoolSeeds, served: ServerArguments | None
+) -> PoolSeeds:
+    """``seeds``, a hook's per-call seeds, refused where one beyond ``declared`` takes a name ``served`` answers for.
+
+    The check when the view was built read only the declared seeds, and a
+    seed taking a bound name would answer every request with the binding
+    doing nothing, or a 400. This reads names alone, so it also refuses the
+    one pairing the kernel's check would allow, a seed beside a Validator
+    field of its name; a host wanting that declares the seed in
+    ``pool_seeds``.
+
+    Raises:
+        ImproperlyConfigured: a per-call seed occupies a bound or withheld name.
+    """
+    bound, withheld = _split(served)
+    # Only the seeds beyond the declared ones: the check when the view was
+    # built read those, and lets a Validator field named like one be bound,
+    # since the field is the caller's argument and the seed keeps the
+    # service's parameter of its name. Each part is held by its own test:
+    # test_a_per_call_seed_occupying_a_bound_name_is_refused (the bound
+    # names), test_a_per_call_seed_occupying_a_withheld_name_is_refused
+    # (the withheld ones), and
+    # test_a_declared_seed_a_bound_validator_field_shares_a_name_with_is_served
+    # (the declared seeds left out).
+    occupied = sorted((bound | withheld) & (seeds.names - declared.names))
+    if occupied:
+        raise ImproperlyConfigured(
+            f"{label}.get_pool_seeds() adds {', '.join(occupied)}, which "
+            "server_arguments binds or withholds, and the check when the view was built "
+            "never saw a seed added per request: declare it in pool_seeds, where that "
+            "check reads it, or leave the name to the binding."
+        )
+    return seeds
+
+
+def server_names(server: ServerArguments | None) -> frozenset[str]:
+    """Every name ``server`` answers for, bound or withheld; none for no binding."""
+    return frozenset() if server is None else server.names()
+
+
+def refuse_server_owned(
+    url_kwargs: Mapping[str, Any] | None,
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
+    owned: frozenset[str],
+) -> None:
+    """Refuse every captured kwarg that would fill a name the server answers for, by its captured name.
+
+    Named as the route captured it, so the refusal says which kwarg to drop,
+    whether it fills the name under its own or through a mapping.
+    """
+    filling = sorted(name for name in url_kwargs or {} if _filled_by(name, route_kwargs) in owned)
+    if filling:
+        raise ImproperlyConfigured(
+            f"The route captures {', '.join(filling)}, which server_arguments answers for. "
+            f"Drop each with route_kwargs={dict.fromkeys(filling)!r}, or leave it out of "
+            "server_arguments: the route is the host's, and may not contradict the host's "
+            "own binding."
+        )
+
+
+def without(arguments: Mapping[str, Any], names: frozenset[str]) -> dict[str, Any]:
+    """``arguments`` with every name in ``names`` left out: the ones the server answers for."""
+    return {key: value for key, value in arguments.items() if key not in names}
+
+
+def _configured(view_class: type[View], initkwargs: Mapping[str, Any], name: str) -> Any:
+    """The attribute ``name`` as ``as_view`` builds the view with: passed to it, or the class's."""
+    return initkwargs.get(name, getattr(view_class, name))
+
+
+def _filled_by(
+    name: str, route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None
+) -> str | None:
+    """The parameter the captured kwarg ``name`` fills under ``route_kwargs``, or ``None`` if dropped."""
+    if route_kwargs is None:
+        return name
+    if isinstance(route_kwargs, Mapping):
+        return route_kwargs.get(name, name)
+    return name if name in route_kwargs else None
 
 
 def _route_targets(
