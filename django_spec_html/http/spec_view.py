@@ -28,11 +28,21 @@ class SpecView(SpecViewBase):
     last so the route wins a clash, which means the spec declares each one:
     a route capturing a kwarg its spec does not declare raises
     ``ImproperlyConfigured`` on the first request it serves, since that is the
-    host's configuration rather than anything a client sent.
+    host's configuration rather than anything a client sent. ``route_kwargs``
+    renames or drops the kwargs a spec does not declare, as an ``include()``
+    prefix such as ``<org>/`` needs.
 
-    ``as_view()`` checks the spec and the methods when the view is built, so a
-    view with no spec fails when the URLconf is imported rather than on its
-    first request.
+    **The request reaches the call through two hooks**, each defaulting to the
+    attribute of its name: ``get_pool_seeds(request)`` for the seeds, so a
+    tenant or a locale middleware resolved reaches a permission check, a
+    selector or a Validator; and ``get_server_arguments(request)`` for the
+    values the server answers for, which outrank whatever the client sent and
+    whose names are the declared ``server_arguments``' own.
+
+    ``as_view()`` checks the spec, the methods and ``server_arguments`` when
+    the view is built, so a view with no spec, or a binding that cannot mean
+    what it says, fails when the URLconf is imported rather than on its first
+    request.
 
     **CSRF is the host's middleware**, as for any Django view. Nothing here is
     exempted, and ``csrf_exempt(SpecView.as_view(...))`` is one line for a host
@@ -43,9 +53,18 @@ class SpecView(SpecViewBase):
         success_status: The status of a success, or ``None`` for the default:
             204 for a service with nothing to present, 200 otherwise.
         unknown_arguments: What becomes of an argument no parameter declares.
-        pool_seeds: The seeds the spec's callables are resolved with.
+        pool_seeds: The seeds the spec's callables are resolved with, unless
+            ``get_pool_seeds`` answers others for a request.
         methods: The HTTP methods served, in either case, or ``None`` for the
             spec's default.
+        route_kwargs: Which URL kwargs fill which parameters: ``None`` for
+            every one under its own name, a mapping from a kwarg to the
+            parameter it fills or to ``None`` to drop it, or a tuple of the
+            names allowed through. See
+            [`route_arguments`][django_spec_html.http.route_arguments.route_arguments].
+        server_arguments: The kernel's ``ServerArguments`` the server answers
+            for, checked at ``as_view()``; its values may vary per request
+            through ``get_server_arguments``, and its names may not.
     """
 
     def answer(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
@@ -54,8 +73,10 @@ class SpecView(SpecViewBase):
             self.served_spec(),
             request,
             url_kwargs=kwargs,
+            route_kwargs=self.route_kwargs,
+            server_arguments=self.served_server_arguments(request),
             success_status=self.success_status,
-            pool_seeds=self.pool_seeds,
+            pool_seeds=self.get_pool_seeds(request),
             unknown_arguments=self.unknown_arguments,
         )
 

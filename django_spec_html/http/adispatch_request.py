@@ -13,11 +13,13 @@ from django_service_specs import (
     Grant,
     PoolSeeds,
     SelectorSpec,
+    ServerArguments,
     ServiceError,
     ServiceSpec,
     SpecSource,
     UnknownArguments,
     adispatch,
+    apply_server_arguments,
     apresent,
     kernel_spec,
 )
@@ -37,6 +39,8 @@ async def adispatch_request(
     request: HttpRequest,
     *,
     url_kwargs: Mapping[str, Any] | None = None,
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None,
+    server_arguments: ServerArguments | None = None,
     success_status: int | None = None,
     grant: Grant | None = None,
     pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS,
@@ -54,7 +58,8 @@ async def adispatch_request(
     AuthenticationMiddleware leaves, and its first read is a session query,
     which Django refuses on the loop; Django 4.2, the floor, has no
     ``request.auser()`` to await instead. ``spec.parameters()`` goes in the
-    same hop, because a Validator may read a model to declare what it takes.
+    same hop, because a Validator may read a model to declare what it takes,
+    and so does applying ``server_arguments``, which reads it again.
     Building the response does not query and stays on the loop.
     """
     # Compiled once, before anything is read, so the arguments, the answer's
@@ -62,7 +67,7 @@ async def adispatch_request(
     spec = kernel_spec(spec)
     try:
         principal, arguments = await sync_to_async(_read_request, thread_sensitive=True)(
-            spec, request, url_kwargs
+            spec, request, url_kwargs, route_kwargs, server_arguments
         )
         result = await adispatch(
             spec,
@@ -84,6 +89,8 @@ def _read_request(
     spec: ServiceSpec | SelectorSpec,
     request: HttpRequest,
     url_kwargs: Mapping[str, Any] | None,
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
+    server_arguments: ServerArguments | None,
 ) -> tuple[Any, dict[str, Any]]:
     """The principal, then the arguments, in the one executor hop they share.
 
@@ -91,7 +98,17 @@ def _read_request(
     its shape check, so a deactivated account is refused without learning
     anything about its request. Both off the loop: the principal may be a
     session query, and ``spec.parameters()`` may be one too, since a
-    Validator may read a model to declare what it takes.
+    Validator may read a model to declare what it takes. Applying the server's
+    values reads ``spec.parameters()`` again, so it is in the same hop.
     """
     principal = request_principal(request)
-    return principal, request_arguments(request, spec.parameters(), url_kwargs=url_kwargs)
+    arguments = request_arguments(
+        request,
+        spec.parameters(),
+        url_kwargs=url_kwargs,
+        route_kwargs=route_kwargs,
+        server_arguments=server_arguments,
+    )
+    if server_arguments is not None:
+        arguments = apply_server_arguments(spec, arguments, server_arguments)
+    return principal, arguments

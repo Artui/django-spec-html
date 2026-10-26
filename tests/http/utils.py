@@ -8,11 +8,14 @@ from typing import Any
 
 import pytest
 from django.contrib.auth.models import AnonymousUser
+from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponseBase
 from django.test import AsyncRequestFactory, RequestFactory
 from django_service_specs import (
     AdditionalInputRequired,
     Output,
+    Parameter,
+    Parameters,
     PermissionCheck,
     Presenter,
     SelectorKind,
@@ -22,6 +25,7 @@ from django_service_specs import (
 )
 
 from tests.dispatch.utils import OPEN, PK, Record, Titled, Titles, note_by_pk, notes_of
+from tests.dispatch_app.models import Note
 
 FACTORY = RequestFactory()
 ASYNC_FACTORY = AsyncRequestFactory()
@@ -134,3 +138,32 @@ def asking_spec(schema: Any) -> ServiceSpec:
         raise AdditionalInputRequired("Say which.", schema=schema)
 
     return ServiceSpec(service=ask, permissions=OPEN, validator=Titled())
+
+
+class SeesTenant(PermissionCheck):
+    """Admits every principal, and records the ``tenant`` seed each call was resolved with."""
+
+    def __init__(self) -> None:
+        self.tenants: list[Any] = []
+
+    def has_permission(self, principal: Any, spec: Any, *, tenant: Any) -> bool:
+        self.tenants.append(tenant)
+        return True
+
+
+def first_notes(*, user: Any, limit: int | None = None) -> QuerySet[Note]:
+    """The principal's notes in the order written, the first ``limit`` of them if one is given."""
+    notes = Note.objects.filter(owner=user).order_by("pk")
+    return notes if limit is None else notes[:limit]
+
+
+def limited_spec(**kwargs: Any) -> SelectorSpec:
+    """The principal's notes as titles, reading an optional integer ``limit`` its selector defaults."""
+    kwargs.setdefault("permissions", OPEN)
+    kwargs.setdefault("presenter", Titles())
+    return SelectorSpec(
+        kind=SelectorKind.LIST,
+        selector=first_notes,
+        reads=Parameters.of(Parameter("limit", "integer")),
+        **kwargs,
+    )

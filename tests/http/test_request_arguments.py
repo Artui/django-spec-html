@@ -31,6 +31,7 @@ from django_service_specs import (
     Parameters,
     SelectorKind,
     SelectorSpec,
+    ServerArguments,
     check_arguments,
     filter_set_parameters,
     shape_queryset,
@@ -747,6 +748,54 @@ class TestUrlKwargs:
         # the route by its own branch.
         with pytest.raises(ImproperlyConfigured, match="The route captures org, slug,"):
             read(request_, url_kwargs={"slug": "x", "org": "acme", "pk": "4"})
+
+
+class TestRouteKwargs:
+    @pytest.mark.parametrize(
+        "request_",
+        [FACTORY.get("/"), post_json({}), FACTORY.post("/", data="", content_type=FORM)],
+        ids=["query", "json", "form"],
+    )
+    def test_they_rename_and_drop_the_route_on_every_path(self, request_: HttpRequest) -> None:
+        arguments = read(
+            request_,
+            url_kwargs={"org": "acme", "note": "4"},
+            route_kwargs={"org": None, "note": "pk"},
+        )
+        assert arguments == {"pk": 4}
+
+
+SERVED = ServerArguments(values={"pk": 7}, withheld=frozenset({"count"}))
+"""A binding of one name and a withholding of another, both integers a client may send malformed."""
+
+
+class TestServerArguments:
+    @pytest.mark.parametrize(
+        "request_",
+        [
+            FACTORY.get("/?pk=nine&count=x&title=t"),
+            FACTORY.post("/", data="pk=nine&count=x&title=t", content_type=FORM),
+            FACTORY.put("/", data="pk=nine&count=x&title=t", content_type=FORM),
+            post_json({"pk": "nine", "count": "x", "title": "t"}),
+        ],
+        ids=["query", "form", "put-form", "json"],
+    )
+    def test_every_name_it_answers_for_is_dropped_before_coercion(
+        self, request_: HttpRequest
+    ) -> None:
+        # Coerced first, ``nine`` and ``x`` would be refused as the client's
+        # 400 for names the client was never offered. The values are not laid
+        # here: ``apply_server_arguments`` lays them, with the spec to check them.
+        assert read(request_, server_arguments=SERVED) == {"title": "t"}
+
+    def test_a_route_value_for_a_name_it_answers_for_is_dropped_too(self) -> None:
+        assert read(FACTORY.get("/"), url_kwargs={"pk": "nine"}, server_arguments=SERVED) == {}
+
+    def test_a_route_value_beside_a_json_body_is_dropped_too(self) -> None:
+        arguments = read(
+            post_json({"title": "t"}), url_kwargs={"pk": "nine"}, server_arguments=SERVED
+        )
+        assert arguments == {"title": "t"}
 
 
 class TestArrayLength:

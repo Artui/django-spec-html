@@ -38,6 +38,7 @@ from django_service_specs import (
     PoolSeeds,
     PrincipalUnavailable,
     SelectorSpec,
+    ServerArguments,
     ServiceConflict,
     ServiceError,
     ServiceNotFound,
@@ -46,6 +47,7 @@ from django_service_specs import (
     SpecSource,
     UnknownArguments,
     check_requested_input,
+    check_server_arguments,
     kernel_spec,
 )
 
@@ -223,11 +225,16 @@ def answered_methods(spec: Any, methods: Sequence[str] | None, *, label: str) ->
 
 
 class SpecViewBase(View):
-    """Everything ``SpecView`` and ``AsyncSpecView`` share: the attributes and the methods served.
+    """Everything ``SpecView`` and ``AsyncSpecView`` share: the attributes, the hooks and the methods served.
 
     Each subclass adds one handler, sync or async, bound to every method name.
     Neither subclasses the other, because an async handler cannot override a
     sync one: Django serves a class async only when all of its handlers are.
+
+    **Two hooks read the request** before dispatch, each defaulting to the
+    attribute of its name: ``get_pool_seeds(request)`` and
+    ``get_server_arguments(request)``. Django builds one view instance per
+    request, so either may read ``self.request`` as well.
     """
 
     spec: ServiceSpec | SelectorSpec | SpecSource | None = None
@@ -235,18 +242,30 @@ class SpecViewBase(View):
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT
     pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS
     methods: Sequence[str] | None = None
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None
+    server_arguments: ServerArguments | None = None
 
     @classonlymethod
     def as_view(cls, **initkwargs: Any) -> Callable[..., HttpResponseBase]:
-        """Django's ``as_view``, then the spec and methods checked, once, for every request."""
+        """Django's ``as_view``, then the spec, the methods and the binding checked, once, for every request.
+
+        The binding is checked by the kernel's ``check_server_arguments``
+        against the view's declared ``pool_seeds``, so one that cannot mean
+        what it says fails when the URLconf is imported. What
+        ``get_pool_seeds`` answers per request is not what it sees.
+        """
         # Django's own check of the keywords first, so a misspelt ``sepc=`` is
         # refused as the typo it is rather than read as a view with no spec.
         view = super().as_view(**initkwargs)
-        answered_methods(
-            initkwargs.get("spec", cls.spec),
-            initkwargs.get("methods", cls.methods),
-            label=cls.__name__,
-        )
+        spec = initkwargs.get("spec", cls.spec)
+        # The spec before the binding, so a view with no spec is refused as
+        # one rather than by the kernel's check failing to read it.
+        answered_methods(spec, initkwargs.get("methods", cls.methods), label=cls.__name__)
+        server = initkwargs.get("server_arguments", cls.server_arguments)
+        if server is not None:
+            check_server_arguments(
+                spec, server, pool_seeds=initkwargs.get("pool_seeds", cls.pool_seeds)
+            )
         return view
 
     def setup(self, request: HttpRequest, *args: Any, **kwargs: Any) -> None:
@@ -264,3 +283,69 @@ class SpecViewBase(View):
     def served_spec(self) -> ServiceSpec | SelectorSpec | SpecSource:
         """``spec``, which ``as_view`` refused to build a view without."""
         return cast("ServiceSpec | SelectorSpec | SpecSource", self.spec)
+
+    def get_pool_seeds(self, request: HttpRequest) -> PoolSeeds:
+        """The seeds this request's call is resolved with: ``pool_seeds`` unless overridden.
+
+        Seed what the request carries rather than the request itself -
+        ``tenant=lambda: request.tenant`` - so a spec reading ``tenant`` reads
+        it from every transport that can seed one. A spec callable requiring a
+        ``request`` raises ``TypeError`` on every reader that has none: MCP,
+        the agent tools, the CLI and a task. That is why no ``request`` seed is
+        registered by default.
+        """
+        return self.pool_seeds
+
+    def get_server_arguments(self, request: HttpRequest) -> ServerArguments | None:
+        """The values the server answers for on this request's call: ``server_arguments`` unless overridden.
+
+        The names it takes are the declared ``server_arguments``' names, which
+        ``as_view`` checked; only the values may vary per request. Each value
+        is checked against its parameter on every call, by the kernel's
+        ``apply_server_arguments``.
+        """
+        return self.server_arguments
+
+    def served_server_arguments(self, request: HttpRequest) -> ServerArguments | None:
+        """``get_server_arguments(request)``, refused unless it binds and withholds what the declared binding does.
+
+        ``as_view`` checked the declared binding alone, and every check but the
+        value's own reads only which names are bound and which withheld. So a
+        per-call binding naming another name would reach dispatch unchecked,
+        one naming fewer would hand a client a name the server answers for,
+        and one withholding a name the declared binding binds could withhold a
+        parameter no call can do without. Only the values may vary, and the
+        kernel's ``apply_server_arguments`` checks those on every call.
+        ``None`` binds and withholds nothing, as an empty binding does, so
+        either may stand for the other.
+
+        Raises:
+            ImproperlyConfigured: the bound names or the withheld ones differ.
+        """
+        served = self.get_server_arguments(request)
+        # Two halves compared at once, each held by its own test:
+        # test_a_per_call_binding_dropping_a_declared_name_is_refused fails
+        # without the bound names, and
+        # test_a_per_call_binding_releasing_a_withheld_name_is_refused without
+        # the withheld ones.
+        if _split(served) != _split(self.server_arguments):
+            raise ImproperlyConfigured(
+                f"{type(self).__name__}.get_server_arguments() {_described(served)}, where "
+                f"server_arguments {_described(self.server_arguments)}. Only the declared "
+                "binding was checked when the view was built: declare every name the hook "
+                "binds or withholds, and vary only the values."
+            )
+        return served
+
+
+def _split(server: ServerArguments | None) -> tuple[frozenset[str], frozenset[str]]:
+    """The names ``server`` binds and the names it withholds; neither for no binding."""
+    if server is None:
+        return frozenset(), frozenset()
+    return frozenset(server.values), server.withheld
+
+
+def _described(server: ServerArguments | None) -> str:
+    """What ``server`` binds and withholds, in order, for a refusal."""
+    bound, withheld = _split(server)
+    return f"binds {', '.join(sorted(bound)) or 'nothing'} and withholds {', '.join(sorted(withheld)) or 'nothing'}"

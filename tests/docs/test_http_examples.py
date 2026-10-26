@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.models import AnonymousUser, Group
 from django.core.exceptions import ImproperlyConfigured
 from django.middleware.csrf import CsrfViewMiddleware
 from django.test import AsyncRequestFactory, RequestFactory
@@ -30,13 +30,17 @@ from django_service_specs import (
     InvalidArguments,
     NotPermitted,
     PrincipalUnavailable,
+    SelectorKind,
+    SelectorSpec,
+    ServerArguments,
     ServiceConflict,
     ServiceError,
     ServiceNotFound,
     ServiceValidationError,
+    Unrestricted,
 )
 
-from django_spec_html import UnsupportedMediaType, error_response
+from django_spec_html import SpecView, UnsupportedMediaType, error_response
 from docs.examples import http
 from tests.dispatch_app.models import Note
 
@@ -175,6 +179,65 @@ class TestCsrf:
 
     def test_the_exempted_route_is_not_checked(self, ada: Any) -> None:
         assert self._checked("/hooks/notes/1/rename/", ada) is None
+
+
+@pytest.mark.django_db
+class TestWhatTheRequestCarries:
+    @pytest.fixture
+    def member(self, ada: Any) -> Any:
+        ada.groups.add(Group.objects.create(name="red"))
+        for title in ("B", "A", "C"):
+            Note.objects.create(owner=ada, title=title)
+        return ada
+
+    def titles(self, path: str, user: Any) -> list[str]:
+        response = serve(FACTORY.get(path), user)
+        assert response.status_code == 200
+        return [row["title"] for row in body(response)]
+
+    def test_the_team_is_a_seed_the_check_reads_and_no_argument(self, member: Any) -> None:
+        # A 200 at all: the route's ``team`` is dropped rather than refused.
+        assert self.titles("/teams/red/notes/", member) == ["A", "B", "C"]
+        refused = serve(FACTORY.get("/teams/blue/notes/"), member)
+        assert (refused.status_code, body(refused)) == (
+            403,
+            {"detail": "Only a member of the team may read its notes."},
+        )
+
+    def test_the_server_chooses_the_order_whatever_the_client_sends(self, member: Any) -> None:
+        # ``sideways`` is no choice of ``ordering``'s, and is never read.
+        assert self.titles("/teams/red/notes/?ordering=-title", member) == ["A", "B", "C"]
+        assert self.titles("/teams/red/notes/?ordering=sideways", member) == ["A", "B", "C"]
+
+    def test_the_value_varies_per_request(self, member: Any) -> None:
+        member.is_staff = True
+        assert self.titles("/teams/red/notes/?ordering=title", member) == ["C", "B", "A"]
+
+    def test_a_hook_binding_other_names_raises(self, member: Any) -> None:
+        class Unbound(http.TeamNotes):
+            def get_server_arguments(self, request: Any) -> ServerArguments | None:
+                return None
+
+        request = FACTORY.get("/teams/red/notes/")
+        request.user = member
+        with pytest.raises(ImproperlyConfigured, match="the declared binding was checked"):
+            Unbound.as_view()(request, team="red")
+
+    def test_no_request_seed_is_registered_by_default(self, ada: Any) -> None:
+        # So a spec callable requiring one raises, as it does on every reader
+        # with no request at all.
+        assert "request" not in SpecView.pool_seeds.reserved
+
+        def needs_request(*, request: Any) -> Any:
+            return Note.objects.none()
+
+        spec = SelectorSpec(
+            kind=SelectorKind.LIST, selector=needs_request, permissions=[Unrestricted()]
+        )
+        request = FACTORY.get("/")
+        request.user = ada
+        with pytest.raises(TypeError, match="required keyword-only argument: 'request'"):
+            SpecView.as_view(spec=spec)(request)
 
 
 def _status_table() -> dict[str, int]:

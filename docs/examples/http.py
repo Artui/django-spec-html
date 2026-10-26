@@ -1,4 +1,4 @@
-"""Serving operations from Django views: two specs, a function view, the class form, and their URLconf.
+"""Serving operations from Django views: the specs, a function view, the class form, and their URLconf.
 
 ``tests/docs/test_http_examples.py`` resolves these routes with Django's own
 resolver and sends each a request, so the page cannot describe a route, a
@@ -21,8 +21,10 @@ from django_service_specs import (
     Parameter,
     Parameters,
     PermissionCheck,
+    PoolSeeds,
     SelectorKind,
     SelectorSpec,
+    ServerArguments,
     ServiceSpec,
     coerce_flat,
 )
@@ -121,6 +123,45 @@ def form_arguments(posted: Mapping[str, Any], url_kwargs: Mapping[str, Any]) -> 
 # --8<-- [end:route_arguments]
 
 
+# --8<-- [start:request]
+class InTeam(PermissionCheck):
+    message = "Only a member of the team may read its notes."
+
+    # ``team`` is a seed, so every transport serving this spec seeds its own.
+    def has_permission(self, principal: Any, spec: Any, *, team: str) -> bool:
+        return principal.groups.filter(name=team).exists()
+
+
+team_notes_spec = SelectorSpec(
+    kind=SelectorKind.LIST,
+    selector=notes_of,
+    permissions=[IsSignedIn(), InTeam()],
+    reads=list_notes_spec.reads,
+    presenter=DataclassPresenter(NoteOut),
+)
+
+
+class TeamNotes(SpecView):
+    spec = team_notes_spec
+    # Every route under the ``teams/<team>/`` prefix captures ``team``, which
+    # this spec does not read: drop it, and hold every other kwarg strict.
+    route_kwargs = {"team": None}
+    # The server chooses the order, so a client's ``?ordering=`` is dropped.
+    # Declared, so as_view() checks the name when the URLconf is imported.
+    server_arguments = ServerArguments(values={"ordering": "title"})
+
+    def get_pool_seeds(self, request: HttpRequest) -> PoolSeeds:
+        # What the request carries, never the request itself.
+        return self.pool_seeds.extend(team=lambda: self.kwargs["team"])
+
+    def get_server_arguments(self, request: HttpRequest) -> ServerArguments | None:
+        # The value may vary per request; the name is the declared one.
+        return ServerArguments(values={"ordering": "-title" if request.user.is_staff else "title"})
+
+
+# --8<-- [end:request]
+
+
 # --8<-- [start:urls]
 urlpatterns = [
     # A read answers GET and HEAD, and its query string is its arguments:
@@ -133,6 +174,8 @@ urlpatterns = [
     # The function views above.
     path("notes/<int:pk>/rename-by-hand/", rename_note),
     path("notes/<int:pk>/arename-by-hand/", arename_note),
+    # The view above: the team from the route, as a seed rather than an argument.
+    path("teams/<slug:team>/notes/", TeamNotes.as_view()),
 ]
 # --8<-- [end:urls]
 

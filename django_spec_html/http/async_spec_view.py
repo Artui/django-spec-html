@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from asgiref.sync import sync_to_async
 from django.http import HttpRequest, HttpResponse
+from django_service_specs import PoolSeeds, ServerArguments
 
 from django_spec_html.http.adispatch_request import adispatch_request
 from django_spec_html.http.utils import SpecViewBase
@@ -22,19 +24,32 @@ class AsyncSpecView(SpecViewBase):
     kernel needs one; under WSGI Django runs it in an event loop of its own,
     which costs more than ``SpecView`` and buys nothing.
 
+    ``get_pool_seeds`` and ``get_server_arguments`` stay sync methods, run
+    in an executor hop of their own before dispatch, so an override reading
+    ``request.user`` or a model is never a query on the event loop.
+
     Not a subclass of ``SpecView``, for the same reason: an async handler
     cannot stand in for a sync one.
     """
 
     async def answer(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         """Dispatch the spec from async code, the route's kwargs as ``url_kwargs``."""
+        # The hooks off the loop: a host's override may read ``request.user``,
+        # which is a session query the first time it is read.
+        server, pool_seeds = await sync_to_async(self._read_hooks, thread_sensitive=True)(request)
         return await adispatch_request(
             self.served_spec(),
             request,
             url_kwargs=kwargs,
+            route_kwargs=self.route_kwargs,
+            server_arguments=server,
             success_status=self.success_status,
-            pool_seeds=self.pool_seeds,
+            pool_seeds=pool_seeds,
             unknown_arguments=self.unknown_arguments,
         )
+
+    def _read_hooks(self, request: HttpRequest) -> tuple[ServerArguments | None, PoolSeeds]:
+        """What the two request hooks answer, in the one executor hop they share."""
+        return self.served_server_arguments(request), self.get_pool_seeds(request)
 
     get = head = post = put = patch = delete = answer

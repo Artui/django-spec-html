@@ -39,7 +39,10 @@ docs/examples/http.py:function_view
 ```
 
 It reads the principal and the arguments, dispatches with the `grant`,
-`pool_seeds` and `unknown_arguments` it is given, and answers:
+`pool_seeds` and `unknown_arguments` it is given, and answers. The
+`route_kwargs` and `server_arguments` it also takes are
+[the route's kwargs a spec does not read](#kwargs-a-spec-does-not-read) and
+[the values the server answers for](#what-the-request-carries):
 
 - **A not-found result** is 404, `{"detail": "Not found."}`.
 - **A success** is the presented value, bare, with no envelope around it. The
@@ -66,7 +69,10 @@ a session query and Django refuses one on the event loop.
 
 [`SpecView`][django_spec_html.http.spec_view.SpecView] is one spec as a
 view, and every attribute can be passed to `as_view()` or set on a subclass:
-`spec`, `success_status`, `unknown_arguments`, `pool_seeds` and `methods`.
+`spec`, `success_status`, `unknown_arguments`, `pool_seeds`, `methods`,
+`route_kwargs` and `server_arguments`. Two methods a subclass may override,
+`get_pool_seeds(request)` and `get_server_arguments(request)`, are
+[what the request carries](#what-the-request-carries) to the call.
 
 ```python
 --8<--
@@ -80,9 +86,10 @@ HEAD, POST, PUT, PATCH and DELETE, in either case. Any other method is Django's
 own 405, with an `Allow` header listing exactly the methods served, and
 OPTIONS is Django's own answer.
 
-`as_view()` checks the spec and the methods when the view is built, so a view
-with no spec, or one naming a method it cannot serve, fails when the URLconf is
-imported rather than on its first request. The `spec` may be a declaration of
+`as_view()` checks the spec, the methods and `server_arguments` when the view
+is built, so a view with no spec, one naming a method it cannot serve, or a
+binding that cannot mean what it says, fails when the URLconf is imported
+rather than on its first request. The `spec` may be a declaration of
 another library's, a
 [`SpecSource`][django_service_specs.specs.spec_source.SpecSource]: it is
 compiled there too, a declaration that does not compile is refused there, and
@@ -185,10 +192,29 @@ an argument, so the spec declares each one. A route capturing a kwarg its spec
 does not declare raises `ImproperlyConfigured` on the first request it
 serves, under either `unknown_arguments` policy: the mismatch is the host's,
 wrong for every request, and a 400 would tell the client it had sent
-something wrong. A host scoping by a kwarg its spec does not take (an `org`
-read by middleware, say) calls
-[`dispatch_request`][django_spec_html.http.dispatch_request.dispatch_request]
-from its own view and passes the `url_kwargs` the spec declares.
+something wrong. A host scoping by a kwarg its spec does not take says so
+with `route_kwargs`.
+
+### Kwargs a spec does not read
+
+An `include()` prefix such as `teams/<team>/` reaches every view under it,
+including one whose spec reads no `team`. `route_kwargs` on either view, or
+on `dispatch_request` and `request_arguments`, says which kwargs fill which
+parameters:
+
+- **`None`**, the default, is the strict rule above.
+- **A mapping** from a captured name to the parameter it fills, or to `None`
+  to drop it: `{"note": "pk", "team": None}`. A kwarg the mapping does not
+  mention is still held to the strict rule, so a typo in a route is still
+  caught.
+- **A tuple of names** is an allow-list: each passes under its own name, and
+  every other kwarg is dropped.
+
+Each refusal is `ImproperlyConfigured`, as the strict rule's is: a target or
+an allowed name the spec does not declare, checked whatever the route
+captured, and two kwargs filling one parameter. A route kwarg is never one of
+the server's values, whatever it fills: the client's URL chose it, so a
+malformed one is the client's 400.
 
 ### The route on its own
 
@@ -224,6 +250,46 @@ before it reads anything else. It raises `PrincipalUnavailable` for a
 deactivated account and returns `request.user` otherwise. Reading
 `request.user` is a session query, so an async view calls it off the event
 loop, as `adispatch_request` does.
+
+## What the request carries
+
+Two hooks on both views read the request before dispatch, each defaulting to
+the attribute of its name. Django builds one view instance per request, so
+either may read `self.kwargs` too:
+
+```python
+--8<--
+docs/examples/http.py:request
+--8<--
+```
+
+- **`get_pool_seeds(request)`** answers the seeds the call is resolved
+  with, so a tenant, a locale or a team the request carries reaches a
+  permission check, a selector or a Validator. **Seed what the request
+  carries, never the request itself**, and no `request` seed is registered
+  by default: a spec callable requiring `request` raises `TypeError` on
+  every reader that has none, which is MCP, the agent tools, the CLI and a
+  task, while a spec reading `team` is one definition every transport can
+  seed.
+- **`get_server_arguments(request)`** answers the kernel's
+  [`ServerArguments`][django_service_specs.types.server_arguments.ServerArguments]:
+  values the server answers for, which outrank whatever the client sent,
+  the URL included, and names it withholds, which are dropped. A client's
+  value for a name it was never offered is never refused, however malformed:
+  `?ordering=sideways` here, or `?pk=abc` for a bound integer, which is
+  dropped before the query string is coerced. The declared
+  `server_arguments` is checked by the kernel's `check_server_arguments` at
+  `as_view()`, against the declared `pool_seeds`; the hook may vary the
+  values per request, and each is checked on every call, but it binds and
+  withholds the declared names exactly, or the request raises
+  `ImproperlyConfigured`, since the check at `as_view()` never saw any
+  other.
+
+`AsyncSpecView` runs both hooks in an executor hop of their own, so one
+reading `request.user` or a model never queries on the event loop. A host's
+own view passes the same values to `dispatch_request` as `pool_seeds=` and
+`server_arguments=`, and calls `check_server_arguments` once, when it is
+built.
 
 ## Refusals
 
