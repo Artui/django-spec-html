@@ -18,11 +18,15 @@ Each test app belongs to the tests of one concern, so the models one set of
 tests needs never grow into another's.
 
 One template directory, and no app templates: ``SpecFormView`` renders a page,
-and the one template its tests and the page example render is the whole of
-what the suite needs. It holds a form tag, the CSRF token, the form and a
-named submit button - the page a person posts - so what those tests render is
-what a project's own template would send back. The path is built from this
-file's location, so it holds no machine's path.
+and the templates its tests and the page examples render are the whole of
+what the suite needs. ``spec_form.html`` holds a form tag, the CSRF token, the
+form and a named submit button - the page a person posts - so what those tests
+render is what a project's own template would send back. ``spec_page.html``
+wraps the same form in a layout and ``spec_fragment.html`` is the form alone,
+so a test can tell the page from the fragment on any Django; and
+``spec_form_htmx.html`` carries its form as a ``partialdef``, which only
+Django 6.0 and later parse, so only the tests skipped below it load it. The
+path is built from this file's location, so it holds no machine's path.
 """
 
 from __future__ import annotations

@@ -12,9 +12,9 @@ does.
 ``SpecView`` and ``AsyncSpecView`` likewise differ only in their handlers, so
 everything else about them is ``SpecViewBase``.
 
-``REFUSAL_STATUSES`` is the one map from a refusal to its status, read by
-``error_response`` and by ``SpecFormView``, so a refused post answers at the
-status a JSON client reads for the same refusal.
+``REFUSAL_STATUSES`` is the one map from a refusal to its status and its
+outcome, read by ``error_response`` and by ``SpecFormView``, so a refused post
+answers at the status a JSON client reads for the same refusal.
 """
 
 from __future__ import annotations
@@ -54,6 +54,7 @@ from django_service_specs import (
 
 from django_spec_html.http.route_arguments import route_arguments
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
+from django_spec_html.types.outcome import Outcome
 
 ANSWERABLE: Final = ("get", "head", "post", "put", "patch", "delete")
 """The methods a spec view may be dispatched on, in the order ``Allow`` lists them.
@@ -63,26 +64,28 @@ spec has nothing to add to that answer. TRACE is not one either, since
 nothing about an operation is a loop-back of the request."""
 
 
-REFUSAL_STATUSES: Final[tuple[tuple[type[DispatchError] | type[ServiceError], int], ...]] = (
-    (InvalidArguments, 400),
-    (NotPermitted, 403),
-    (PrincipalUnavailable, 403),
-    (UnsupportedMediaType, 415),
-    (DispatchError, 400),
-    (ServiceValidationError, 400),
-    (ServiceNotFound, 404),
-    (ActionUnavailable, 409),
-    (ServiceConflict, 409),
-    (AdditionalInputRequired, 422),
-    (ServiceError, 422),
+REFUSAL_STATUSES: Final[
+    tuple[tuple[type[DispatchError] | type[ServiceError], int, Outcome], ...]
+] = (
+    (InvalidArguments, 400, Outcome.INVALID),
+    (NotPermitted, 403, Outcome.DENIED),
+    (PrincipalUnavailable, 403, Outcome.DENIED),
+    (UnsupportedMediaType, 415, Outcome.INVALID),
+    (DispatchError, 400, Outcome.FAILED),
+    (ServiceValidationError, 400, Outcome.INVALID),
+    (ServiceNotFound, 404, Outcome.DENIED),
+    (ActionUnavailable, 409, Outcome.FAILED),
+    (ServiceConflict, 409, Outcome.FAILED),
+    (AdditionalInputRequired, 422, Outcome.NEEDS_INPUT),
+    (ServiceError, 422, Outcome.FAILED),
 )
-"""Every refusal this package answers, and its status: read top to bottom, first match wins.
+"""Every refusal this package answers, its status and its outcome: read top to bottom, first match wins.
 
 A subclass is listed above its base, or the base's row would answer for it.
 Every refusal has a row naming it, even where its status is its base's, so
 the map is the whole truth a check reading it needs: the kernel's
-``unanswered_refusals`` reads this table, and a row it reports nothing about
-is held by ``test_every_refusal_has_a_row_of_its_own``.
+``unanswered_refusals`` reads each column as a table of its own, and a row it
+reports nothing about is held by ``test_every_refusal_has_a_row_of_its_own``.
 
 ``UnsupportedMediaType`` is this package's refusal, which the kernel's check
 does not ask about, so ``test_unsupported_media_type_is_415`` holds its row.
@@ -92,13 +95,24 @@ Each row's status is held twice over, by the two tables the docs publish:
 ``test_the_pages_outcome_table_is_the_one_shipped`` for the page, beside the
 row's own tests in ``test_error_response`` and ``test_spec_form_view``.
 
+The outcome is the third column rather than a second map, so the one table
+stays the whole truth. The page reads it to tell a denial, raised for the
+host's handlers, from a refusal it re-renders; every other outcome is
+answered alike by both wrappers today, so each row's outcome is held on its
+own by ``test_every_refusal_has_its_outcome``.
+
 The dispatch rows sit above the service rows, so a refusal deriving from one
 of each answers at its dispatch row's status, on both halves alike."""
 
 
 def refusal_status(refused: DispatchError | ServiceError) -> int:
     """The status ``REFUSAL_STATUSES`` answers ``refused`` with."""
-    return next(status for kind, status in REFUSAL_STATUSES if isinstance(refused, kind))
+    return next(status for kind, status, _ in REFUSAL_STATUSES if isinstance(refused, kind))
+
+
+def refusal_outcome(refused: DispatchError | ServiceError) -> Outcome:
+    """The outcome ``REFUSAL_STATUSES`` reads ``refused`` as, from the row its status is read from."""
+    return next(outcome for kind, _, outcome in REFUSAL_STATUSES if isinstance(refused, kind))
 
 
 def field_map(detail: Any) -> Mapping[Any, Any]:

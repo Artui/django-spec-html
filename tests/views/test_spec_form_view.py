@@ -10,18 +10,27 @@ The module is its own URLconf, since ``resolve_url`` reads the project's.
 from __future__ import annotations
 
 import datetime
+import re
 import tempfile
 from collections.abc import Iterator, Mapping
 from decimal import Decimal
 from typing import Any
 
+import django
 import pytest
 from django import forms
-from django.contrib.auth import get_user_model
-from django.core.exceptions import BadRequest, ImproperlyConfigured, PermissionDenied
+from django.contrib.auth import get_user_model, login
+from django.contrib.sessions.middleware import SessionMiddleware
+from django.core.exceptions import (
+    BadRequest,
+    DisallowedRedirect,
+    ImproperlyConfigured,
+    PermissionDenied,
+)
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import Http404, HttpResponse
+from django.template import TemplateDoesNotExist
 from django.urls import path, reverse_lazy
 from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy
@@ -31,7 +40,9 @@ from django_service_specs import (
     DispatchError,
     DispatchResult,
     FormValidator,
+    NotPermitted,
     PermissionCheck,
+    PrincipalUnavailable,
     SelectorKind,
     SelectorSpec,
     ServiceConflict,
@@ -44,6 +55,7 @@ from django_service_specs import (
 )
 
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
+from django_spec_html.views import spec_form_view
 from django_spec_html.views.spec_form_view import SpecFormView
 from tests.adapter_app.models import Author as BookAuthor
 from tests.adapter_app.models import Book, Document, Edition
@@ -1120,32 +1132,478 @@ class TestServing:
         assert SpecFormView.view_is_async is False
 
 
-class TestAnHtmxRequest:
-    # The docs say the page reads no htmx header in this release, so an htmx
-    # post is answered exactly as a plain one: these hold that claim until a
-    # fragment answer replaces it.
+HTMX = {"HTTP_HX_REQUEST": "true"}
+BOOSTED = {**HTMX, "HTTP_HX_BOOSTED": "true"}
+RESTORING = {**HTMX, "HTTP_HX_HISTORY_RESTORE_REQUEST": "true"}
+# The three headers the mode is read from, which every answer varies on.
+MODE_HEADERS = {"HX-Request", "HX-Boosted", "HX-History-Restore-Request"}
+PAGE = "spec_page.html"
+FRAGMENT = "spec_fragment.html"
 
-    @staticmethod
-    def htmx_post(view: Any, user: Any, data: Mapping[str, Any]) -> Any:
-        return view(signed_in(FACTORY.post("/", data=data, HTTP_HX_REQUEST="true"), user))
 
-    @staticmethod
-    def hx_headers(response: Any) -> list[str]:
-        return [name for name in response.headers if name.lower().startswith("hx-")]
+def fragmented(spec: ServiceSpec, **attributes: Any) -> Any:
+    """A view whose page has a layout and whose fragment, in a file of its own, has none.
 
-    def test_a_success_is_the_same_redirect(self, ada: Any) -> None:
-        response = self.htmx_post(form_view(entry_spec()), ada, {"title": "Hi"})
+    Set as class attributes, as a host's subclass sets them, so the fragment
+    renders on every Django this suite runs on.
+    """
+    attributes = {
+        "template_name": PAGE,
+        "fragment_template_name": FRAGMENT,
+        "success_url": "/done/",
+        **attributes,
+    }
+    return type("Fragmented", (SpecFormView,), attributes).as_view(spec=spec)
+
+
+def hx_get(view: Any, user: Any, headers: Mapping[str, str] = HTMX, **url_kwargs: Any) -> Any:
+    return view(signed_in(FACTORY.get("/", **headers), user), **url_kwargs)
+
+
+def hx_post(
+    view: Any,
+    user: Any,
+    data: Mapping[str, Any],
+    headers: Mapping[str, str] = HTMX,
+    **url_kwargs: Any,
+) -> Any:
+    return view(signed_in(FACTORY.post("/", data=data, **headers), user), **url_kwargs)
+
+
+def varied_on(response: Any) -> set[str]:
+    return {name.strip() for name in response.headers.get("Vary", "").split(",") if name.strip()}
+
+
+def hx_headers(response: Any) -> dict[str, str]:
+    return {
+        name: value for name, value in response.headers.items() if name.lower().startswith("hx-")
+    }
+
+
+class HtmxDetails:
+    """What django-htmx's middleware sets as ``request.htmx``, in the shape it has.
+
+    django-htmx's ``HtmxDetails`` is truthy for a request whose ``HX-Request``
+    is ``true``, and carries ``boosted`` and ``history_restore_request``. The
+    tests that use this give it answers its headers disagree with, so they
+    can tell which of the two the view read.
+    """
+
+    def __init__(
+        self, *, htmx: bool = True, boosted: bool = False, history_restore_request: bool = False
+    ) -> None:
+        self._htmx = htmx
+        self.boosted = boosted
+        self.history_restore_request = history_restore_request
+
+    def __bool__(self) -> bool:
+        return self._htmx
+
+
+class TestWantsFragment:
+    # Each condition of the rule is held by its own row: a request that is
+    # not htmx, a boosted one and a history restore each get the page.
+    @pytest.mark.parametrize(
+        ("headers", "expected"),
+        [
+            ({}, False),
+            (HTMX, True),
+            ({"HTTP_HX_REQUEST": "false"}, False),
+            (BOOSTED, False),
+            ({**HTMX, "HTTP_HX_BOOSTED": "false"}, True),
+            (RESTORING, False),
+            ({**HTMX, "HTTP_HX_HISTORY_RESTORE_REQUEST": "false"}, True),
+        ],
+        ids=[
+            "plain",
+            "htmx",
+            "htmx-false",
+            "boosted",
+            "boosted-false",
+            "history-restore",
+            "history-restore-false",
+        ],
+    )
+    def test_read_from_the_headers(self, headers: Mapping[str, str], expected: bool) -> None:
+        assert SpecFormView().wants_fragment(FACTORY.get("/", **headers)) is expected
+
+    # Each row's headers say the opposite of the details, so a view reading
+    # the headers where django-htmx set ``request.htmx`` fails every row.
+    @pytest.mark.parametrize(
+        ("headers", "details", "expected"),
+        [
+            ({}, HtmxDetails(), True),
+            (HTMX, HtmxDetails(htmx=False), False),
+            (HTMX, HtmxDetails(boosted=True), False),
+            (HTMX, HtmxDetails(history_restore_request=True), False),
+        ],
+        ids=["htmx", "not-htmx", "boosted", "history-restore"],
+    )
+    def test_read_from_django_htmx_where_its_middleware_ran(
+        self, headers: Mapping[str, str], details: HtmxDetails, expected: bool
+    ) -> None:
+        request = FACTORY.get("/", **headers)
+        request.htmx = details
+        assert SpecFormView().wants_fragment(request) is expected
+
+
+class TestTheFragmentOnGet:
+    def test_an_htmx_get_is_the_form_fragment(self, ada: Any) -> None:
+        # An ``hx-get`` that loads the form into a dialog, say.
+        spec = entry_spec()
+        response = hx_get(fragmented(spec), ada).render()
+        assert response.status_code == 200
+        assert response.template_name == [FRAGMENT]
+        assert b"<html>" not in response.content
+        assert b'name="title"' in response.content
+        assert not response.context_data["form"].is_bound
+        assert response.context_data["spec"] is spec
+
+    def test_its_context_is_the_page_s(self, ada: Any) -> None:
+        view = fragmented(entry_spec(), extra_context={"heading": "New entry"})
+        page, fragment = get(view, ada), hx_get(view, ada)
+        assert set(fragment.context_data) == set(page.context_data)
+        assert fragment.context_data["heading"] == "New entry"
+
+    def test_a_plain_get_is_the_page(self, ada: Any) -> None:
+        response = get(fragmented(entry_spec()), ada).render()
+        assert response.template_name == [PAGE]
+        assert b"<html>" in response.content
+
+    @pytest.mark.parametrize("headers", [BOOSTED, RESTORING], ids=["boosted", "history-restore"])
+    def test_a_boosted_or_restoring_get_is_the_page(
+        self, ada: Any, headers: Mapping[str, str]
+    ) -> None:
+        # A boosted link swaps the whole body, and a history restore after a
+        # cache miss needs the whole page back.
+        response = hx_get(fragmented(entry_spec()), ada, headers).render()
+        assert response.template_name == [PAGE]
+        assert b"<html>" in response.content
+
+    def test_a_principal_the_class_check_refuses_is_permission_denied(self, ada: Any) -> None:
+        with pytest.raises(PermissionDenied, match=r"^Only editors may run this\.$"):
+            hx_get(fragmented(entry_spec(permissions=[Refuse()])), ada)
+
+
+class TestTheFragmentOnASuccess:
+    def test_an_htmx_success_is_hx_redirect_never_a_302(self, ada: Any) -> None:
+        # An XHR follows a 302 itself and swaps the next page into the form.
+        # The view needs nothing htmx-specific: the default fragment address
+        # is never rendered on a success.
+        spec = entry_spec()
+        response = hx_post(form_view(spec), ada, {"title": "Hi"})
+        assert response.status_code == 200
+        assert hx_headers(response) == {"HX-Redirect": "/done/"}
+        assert "Location" not in response
+        assert response.content == b""
+        assert received(spec)["title"] == "Hi"
+
+    def test_hx_redirect_reads_get_success_url(self, ada: Any) -> None:
+        class ToTheEntry(SpecFormView):
+            template_name = TEMPLATE
+
+            def get_success_url(self, result: DispatchResult) -> str:
+                return f"/entries/{result.value}/"
+
+        response = hx_post(ToTheEntry.as_view(spec=entry_spec(returns=7)), ada, {"title": "Hi"})
+        assert response["HX-Redirect"] == "/entries/7/"
+
+    @pytest.mark.parametrize("headers", [BOOSTED, RESTORING], ids=["boosted", "history-restore"])
+    def test_a_boosted_success_is_the_page_s_redirect(
+        self, ada: Any, headers: Mapping[str, str]
+    ) -> None:
+        response = hx_post(fragmented(entry_spec()), ada, {"title": "Hi"}, headers)
         assert (response.status_code, response.url) == (302, "/done/")
-        assert self.hx_headers(response) == []
+        assert hx_headers(response) == {}
 
-    def test_a_refusal_is_the_same_whole_page(self, ada: Any) -> None:
-        plain = post(form_view(entry_spec()), ada, {"title": "shut"})
-        htmx = self.htmx_post(form_view(entry_spec()), ada, {"title": "shut"})
-        assert (htmx.status_code, refused(htmx)) == (plain.status_code, refused(plain))
-        assert htmx.status_code == 400
-        assert htmx.template_name == plain.template_name == [TEMPLATE]
-        assert set(htmx.context_data) == set(plain.context_data)
-        assert self.hx_headers(htmx) == []
+    @staticmethod
+    def to(url: str) -> Any:
+        class ToTheURL(SpecFormView):
+            template_name = PAGE
+
+            def get_success_url(self, result: DispatchResult) -> str:
+                return url
+
+        return ToTheURL.as_view(spec=entry_spec())
+
+    def test_hx_redirect_is_the_page_s_location(self, ada: Any) -> None:
+        # Encoded as the page's redirect encodes it: set raw, a path outside
+        # ASCII is a MIME-encoded header no browser reads as the path.
+        page = hx_post(self.to("/books/日本/"), ada, {"title": "Hi"}, {})
+        fragment = hx_post(self.to("/books/日本/"), ada, {"title": "Hi"})
+        assert fragment["HX-Redirect"] == page["Location"] == "/books/%E6%97%A5%E6%9C%AC/"
+        assert "Location" not in fragment
+        # Read as a redirect's ``url`` is, so its repr and a test reading it work.
+        assert fragment.url == page.url
+
+    @pytest.mark.parametrize("headers", [{}, HTMX], ids=["page", "fragment"])
+    def test_an_unsafe_scheme_is_refused_in_both_modes(
+        self, ada: Any, headers: Mapping[str, str]
+    ) -> None:
+        with pytest.raises(DisallowedRedirect):
+            hx_post(self.to("javascript:alert(1)"), ada, {"title": "Hi"}, headers)
+
+    def test_an_error_of_get_success_url_s_own_is_not_chained_to_the_lookup(self, ada: Any) -> None:
+        # Raised outside the lookup's ``except``, so its traceback is its own
+        # rather than "during handling of TemplateDoesNotExist".
+        class Misconfigured(SpecFormView):
+            template_name = PAGE
+
+            def get_success_url(self, result: DispatchResult) -> str:
+                raise ImproperlyConfigured("Nowhere to go.")
+
+        with pytest.raises(ImproperlyConfigured) as raised:
+            hx_post(Misconfigured.as_view(spec=entry_spec()), ada, {"title": "Hi"})
+        assert raised.value.__context__ is None
+
+    def test_a_cookie_the_middleware_sets_reaches_hx_redirect(
+        self, ada: Any, settings: Any
+    ) -> None:
+        """Holds the page's claim that a cookie set while the request is handled reaches it.
+
+        What sets it is the host's middleware, on whatever answer the view
+        returns, so this holds that ``HX-Redirect`` is an answer the
+        middleware passes through like any other: signing in sets the
+        session cookie, and an answer that lost it would sign the visitor
+        straight back out.
+        """
+        settings.SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
+
+        class SignsIn(SpecFormView):
+            template_name = TEMPLATE
+
+            def get_success_url(self, result: DispatchResult) -> str:
+                login(self.request, ada)
+                return "/done/"
+
+        view = SessionMiddleware(SignsIn.as_view(spec=entry_spec()))
+        request = signed_in(FACTORY.post("/", data={"title": "Hi"}, **HTMX), ada)
+        response = view(request)
+        assert (response.status_code, response["HX-Redirect"]) == (200, "/done/")
+        assert response.cookies[settings.SESSION_COOKIE_NAME].value
+
+
+@pytest.fixture
+def result_fragment(settings: Any) -> str:
+    """A fragment template defining ``spec-result``, as each Django addresses one.
+
+    From Django 6.0 the address ``fragment.html#spec-result`` names the
+    ``partialdef`` inside ``fragment.html``. Below it - with no
+    django-template-partials installed - the same address is a template name
+    like any other, so the template is registered under it: the view asks for
+    one address on every version, and what answers it is the version's.
+    """
+    form = '<form hx-post="">{{ form }}</form>'
+    result = "<p>Saved {{ result.value }} for {{ heading }}.</p>"
+    if django.VERSION >= (6, 0):
+        templates = {
+            "fragment.html": f"{form}{{% partialdef spec-result %}}{result}{{% endpartialdef %}}"
+        }
+    else:
+        templates = {"fragment.html": form, "fragment.html#spec-result": result}
+    settings.TEMPLATES = [
+        {
+            "BACKEND": "django.template.backends.django.DjangoTemplates",
+            "OPTIONS": {"loaders": [("django.template.loaders.locmem.Loader", templates)]},
+        }
+    ]
+    return "fragment.html"
+
+
+class TestTheResultFragment:
+    def test_a_spec_result_fragment_is_rendered_in_place(
+        self, ada: Any, result_fragment: str
+    ) -> None:
+        view = fragmented(
+            entry_spec(returns=7),
+            template_name=None,
+            fragment_template_name=result_fragment,
+            extra_context={"heading": "the entries"},
+        )
+        response = hx_post(view, ada, {"title": "Hi"}).render()
+        assert response.status_code == 200
+        assert response.content == b"<p>Saved 7 for the entries.</p>"
+        assert response.context_data["result"].value == 7
+        # The view's context with the result in it, and no form: the post's is done with.
+        assert set(response.context_data) == {"result", "view", "spec", "heading"}
+        assert hx_headers(response) == {"HX-Trigger": "spec-succeeded"}
+        assert varied_on(response) >= MODE_HEADERS
+
+    def test_the_form_fragment_of_that_template_has_no_result(
+        self, ada: Any, result_fragment: str
+    ) -> None:
+        view = fragmented(entry_spec(), template_name=None, fragment_template_name=result_fragment)
+        content = hx_get(view, ada).render().content
+        assert content.startswith(b'<form hx-post="">')
+        assert b"Saved" not in content
+
+    def test_a_fragment_template_without_one_redirects(self, ada: Any) -> None:
+        response = hx_post(fragmented(entry_spec()), ada, {"title": "Hi"})
+        assert hx_headers(response) == {"HX-Redirect": "/done/"}
+
+
+class TestTheFragmentOnARefusal:
+    def test_a_refused_htmx_post_is_the_form_fragment_at_200(self, ada: Any) -> None:
+        # The whole page swapped into the form's target nests a second layout
+        # inside it, and a 4xx is swapped nowhere by default.
+        response = hx_post(fragmented(entry_spec()), ada, {"title": "shut"}).render()
+        assert response.status_code == 200
+        assert response.template_name == [FRAGMENT]
+        assert b"<html>" not in response.content
+        assert response.content.count(CLOSED.encode()) == 1
+        assert hx_headers(response) == {}
+
+    @pytest.mark.parametrize(
+        ("data", "exc", "status"),
+        [
+            ({"title": "shut"}, None, 400),
+            ({"title": "Hi", "count": "x"}, None, 400),
+            ({"title": "Hi"}, ServiceValidationError({"title": ["Taken."]}), 400),
+            ({"title": "Hi"}, ServiceConflict("Moved."), 409),
+            ({"title": "Hi"}, ActionUnavailable("Moved.", code="moved"), 409),
+            ({"title": "Hi"}, ServiceError("Moved."), 422),
+            ({"title": "Hi"}, AdditionalInputRequired("Moved.", schema={"type": "object"}), 422),
+            ({"title": "Hi"}, Throttled("Moved."), 400),
+            ({"title": "Hi"}, UnsupportedMediaType("Moved."), 415),
+        ],
+        ids=[
+            "form",
+            "shape-check",
+            "service-validation-error",
+            "conflict",
+            "action-unavailable",
+            "service-error",
+            "additional-input-required",
+            "dispatch-error",
+            "unsupported-media-type",
+        ],
+    )
+    def test_every_refusal_the_page_re_renders_is_a_fragment_at_200(
+        self, ada: Any, data: Mapping[str, Any], exc: Exception | None, status: int
+    ) -> None:
+        def spec() -> ServiceSpec:
+            return entry_spec() if exc is None else raising(exc)
+
+        page = post(fragmented(spec()), ada, data)
+        fragment = hx_post(fragmented(spec()), ada, data)
+        assert (page.status_code, page.template_name) == (status, [PAGE])
+        assert (fragment.status_code, fragment.template_name) == (200, [FRAGMENT])
+        assert refused(fragment) == refused(page)
+        assert set(fragment.context_data) == set(page.context_data)
+        assert varied_on(page) >= MODE_HEADERS
+        assert varied_on(fragment) >= MODE_HEADERS
+        # No header on any of them, a confirmation included: it is re-rendered
+        # in the target the form already swaps into.
+        assert hx_headers(fragment) == {}
+
+    @pytest.mark.parametrize("headers", [BOOSTED, RESTORING], ids=["boosted", "history-restore"])
+    def test_a_boosted_refusal_is_the_page(self, ada: Any, headers: Mapping[str, str]) -> None:
+        response = hx_post(fragmented(entry_spec()), ada, {"title": "shut"}, headers)
+        assert (response.status_code, response.template_name) == (400, [PAGE])
+
+    @pytest.mark.parametrize("headers", [{}, HTMX], ids=["page", "fragment"])
+    @pytest.mark.parametrize(
+        ("exc", "raised"),
+        [
+            (NotPermitted("Not yours."), PermissionDenied),
+            (PrincipalUnavailable("Gone."), PermissionDenied),
+            (ServiceNotFound("No such entry."), Http404),
+        ],
+        ids=["not-permitted", "principal-unavailable", "service-not-found"],
+    )
+    def test_a_denial_is_the_host_s_in_both_modes(
+        self, ada: Any, headers: Mapping[str, str], exc: Exception, raised: type[Exception]
+    ) -> None:
+        with pytest.raises(raised, match=rf"^{re.escape(str(exc))}$"):
+            hx_post(fragmented(raising(exc)), ada, {"title": "Hi"}, headers)
+
+    @pytest.mark.parametrize("headers", [{}, HTMX], ids=["page", "fragment"])
+    def test_a_missing_row_is_http404_in_both_modes(
+        self, ada: Any, headers: Mapping[str, str]
+    ) -> None:
+        with pytest.raises(Http404):
+            hx_post(fragmented(row_spec()), ada, {"title": "Hi"}, headers, pk=404)
+
+
+class TestNothingHtmxReachesTheSpec:
+    def test_dispatch_is_called_the_same_way_in_both_modes(
+        self, ada: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[dict[str, Any]] = []
+        real = spec_form_view.dispatch
+
+        def recording(spec: Any, **kwargs: Any) -> Any:
+            calls.append(kwargs)
+            return real(spec, **kwargs)
+
+        monkeypatch.setattr(spec_form_view, "dispatch", recording)
+        spec = entry_spec()
+        data = {"title": "Hi", "csrfmiddlewaretoken": "token", "save": "Save"}
+        post(fragmented(spec), ada, data)
+        every_header = {
+            **HTMX,
+            "HTTP_HX_TARGET": "form",
+            "HTTP_HX_TRIGGER": "save",
+            "HTTP_HX_TRIGGER_NAME": "save",
+            "HTTP_HX_CURRENT_URL": "http://testserver/",
+        }
+        hx_post(fragmented(spec), ada, data, every_header)
+        plain, htmx = calls
+        assert htmx.keys() == plain.keys()
+        assert htmx["arguments"] == plain["arguments"]
+        assert plain["arguments"]["title"] == "Hi"
+        assert not [name for name in htmx["arguments"] if name.lower().startswith("hx")]
+        assert htmx["pool_seeds"] is plain["pool_seeds"]
+        assert spec.service.calls[0]["data"] == spec.service.calls[1]["data"]
+
+
+class TestVary:
+    # One URL answers two bodies, so a cache keyed on fewer headers would
+    # hand a fragment to a page load or a history restore.
+    @pytest.mark.parametrize("headers", [{}, HTMX, BOOSTED, RESTORING])
+    @pytest.mark.parametrize(
+        ("method", "data"),
+        [("get", None), ("post", {"title": "Hi"}), ("post", {"title": "shut"})],
+        ids=["get", "success", "refused"],
+    )
+    def test_every_answer_varies_on_the_mode_headers(
+        self, ada: Any, headers: Mapping[str, str], method: str, data: Any
+    ) -> None:
+        request = getattr(FACTORY, method)("/", data=data, **headers)
+        response = fragmented(entry_spec())(signed_in(request, ada))
+        assert varied_on(response) >= MODE_HEADERS
+
+    def test_a_method_it_does_not_serve_varies_too(self, ada: Any) -> None:
+        response = fragmented(entry_spec())(signed_in(FACTORY.put("/", data=b"", **HTMX), ada))
+        assert response.status_code == 405
+        assert varied_on(response) >= MODE_HEADERS
+
+
+class TestTheFragmentAddress:
+    def test_it_defaults_to_the_page_s_spec_form_fragment(self) -> None:
+        view = SpecFormView(template_name="books/book_form.html")
+        assert view.get_fragment_template_names() == ["books/book_form.html#spec-form"]
+
+    def test_it_is_fragment_template_name_where_set(self) -> None:
+        view = SpecFormView(template_name=PAGE, fragment_template_name=FRAGMENT)
+        assert view.get_fragment_template_names() == [FRAGMENT]
+
+    def test_a_page_with_no_spec_form_fragment_raises_naming_it(self, ada: Any) -> None:
+        # Never the page instead: the error names the one block the template lacks.
+        response = hx_get(form_view(entry_spec()), ada)
+        with pytest.raises(TemplateDoesNotExist) as raised:
+            response.render()
+        assert str(raised.value) == f"{TEMPLATE}#spec-form"
+
+    def test_a_fragment_template_that_does_not_exist_raises_naming_it(self, ada: Any) -> None:
+        response = hx_post(
+            fragmented(entry_spec(), fragment_template_name="entries/missing.html"),
+            ada,
+            {"title": "shut"},
+        )
+        with pytest.raises(TemplateDoesNotExist) as raised:
+            response.render()
+        assert str(raised.value) == "entries/missing.html"
 
 
 class TestConfiguration:

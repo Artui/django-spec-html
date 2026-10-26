@@ -1,0 +1,13 @@
+<html>
+<body>
+<h1>New book</h1>
+{% partialdef spec-form inline %}
+<form method="post" hx-post="{% url 'add-book' %}" hx-swap="outerHTML">
+  {% csrf_token %}{{ form }}<button name="save">Save</button>
+</form>
+{% endpartialdef %}
+{% partialdef spec-result %}
+<p id="saved">Added {{ result.value.title }}.</p>
+{% endpartialdef %}
+</body>
+</html>

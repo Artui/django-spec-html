@@ -26,6 +26,7 @@ def test_the_package_has_the_subpackages_it_re_exports() -> None:
     # with nothing checked.
     assert sorted(package.__name__ for package in _subpackages()) == [
         "django_spec_html.http",
+        "django_spec_html.types",
         "django_spec_html.views",
     ]
 
@@ -60,6 +61,7 @@ def test_the_root_names_nothing_it_does_not_define() -> None:
 def test_the_root_serves_the_two_halves_and_the_version() -> None:
     assert sorted(django_spec_html.__all__) == [
         "AsyncSpecView",
+        "Outcome",
         "SpecFormView",
         "SpecView",
         "UnsupportedMediaType",
