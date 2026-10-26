@@ -2068,6 +2068,15 @@ class TestThePagesServerArguments:
         assert (b"value=" in tag, b"disabled" in tag) == (False, True)
         assert b'value="77"' not in response.content
 
+    def test_the_field_shows_the_per_call_value_not_the_declared_one(self, ada: Any) -> None:
+        view = fragmented(
+            entry_spec(),
+            server_arguments=ServerArguments(values={"title": "S"}),
+            get_server_arguments=lambda self, request: ServerArguments(values={"title": "T"}),
+        )
+        for response in (get(view, ada), post(view, ada, {"title": "client", "count": "x"})):
+            assert b'value="T"' in field_tag(response.render(), "title")
+
     def test_the_form_class_is_left_as_it_was(self, ada: Any) -> None:
         view = paged(entry_spec(), server_arguments=ServerArguments(values={"title": "S"}))
         get(view.as_view(), ada)

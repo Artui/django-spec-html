@@ -753,11 +753,9 @@ def _unavailable(
     as the post's ``ServiceNotFound`` is.
     """
     pool = base_pool(user=principal, seeds=seeds)
-    # ``reserved`` from the call's own seeds on both calls, or a condition
-    # reading a seed added per call is never handed it: held here by
-    # test_a_condition_reading_a_per_call_seed_is_asked_with_it, and on
-    # ``enforce_affordances``, which asks the callables again, by
-    # test_the_row_s_conditions_are_asked_with_the_call_s_seeds.
+    # ``reserved`` from the call's own seeds, or a condition reading a seed
+    # added per call is never handed it:
+    # test_a_condition_reading_a_per_call_seed_is_asked_with_it.
     unmet = unmet_operation_affordance(spec, pool, reserved=seeds.reserved)
     # One branch to coverage, so each condition is held by its own test:
     # test_a_callable_condition_is_named_before_a_row_condition_declared_first
@@ -767,6 +765,8 @@ def _unavailable(
     if unmet is not None or not isinstance(target, models.Model):
         return unmet
     try:
+        # ``reserved`` here too, since this asks the callables again:
+        # test_the_row_s_conditions_are_asked_with_the_call_s_seeds.
         enforce_affordances(spec, pool, instance=target, reserved=seeds.reserved)
     except ActionUnavailable as refused:
         # Never ``None`` here, since a spec with no affordances refuses nothing.
