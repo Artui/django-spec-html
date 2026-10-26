@@ -37,6 +37,7 @@ from django.urls import path, reverse_lazy
 from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy
 from django_service_specs import (
+    DEFAULT_POOL_SEEDS,
     ActionUnavailable,
     AdditionalInputRequired,
     Affordance,
@@ -59,6 +60,7 @@ from django_service_specs import (
     ServiceValidationError,
     UnknownArguments,
     ValidationContext,
+    update_from_input,
 )
 
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
@@ -191,6 +193,41 @@ class NoteTitleForm(forms.Form):
 
     title = forms.CharField()
     remark = forms.CharField(required=False, initial="none")
+
+
+RED_CLOSED = "Red is closed."
+
+
+class RedIsClosed(forms.Form):
+    """A required title, and a ``clean()`` rule over an optional colour."""
+
+    title = forms.CharField()
+    colour = forms.ChoiceField(choices=[("red", "Red"), ("blue", "Blue")], required=False)
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        if cleaned.get("colour") == "red":
+            raise forms.ValidationError(RED_CLOSED)
+        return cleaned
+
+
+class SignInForm(forms.ModelForm):
+    """A user's unique username, beside a date-time the shape check reads."""
+
+    class Meta:
+        model = get_user_model()
+        fields = ["username", "last_login"]
+
+
+class Counting(forms.Form):
+    """Counts each ``clean()``, on the class, across every instance a post builds."""
+
+    cleans = 0
+    title = forms.CharField()
+
+    def clean(self) -> dict[str, Any]:
+        type(self).cleans += 1
+        return super().clean() or {}
 
 
 class NoCreating(PermissionCheck):
@@ -848,14 +885,76 @@ class TestRefusals:
         assert (response.status_code, refused(response)) == (400, {"__all__": [CLOSED]})
         assert validated(spec) == 1
 
-    def test_the_page_form_s_own_checks_add_nothing_to_dispatch_s_refusal(self, ada: Any) -> None:
+    def test_after_a_shape_refusal_the_form_s_own_checks_answer_too(self, ada: Any) -> None:
         # The shape check refuses the count before the Validator runs, so the
-        # form's ``clean()`` never decided anything: the page shows what
-        # dispatch did, and not what the page's form would have said.
+        # page's own form, built as the Validator's is, adds what its
+        # ``clean()`` finds, and its own word for the count adds nothing.
         spec = entry_spec()
         response = post(form_view(spec), ada, {"title": "shut", "count": "x"})
-        assert (response.status_code, refused(response)) == (400, {"count": [WHOLE]})
+        assert (response.status_code, refused(response)) == (
+            400,
+            {"count": [WHOLE], "__all__": [CLOSED]},
+        )
         assert validated(spec) == 0
+
+    def test_a_blank_required_field_and_a_clean_violation_show_in_one_post(self, ada: Any) -> None:
+        # The review's row: the shape check answers the blank title, so the
+        # Validator never runs (none of its calls), and the clean() rule the
+        # colour breaks is the page's own form's, in the same post.
+        spec = entry_spec(validator=Watched(RedIsClosed))
+        response = post(form_view(spec), ada, {"title": "", "colour": "red"}).render()
+        assert (response.status_code, refused(response)) == (
+            400,
+            {"title": [REQUIRED], "__all__": [RED_CLOSED]},
+        )
+        assert validated(spec) == 0
+        assert response.content.count(REQUIRED.encode()) == 1
+        assert response.content.count(RED_CLOSED.encode()) == 1
+
+    def test_a_uniqueness_rule_shows_beside_a_shape_refusal(self, ada: Any) -> None:
+        # The date-time is the shape check's, so the Validator never runs, and
+        # the username another user holds is the page's own ModelForm's.
+        make_user("grace")
+        spec = ServiceSpec(
+            service=Record(),
+            permissions=OPEN,
+            validator=Watched(SignInForm),
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=user_by_pk, reads=PK
+            ),
+        )
+        response = post(
+            form_view(spec), ada, {"username": "grace", "last_login": "never"}, pk=ada.pk
+        )
+        assert (response.status_code, refused(response)) == (
+            400,
+            {
+                "last_login": ["Enter a valid date/time."],
+                "username": ["A user with that username already exists."],
+            },
+        )
+        assert validated(spec) == 0
+
+    @pytest.mark.parametrize(
+        "exc",
+        [ServiceConflict("Busy."), ServiceValidationError("Busy."), ServiceError("Busy.")],
+        ids=["conflict", "service-validation", "service-error"],
+    )
+    def test_a_refusal_after_the_validator_took_the_form_validates_it_no_further(
+        self, ada: Any, exc: Exception
+    ) -> None:
+        # The Validator's form, built as the page's is, took the post, so the
+        # page's form would find nothing it did not: its clean() runs once,
+        # the Validator's, and the refusal is all the page shows.
+        Counting.cleans = 0
+
+        def service(**pool: Any) -> None:
+            raise exc
+
+        spec = ServiceSpec(service=service, permissions=OPEN, validator=FormValidator(Counting))
+        response = post(form_view(spec), ada, {"title": "Hi"})
+        assert refused(response) == {"__all__": ["Busy."]}
+        assert Counting.cleans == 1
 
     def test_a_validator_refusal_appears_once(self, ada: Any) -> None:
         spec = entry_spec()
@@ -1006,11 +1105,12 @@ def ranges(request: pytest.FixtureRequest) -> None:
 
 @pytest.mark.usefixtures("ranges")
 class TestAValuePastItsColumn:
-    """A post the Validator refuses for a value no column holds re-renders the page.
+    """A post refused for a value no column holds re-renders the page.
 
-    The page's own form is never validated again to show the refusal: it has
-    none of the Validator's guards, and its own validation would hand the
-    value to the database driver, which raises ``OverflowError``.
+    The page's own form is validated beside an argument refusal under the
+    kernel's ``clean_held_to_their_columns``, the Validator's own guards:
+    validated without them, it would hand the value to the database driver,
+    which raises ``OverflowError``.
     """
 
     def test_a_model_form_s_integer_past_its_column_is_refused_on_the_page(self, ada: Any) -> None:
@@ -1036,12 +1136,22 @@ class TestAValuePastItsColumn:
         self, ada: Any
     ) -> None:
         # The shape check refuses the missing title before the Validator runs,
-        # so nothing has judged the key: the page shows the refusal alone.
+        # so the page's own form judges the key, held to its column as the
+        # Validator's is: refused in the field's words, never handed to the
+        # driver, which raises ``OverflowError`` for it.
         spec = ServiceSpec(
             service=Record(), permissions=OPEN, validator=FormValidator(AssigneesForm)
         )
         response = post(form_view(spec), ada, {"assignees": [2**63]})
-        assert (response.status_code, refused(response)) == (400, {"title": [REQUIRED]})
+        assert (response.status_code, refused(response)) == (
+            400,
+            {
+                "title": [REQUIRED],
+                "assignees": [
+                    f"Select a valid choice. {2**63} is not one of the available choices."
+                ],
+            },
+        )
 
     def test_a_list_s_key_past_its_column_is_refused_on_the_page(self, ada: Any) -> None:
         spec = ServiceSpec(
@@ -2447,3 +2557,124 @@ class TestTheFormsKeywords:
         view = form_view(keyed_entry_spec(Keywords(initial), row=True), pool_seeds=TENANT_SEEDS)
         page = get(view, ada, pk=note.pk)
         assert page.context_data["form"].initial == {"code": "K-9", "title": "One"}
+
+
+def saved(*, instance: Any, data: dict[str, Any]) -> Any:
+    """An update writing what the Validator returned, and nothing it did not, onto the row."""
+    return update_from_input(instance, data)
+
+
+def partial_user_spec() -> ServiceSpec:
+    """``user_spec`` as a partial update, saving what was sent onto the user."""
+    return ServiceSpec(
+        service=saved,
+        permissions=OPEN,
+        validator=FormValidator(UserForm),
+        instance_selector_spec=SelectorSpec(
+            kind=SelectorKind.RETRIEVE, selector=user_by_pk, reads=PK
+        ),
+        partial=True,
+    )
+
+
+def partial_spec() -> ServiceSpec:
+    """A partial write validated by ``NoteTitleForm``, its title required on a whole call.
+
+    No checkbox or multi-select: the browser posts those whatever is ticked,
+    so neither is ever a field the post leaves out.
+    """
+    return entry_spec(validator=Watched(NoteTitleForm), partial=True)
+
+
+class TestAPartialPage:
+    """A ``partial`` spec's page: every field optional to the browser, and a blank one left alone."""
+
+    def test_a_partial_page_renders_no_required_attribute(self, ada: Any) -> None:
+        response = get(form_view(partial_spec()), ada).render()
+        assert b"required" not in field_tag(response, "title")
+        # The class is left as it was: only this form's own attribute changes.
+        assert NoteTitleForm.use_required_attribute is True
+
+    def test_a_whole_page_still_renders_it(self, ada: Any) -> None:
+        response = get(form_view(entry_spec(validator=Watched(NoteTitleForm))), ada).render()
+        assert b"required" in field_tag(response, "title")
+
+    def test_a_refused_partial_post_renders_no_required_attribute_either(self, ada: Any) -> None:
+        def busy(**pool: Any) -> None:
+            raise ServiceConflict("Busy.")
+
+        spec = ServiceSpec(
+            service=busy, permissions=OPEN, validator=Watched(NoteTitleForm), partial=True
+        )
+        response = post(form_view(spec), ada, {"remark": "Later"}).render()
+        assert response.status_code == 409
+        assert b"required" not in field_tag(response, "title")
+
+    def test_a_subset_is_posted_and_only_it_is_validated(self, ada: Any) -> None:
+        spec = partial_spec()
+        assert post(form_view(spec), ada, {"remark": "Later"}).status_code == 302
+        assert received(spec) == {"remark": "Later"}
+
+    def test_a_blank_field_leaves_the_row_s_value_as_it_was(self, ada: Any) -> None:
+        ada.first_name = "Ada"
+        ada.save()
+        response = post(
+            form_view(partial_user_spec()),
+            ada,
+            {"username": "countess", "first_name": ""},
+            pk=ada.pk,
+        )
+        assert response.status_code == 302
+        ada.refresh_from_db()
+        assert (ada.username, ada.first_name) == ("countess", "Ada")
+
+    def test_a_post_with_every_field_blank_dispatches(self, ada: Any) -> None:
+        spec = partial_spec()
+        response = post(form_view(spec), ada, {"title": "", "remark": "", "save": "Save"})
+        assert response.status_code == 302
+        assert received(spec) == {}
+
+    def test_a_shape_refusal_shows_no_word_about_a_field_left_blank(self, ada: Any) -> None:
+        # A blank field on a partial page is one the post leaves alone, so
+        # nothing beside the refusal says it is required.
+        spec = entry_spec(partial=True)
+        response = post(form_view(spec), ada, {"title": "", "count": "x"})
+        assert (response.status_code, refused(response)) == (400, {"count": [WHOLE]})
+        assert validated(spec) == 0
+
+
+class TestASeedResolvedAtEachStep:
+    """A ``Grant`` carries no values, so each step naming a seed resolves it again."""
+
+    @pytest.mark.parametrize(
+        ("form_kwargs", "on_get", "on_post"),
+        [
+            (None, 3, 3),
+            (lambda *, tenant: {}, 4, 4),
+        ],
+        ids=["the-check-names-it", "the-check-and-the-form-name-it"],
+    )
+    def test_a_named_seed_is_resolved_at_each_step_that_names_it(
+        self, ada: Any, note: Note, form_kwargs: Any, on_get: int, on_post: int
+    ) -> None:
+        # GET: the class-level check, the target's lookup, the affordances'
+        # pool and the form's keywords; POST: the check, the lookup, the
+        # form's keywords and dispatch. A resolver answering a fresh object
+        # answers each step a different one.
+        resolved: list[object] = []
+
+        def fresh() -> object:
+            resolved.append(object())
+            return resolved[-1]
+
+        spec = row_spec(
+            permissions=[SeesTenant()],
+            validator=FormValidator(NoteTitleForm, form_kwargs=form_kwargs),
+        )
+        view = form_view(spec, pool_seeds=DEFAULT_POOL_SEEDS.extend(tenant=fresh))
+        assert get(view, ada, pk=note.pk).status_code == 200
+        assert len(resolved) == on_get
+        resolved.clear()
+        assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
+        assert len(resolved) == on_post
+        assert len({id(each) for each in resolved}) == on_post

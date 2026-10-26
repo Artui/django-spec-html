@@ -61,6 +61,7 @@ from django_service_specs import (
     apply_server_arguments,
     authorize,
     base_pool,
+    clean_held_to_their_columns,
     coerce_flat,
     dispatch,
     enforce_affordances,
@@ -269,14 +270,26 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
     carrying one, as ``error_response`` puts it in the JSON body; it is
     absent for every other.
 
-    **A re-rendered form carries the refusal and nothing else**: the page says
-    what dispatch decided. The page's own form is never validated: its
-    errors start empty and the refusal is placed on them, so nothing the
-    Validator did not decide reaches the page, and a value the Validator
-    refused because no column holds it never reaches the database through
-    the page's own checks. After a shape-check refusal, then,
-    the form's further checks - a length, ``clean()``, uniqueness - answer the
-    next post rather than this one.
+    **A refusal of the arguments shows every error in one post.** Beside an
+    ``InvalidArguments``, the page's own form - built as the Validator's is,
+    with the same keywords - is validated too, and the refusal is placed
+    beside what it found, never twice. So after a shape-check refusal - a
+    required field left blank, a date that does not parse - the form's further
+    checks, a length, ``clean()`` or uniqueness, answer in the same post
+    rather than the next. It is validated as the Validator validates its own,
+    under the kernel's ``clean_held_to_their_columns``, so a value no column
+    holds - a key past 64 bits - is refused in the field's words and never
+    reaches the database driver. Any other refusal is no verdict on the
+    arguments - a conflict, a service's own rule, an unavailable action - and
+    the page's form carries it alone, validated no further.
+
+    **A partial spec's page** renders no HTML ``required`` attribute, so the
+    browser sends a post that leaves fields blank, and a blank field is absent:
+    on a partial call, one the operation leaves as it is. A post with every
+    field blank dispatches with no arguments. Beside a shape-check refusal, a
+    partial page's form carries the refusal alone: its Validator takes the
+    fields a post leaves out off its own form, and the page's form, validated
+    whole, would call each one required.
 
     ``as_view()`` refuses, when the URLconf is imported, a view with no
     ``ServiceSpec``, a spec whose Validator is not a ``FormValidator``, a
@@ -408,10 +421,21 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
             # answer is held by test_the_pages_outcome_table_is_the_one_shipped.
             if refusal_outcome(refused) is Outcome.DENIED:
                 raise _denial(refused) from refused
+            # One branch to coverage, so each condition is held by its own
+            # test: test_a_refusal_after_the_validator_took_the_form_validates_it_no_further
+            # (an argument refusal: any other is no verdict on the post's
+            # arguments, and a service's comes once the Validator's form, built
+            # as the page's is, has taken them) and
+            # test_a_shape_refusal_shows_no_word_about_a_field_left_blank (a
+            # whole call: a partial one's Validator takes the fields a post
+            # leaves blank off its form, and the page's form validated whole
+            # would call each one required).
+            merged = isinstance(refused, InvalidArguments) and not spec.partial
             return self._render_refused(
                 form,
                 _refusal_tree(refused),
                 status=refusal_status(refused),
+                merged=merged,
                 **_refusal_code(refused),
             )
         # Never ``not_found``: the target was found before dispatch, which
@@ -553,26 +577,40 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         return _Served(route_kwargs=self.route_kwargs, server=server, seeds=seeds, call_context={})
 
     def _render_refused(
-        self, form: forms.BaseForm, detail: Mapping[Any, Any], *, status: int, **context: Any
+        self,
+        form: forms.BaseForm,
+        detail: Mapping[Any, Any],
+        *,
+        status: int,
+        merged: bool,
+        **context: Any,
     ) -> HttpResponse:
-        """The page again, the bound form carrying ``detail`` and nothing else.
+        """The page again, the bound form carrying ``detail``, and its own errors where ``merged``.
 
-        The page says what dispatch decided, and nothing the page's own form
-        would add: its own errors are not shown, whatever its own checks
-        would find, since the Validator's form is the one that decided. So
-        the page's form is never validated: its error state is set to none
-        directly, which is what Django's ``add_error`` needs, and the refusal
-        is placed on it. Validated, it would hand a number no integer column
-        holds to the database driver, with none of the Validator's guards,
-        and SQLite's raises ``OverflowError``
-        (test_a_list_s_key_past_its_column_is_refused_on_the_page).
+        Merged, the page's form is validated first, as the Validator
+        validates its own, under the kernel's ``clean_held_to_their_columns``,
+        and the refusal is placed beside what it found, never twice. So after
+        a shape-check refusal the form's own checks - a length, ``clean()``,
+        uniqueness - answer in the same post
+        (test_a_blank_required_field_and_a_clean_violation_show_in_one_post).
+        The guards are what validating it needs: without them it would hand a
+        number no integer column holds to the database driver, and SQLite's
+        raises ``OverflowError``
+        (test_a_key_past_its_column_beside_a_shape_refusal_never_reaches_the_driver).
+
+        Otherwise the form carries ``detail`` alone: its error state is set to
+        none directly, which is what Django's ``add_error`` needs, and the
+        refusal is placed on it.
         """
-        # Django's own two attributes, as ``full_clean()`` starts them, with
-        # the form's renderer as Django 5.0 and later pass it; ``Any``, as the
-        # stubs declare neither as assignable.
-        bound: Any = form
-        bound._errors = ErrorDict(renderer=form.renderer)
-        bound.cleaned_data = {}
+        if merged:
+            clean_held_to_their_columns(form)
+        else:
+            # Django's own two attributes, as ``full_clean()`` starts them,
+            # with the form's renderer as Django 5.0 and later pass it;
+            # ``Any``, as the stubs declare neither as assignable.
+            bound: Any = form
+            bound._errors = ErrorDict(renderer=form.renderer)
+            bound.cleaned_data = {}
         add_argument_errors(form, detail)
         return self._rendered(self.get_context_data(form=form, **context), status=status)
 
@@ -854,6 +892,12 @@ def _page_form(
         call_context=served.call_context,
     )
     form = _built_form(spec, target, keywords, **bound)
+    if spec.partial:
+        # A partial post may leave out any field, so the browser must not
+        # refuse to send one blank. This form's own attribute, so the class
+        # and every other page keep theirs
+        # (test_a_partial_page_renders_no_required_attribute).
+        form.use_required_attribute = False
     server = served.server
     owned = server_names(server)
     values: Mapping[str, Any] = {} if server is None else server.values
