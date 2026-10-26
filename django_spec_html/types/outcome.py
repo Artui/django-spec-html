@@ -14,8 +14,9 @@ class Outcome(str, Enum):
     at 200, and a denial in neither, raised for the host's 403 and 404 pages.
 
     A ``str`` enum, so an outcome compares equal to its value. Compare
-    members, or ``.value``, rather than ``str()``, which spells a member
-    differently from Python 3.12 on.
+    members, or read ``.value``: ``str()`` spells the member, ``Outcome.OK``,
+    on every Python, and an f-string or ``format()`` spells its value only
+    before Python 3.11 (held by ``test_its_spelling_is_not_its_value``).
     """
 
     OK = "ok"

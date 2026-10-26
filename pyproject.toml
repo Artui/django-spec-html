@@ -75,6 +75,12 @@ dev = [
     # dependencies: through the extra alone it would resolve the newest one.
     "django-service-specs[filter]",
     "django-filter>=23.1",
+    # The page's docs tell a project below Django 6.0 to configure
+    # django-template-partials for the fragment's {% partialdef %} and
+    # page.html#name address, and the htmx example is served under that
+    # setting on those versions. 23.3 is the first release with partialdef
+    # and its inline argument; earlier ones spell the tag startpartial.
+    "django-template-partials>=23.3",
 ]
 docs = [
     "mkdocs>=1.6.0",

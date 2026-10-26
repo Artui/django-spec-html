@@ -207,11 +207,26 @@ docs/examples/htmx.py:urls
 The view's Python does not change: `inline` renders the form where it stands
 on the page, and the same block is addressable on its own as
 `spec_form_htmx.html#spec-form`, which is where the view looks for it by
-default. **That `#name` address is Django 6.0's.** Below 6.0, install
-[django-template-partials](https://github.com/carltongibson/django-template-partials),
-which provides the same tag and address; without either, the address is a
-`TemplateDoesNotExist`. A fragment kept in a file of its own, or under another
-name, is one attribute, `fragment_template_name`, and renders on any Django.
+default. **The tag and that `#name` address are Django 6.0's.** Below 6.0,
+install
+[django-template-partials](https://github.com/carltongibson/django-template-partials)
+(23.3 or later, the first with `partialdef`) and configure it in `TEMPLATES`:
+its tag as a **builtin**, and its loader around the project's own.
+
+```python
+--8<--
+docs/examples/htmx.py:partials
+--8<--
+```
+
+The builtin is the part that is easy to miss. Adding `"template_partials"` to
+`INSTALLED_APPS` sets up the loader and nothing else, so the page's template
+fails to parse at `{% partialdef %}`; and a `{% load partials %}` in the
+template instead would break it again on Django 6.0, which has the tag itself
+and no such library. From 6.0, configure none of this. Without either, the
+address is a `TemplateDoesNotExist`. A fragment kept in a file of its own, or
+under another name, is one attribute, `fragment_template_name`, and renders on
+any Django.
 
 **Which requests get the fragment.** A request whose `HX-Request` header is
 `true`, unless it is boosted (`HX-Boosted`) or a history restore
@@ -234,11 +249,15 @@ bodies and a cache keyed on fewer would hand a fragment to a page load.
   The table above has each row, and the outcome stays in the body and in the
   map.
 - **A success** is `fragment_success(result)`. Where the fragment template
-  defines `spec-result`, that is rendered in place at 200, from the page's
-  context with `result` in it, and `HX-Trigger: spec-succeeded` names an event
-  for the rest of the page to listen for. Otherwise it is `HX-Redirect` to
-  `get_success_url(result)`, at 200 and never a 302: an XHR follows a 302
-  itself and would swap the next page into the form. The answer passes back
+  defines `spec-result`, that is rendered in place at 200, and
+  `HX-Trigger: spec-succeeded` names an event for the rest of the page to
+  listen for. Its context is `result`, `view`, `spec` and `extra_context`, and
+  no `form`, since the post's form is done with. Otherwise it is `HX-Redirect`
+  to `get_success_url(result)`, at 200 and never a 302: an XHR follows a 302
+  itself and would swap the next page into the form. The URL is encoded and
+  checked as the page's redirect is, so a path outside ASCII arrives as the
+  page's `Location` would, and an unsafe scheme such as `javascript:` raises
+  `DisallowedRedirect` in both modes. The answer passes back
   through the host's middleware like any other, so a cookie set for the
   request, such as the session a sign-in rotates, is set on it. Override the
   method for `HX-Location`, or a 204 carrying `HX-Trigger`.
@@ -269,6 +288,12 @@ docs/examples/htmx.py:handler403
 
 Defined in the root URLconf as `handler403`, it sends an anonymous visitor to
 sign in and back to the page the form is on, and reloads the page for a
-signed-in one, whose 403 page then answers. A denial raised before the view
-answers carries no `Vary` of the view's, so the handler sets its own if a cache
-sits in front of it.
+signed-in one. **The reload answers with the 403 page only where the page
+itself refuses on GET**: the spec's class-level check, or the object-level
+check on the row the route names. A denial only the operation raises, from
+inside the service, does not recur on GET, so the reload shows the form again,
+empty, and what was typed is gone; a host whose services refuse that way
+answers those in the form instead, by raising a `ServiceError`. The view's
+`Vary` never reaches a denial, which is raised rather than answered, so the
+handler sets its own on `HX-Request`, since it answers the two kinds of request
+differently.

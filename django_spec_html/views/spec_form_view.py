@@ -21,7 +21,14 @@ from django.db import models
 from django.forms.models import model_to_dict
 from django.forms.utils import ErrorDict
 from django.forms.widgets import FILE_INPUT_CONTRADICTION
-from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBase, HttpResponseRedirect
+from django.http import (
+    Http404,
+    HttpRequest,
+    HttpResponse,
+    HttpResponseBase,
+    HttpResponseRedirect,
+)
+from django.http.response import HttpResponseRedirectBase
 from django.shortcuts import resolve_url
 from django.template import TemplateDoesNotExist
 from django.template.loader import select_template
@@ -194,8 +201,10 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
       refusal the page re-renders, at 200 rather than the page's 4xx, since
       htmx swaps no 4xx by default. The default address is
       ``<template_name>#spec-form``, a ``{% partialdef %}`` inside the page's
-      own template, which Django 6.0 resolves (below it,
-      django-template-partials does). A template with no fragment at the
+      own template, which Django 6.0 resolves; below it,
+      django-template-partials does, with its tag named in ``TEMPLATES`` as
+      a builtin (``"builtins": ["template_partials.templatetags.partials"]``)
+      and its loader around the project's. A template with no fragment at the
       address is Django's ``TemplateDoesNotExist`` naming it, never the page,
       which swapped into a form's target would nest a second layout inside it.
     - **A success** is ``fragment_success(result)``: ``HX-Redirect`` to
@@ -370,10 +379,13 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         """The templates a fragment's form renders: ``fragment_template_name``, or each page's ``#spec-form``.
 
         The default addresses a ``{% partialdef spec-form %}`` inside the
-        page's template, so turning htmx on is a template change. The
-        ``#name`` address is Django 6.0's, or django-template-partials' below
-        it; without either, the default is a ``TemplateDoesNotExist`` naming
-        it.
+        page's template, so turning htmx on is a template change. The tag
+        and the ``#name`` address are Django 6.0's. Below it they are
+        django-template-partials', configured in ``TEMPLATES`` with its tag
+        as a builtin, ``"builtins": ["template_partials.templatetags.partials"]``,
+        and its loader around the project's: installed as an app alone, it
+        wraps the loader and the page fails to parse at ``{% partialdef %}``.
+        Without either, the default is a ``TemplateDoesNotExist`` naming it.
         """
         if self.fragment_template_name is not None:
             return [self.fragment_template_name]
@@ -383,11 +395,16 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
         """A success, answered to the htmx request that posted it.
 
         Where the fragment template defines a ``spec-result`` fragment, that
-        is rendered in place at 200, from the page's context with ``result``
-        in it, and ``HX-Trigger`` names ``spec-succeeded`` for the rest of the
-        page to listen for. Otherwise ``HX-Redirect`` to
-        ``get_success_url(result)``, at 200 and never a 302: an XHR follows a
-        302 itself and would swap the next page into the form.
+        is rendered in place at 200, and ``HX-Trigger`` names
+        ``spec-succeeded`` for the rest of the page to listen for. Its context
+        is the view's - ``view``, ``spec`` and ``extra_context`` - with
+        ``result`` in it, and no form, since the post's form is done with.
+        Otherwise ``HX-Redirect`` to ``get_success_url(result)``, at 200 and
+        never a 302: an XHR follows a 302 itself and would swap the next page
+        into the form. The URL is encoded and checked as the page's redirect
+        is, so a path outside ASCII reaches the browser as the page's
+        ``Location`` would, and an unsafe scheme raises
+        ``DisallowedRedirect`` in both modes.
 
         The answer passes back through the host's middleware like any other,
         so a cookie it sets for the request - the session a sign-in rotates,
@@ -400,9 +417,11 @@ class SpecFormView(TemplateResponseMixin, ContextMixin, View):
                 using=self.template_engine,
             )
         except TemplateDoesNotExist:
-            response = HttpResponse()
-            response["HX-Redirect"] = self.get_success_url(result)
-            return response
+            template = None
+        if template is None:
+            # Outside the ``except``, so an error of ``get_success_url``'s own
+            # is not reported as raised while handling the lookup.
+            return _ClientRedirect(self.get_success_url(result))
         response = self.response_class(
             request=self.request,
             template=template,
@@ -493,6 +512,29 @@ def _check_configuration(cls: type[SpecFormView], initkwargs: Mapping[str, Any])
             f"{label}.as_view() needs a success_url, where a successful post redirects, "
             "or a get_success_url that returns one."
         )
+
+
+class _ClientRedirect(HttpResponseRedirectBase):
+    """A redirect htmx follows as a navigation: ``HX-Redirect`` at 200, where the page answers 302.
+
+    Built as Django's own redirect is, so the URL is IRI-encoded and an unsafe
+    scheme raises ``DisallowedRedirect``, then moved from ``Location`` to
+    ``HX-Redirect``: the shape of django-htmx's ``HttpResponseClientRedirect``,
+    with nothing imported from it. Held by
+    ``test_hx_redirect_is_the_page_s_location`` and
+    ``test_an_unsafe_scheme_is_refused_in_both_modes``.
+    """
+
+    status_code = 200
+
+    def __init__(self, url: str) -> None:
+        super().__init__(url)
+        self["HX-Redirect"] = self["Location"]
+        del self["Location"]
+
+    @property
+    def url(self) -> str:
+        return self["HX-Redirect"]
 
 
 def _address(template_name: str, fragment: str) -> str:

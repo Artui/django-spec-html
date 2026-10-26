@@ -11,6 +11,7 @@ page states an outcome, the assertion here is that statement.
 
 from __future__ import annotations
 
+import copy
 import datetime
 import re
 from collections.abc import Mapping
@@ -27,6 +28,8 @@ from django.core.exceptions import PermissionDenied
 from django.core.handlers.exception import response_for_exception
 from django.http import Http404
 from django.middleware.csrf import CsrfViewMiddleware
+from django.template import TemplateSyntaxError, engines
+from django.template.loader import get_template
 from django.test import RequestFactory
 from django.urls import get_resolver
 from django_service_specs import (
@@ -48,6 +51,7 @@ from django_service_specs import (
 
 from django_spec_html import SpecFormView, UnsupportedMediaType
 from django_spec_html.http.utils import refusal_outcome
+from docs.examples import htmx as htmx_example
 from tests.adapter_app.models import Author, Book, Status
 
 pytestmark = pytest.mark.django_db
@@ -277,20 +281,24 @@ class TestHandler403:
         settings.ROOT_URLCONF = HTMX_URLCONF
 
     @staticmethod
-    def refused(request: Any, user: Any) -> Any:
+    def view(service: Any = None, permissions: Any = None) -> Any:
+        return SpecFormView.as_view(
+            spec=ServiceSpec(
+                service=service or (lambda **pool: None),
+                permissions=permissions or [NeverPermitted()],
+                validator=FormValidator(Anything),
+            ),
+            template_name="spec_form.html",
+            success_url="/",
+        )
+
+    @classmethod
+    def refused(cls, request: Any, user: Any, view: Any = None) -> Any:
         # A spec refusing the principal, so the view raises the PermissionDenied
         # the handler then answers, as Django's handler would hand it over.
         request.user = AnonymousUser() if user is None else user
         try:
-            SpecFormView.as_view(
-                spec=ServiceSpec(
-                    service=lambda **pool: None,
-                    permissions=[NeverPermitted()],
-                    validator=FormValidator(Anything),
-                ),
-                template_name="spec_form.html",
-                success_url="/",
-            )(request)
+            (view or cls.view())(request)
         except PermissionDenied as refused:
             return response_for_exception(request, refused)
         raise AssertionError("the spec admitted the request")
@@ -299,6 +307,7 @@ class TestHandler403:
         response = self.refused(FACTORY.post("/books/new/"), ada)
         assert response.status_code == 403
         assert not [name for name in response.headers if name.lower().startswith("hx-")]
+        assert response["Vary"] == "HX-Request"
 
     def test_anonymous_htmx_is_sent_to_sign_in_and_back(self) -> None:
         here = "http://testserver/books/new/"
@@ -306,12 +315,36 @@ class TestHandler403:
         response = self.refused(request, None)
         assert response.status_code == 403
         assert response["HX-Redirect"] == "/accounts/login/?next=http%3A//testserver/books/new/"
+        assert response["Vary"] == "HX-Request"
 
     def test_a_signed_in_htmx_request_reloads_the_page(self, ada: Any) -> None:
         response = self.refused(FACTORY.post("/books/new/", **HTMX), ada)
         assert response.status_code == 403
         assert response["HX-Refresh"] == "true"
         assert "HX-Redirect" not in response
+        assert response["Vary"] == "HX-Request"
+
+    def test_a_page_refusing_on_get_answers_the_reload_with_its_403(self, ada: Any) -> None:
+        # The class-level check refuses the page itself, so the reload the
+        # handler asked for is refused again, and the browser gets the 403 page.
+        reload = self.refused(FACTORY.get("/books/new/"), ada)
+        assert reload.status_code == 403
+        assert "HX-Refresh" not in reload
+
+    def test_a_denial_only_the_operation_raises_reloads_an_empty_form(self, ada: Any) -> None:
+        # Raised by the service, so it does not recur on GET: the reload is
+        # the form again, and what was typed is gone.
+        def refuses(**pool: Any) -> None:
+            raise NotPermitted("Not this one.")
+
+        view = self.view(service=refuses, permissions=[Unrestricted()])
+        post = FACTORY.post("/books/new/", data={"note": "typed"}, **HTMX)
+        assert self.refused(post, ada, view)["HX-Refresh"] == "true"
+        reload = FACTORY.get("/books/new/")
+        reload.user = ada
+        response = view(reload)
+        assert response.status_code == 200
+        assert not response.context_data["form"].is_bound
 
 
 class NeverPermitted(PermissionCheck):
@@ -321,13 +354,19 @@ class NeverPermitted(PermissionCheck):
         return False
 
 
-@pytest.mark.skipif(django.VERSION < (6, 0), reason="the #name address is Django 6.0's")
 class TestTurningHtmxOn:
-    """The page's own template with its form as a ``spec-form`` fragment, and a ``spec-result``."""
+    """The page's own template with its form as a ``spec-form`` fragment, and a ``spec-result``.
+
+    From Django 6.0 under the suite's own settings, which name nothing of
+    django-template-partials; below it, under the ``TEMPLATES`` the page tells
+    a project on an older Django to add, and nothing else.
+    """
 
     @pytest.fixture(autouse=True)
     def urlconf(self, settings: Any) -> None:
         settings.ROOT_URLCONF = HTMX_URLCONF
+        if django.VERSION < (6, 0):
+            settings.TEMPLATES = htmx_example.TEMPLATES
 
     @staticmethod
     def serve(request: Any, user: Any) -> Any:
@@ -360,6 +399,22 @@ class TestTurningHtmxOn:
         assert response["HX-Trigger"] == "spec-succeeded"
         assert response.content.strip() == b'<p id="saved">Added The Dispossessed.</p>'
         assert Book.objects.get().title == "The Dispossessed"
+
+    @pytest.mark.skipif(django.VERSION >= (6, 0), reason="the tag is Django's own from 6.0")
+    def test_below_6_the_builtin_is_what_parses_the_tag(self, settings: Any) -> None:
+        # The loader alone, as installing the app sets it up: the address
+        # resolves, and the page's template fails at its first partialdef.
+        engine = copy.deepcopy(htmx_example.TEMPLATES)
+        del engine[0]["OPTIONS"]["builtins"]
+        settings.TEMPLATES = engine
+        with pytest.raises(TemplateSyntaxError, match="'partialdef'"):
+            get_template("spec_form_htmx.html#spec-form")
+
+    @pytest.mark.skipif(django.VERSION < (6, 0), reason="partialdef is a library below 6.0")
+    def test_from_6_a_load_of_the_library_breaks_the_template(self) -> None:
+        # Why the page names the tag as a builtin below 6.0 rather than loading it.
+        with pytest.raises(TemplateSyntaxError, match="partials"):
+            engines["django"].from_string("{% load partials %}")
 
     def test_a_browser_s_success_is_still_the_redirect(self, ada: Any, author: Author) -> None:
         response = self.serve(FACTORY.post("/books/new/", data=posted(author)), ada)

@@ -21,7 +21,12 @@ import pytest
 from django import forms
 from django.contrib.auth import get_user_model, login
 from django.contrib.sessions.middleware import SessionMiddleware
-from django.core.exceptions import BadRequest, ImproperlyConfigured, PermissionDenied
+from django.core.exceptions import (
+    BadRequest,
+    DisallowedRedirect,
+    ImproperlyConfigured,
+    PermissionDenied,
+)
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import Http404, HttpResponse
@@ -1311,11 +1316,44 @@ class TestTheFragmentOnASuccess:
         assert (response.status_code, response.url) == (302, "/done/")
         assert hx_headers(response) == {}
 
-    def test_cookies_set_while_the_request_was_handled_reach_hx_redirect(
+    @staticmethod
+    def to(url: str) -> Any:
+        class ToTheURL(SpecFormView):
+            template_name = PAGE
+
+            def get_success_url(self, result: DispatchResult) -> str:
+                return url
+
+        return ToTheURL.as_view(spec=entry_spec())
+
+    def test_hx_redirect_is_the_page_s_location(self, ada: Any) -> None:
+        # Encoded as the page's redirect encodes it: set raw, a path outside
+        # ASCII is a MIME-encoded header no browser reads as the path.
+        page = hx_post(self.to("/books/日本/"), ada, {"title": "Hi"}, {})
+        fragment = hx_post(self.to("/books/日本/"), ada, {"title": "Hi"})
+        assert fragment["HX-Redirect"] == page["Location"] == "/books/%E6%97%A5%E6%9C%AC/"
+        assert "Location" not in fragment
+        # Read as a redirect's ``url`` is, so its repr and a test reading it work.
+        assert fragment.url == page.url
+
+    @pytest.mark.parametrize("headers", [{}, HTMX], ids=["page", "fragment"])
+    def test_an_unsafe_scheme_is_refused_in_both_modes(
+        self, ada: Any, headers: Mapping[str, str]
+    ) -> None:
+        with pytest.raises(DisallowedRedirect):
+            hx_post(self.to("javascript:alert(1)"), ada, {"title": "Hi"}, headers)
+
+    def test_a_cookie_the_middleware_sets_reaches_hx_redirect(
         self, ada: Any, settings: Any
     ) -> None:
-        # Signing in sets the session cookie, and an answer that dropped it
-        # would sign the visitor straight back out.
+        """Holds the page's claim that a cookie set while the request is handled reaches it.
+
+        What sets it is the host's middleware, on whatever answer the view
+        returns, so this holds that ``HX-Redirect`` is an answer the
+        middleware passes through like any other: signing in sets the
+        session cookie, and an answer that lost it would sign the visitor
+        straight back out.
+        """
         settings.SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
 
         class SignsIn(SpecFormView):
@@ -1373,6 +1411,8 @@ class TestTheResultFragment:
         assert response.status_code == 200
         assert response.content == b"<p>Saved 7 for the entries.</p>"
         assert response.context_data["result"].value == 7
+        # The view's context with the result in it, and no form: the post's is done with.
+        assert set(response.context_data) == {"result", "view", "spec", "heading"}
         assert hx_headers(response) == {"HX-Trigger": "spec-succeeded"}
         assert varied_on(response) >= MODE_HEADERS
 
@@ -1439,6 +1479,9 @@ class TestTheFragmentOnARefusal:
         assert set(fragment.context_data) == set(page.context_data)
         assert varied_on(page) >= MODE_HEADERS
         assert varied_on(fragment) >= MODE_HEADERS
+        # No header on any of them, a confirmation included: it is re-rendered
+        # in the target the form already swaps into.
+        assert hx_headers(fragment) == {}
 
     @pytest.mark.parametrize("headers", [BOOSTED, RESTORING], ids=["boosted", "history-restore"])
     def test_a_boosted_refusal_is_the_page(self, ada: Any, headers: Mapping[str, str]) -> None:
