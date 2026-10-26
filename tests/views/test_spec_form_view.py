@@ -1343,6 +1343,19 @@ class TestTheFragmentOnASuccess:
         with pytest.raises(DisallowedRedirect):
             hx_post(self.to("javascript:alert(1)"), ada, {"title": "Hi"}, headers)
 
+    def test_an_error_of_get_success_url_s_own_is_not_chained_to_the_lookup(self, ada: Any) -> None:
+        # Raised outside the lookup's ``except``, so its traceback is its own
+        # rather than "during handling of TemplateDoesNotExist".
+        class Misconfigured(SpecFormView):
+            template_name = PAGE
+
+            def get_success_url(self, result: DispatchResult) -> str:
+                raise ImproperlyConfigured("Nowhere to go.")
+
+        with pytest.raises(ImproperlyConfigured) as raised:
+            hx_post(Misconfigured.as_view(spec=entry_spec()), ada, {"title": "Hi"})
+        assert raised.value.__context__ is None
+
     def test_a_cookie_the_middleware_sets_reaches_hx_redirect(
         self, ada: Any, settings: Any
     ) -> None:
