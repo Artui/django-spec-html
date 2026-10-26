@@ -473,8 +473,21 @@ def _split(tree: Mapping[Any, Any], sent: list[forms.BaseForm], many_argument: s
         # list under the list's name is no rows either).
         if key == many_argument and isinstance(value, Mapping):
             for index, node in value.items():
-                if isinstance(index, int):
+                # A row the post sent is its form's; a service's tree may name
+                # one no form sent, past the list or counted from its end, and
+                # that one is the formset's, prefixed with its path. One
+                # branch to coverage, so each condition is held by its own
+                # test: test_a_refusal_of_row_i_lands_on_the_form_that_sent_it
+                # (an int), and the two cases of
+                # test_a_refusal_of_a_row_the_post_did_not_send_lands_on_the_non_form_errors
+                # (``past-the-rows-sent`` and ``negative``).
+                if isinstance(index, int) and 0 <= index < len(sent):
                     add_argument_errors(sent[index], node)
+                elif isinstance(index, int):
+                    left.extend(
+                        f"{'.'.join((many_argument, str(index), *path))}: {message}"
+                        for path, message in refusal_messages(node)
+                    )
                 else:
                     left.extend(message for _, message in refusal_messages(node))
             continue

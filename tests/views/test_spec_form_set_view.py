@@ -571,6 +571,24 @@ class TestSplittingTheRefusal:
         assert row_errors(response) == [{}, {}, {"title": [TOO_LONG]}]
         assert non_form(response) == []
 
+    @pytest.mark.parametrize("index", [1, -1], ids=["past-the-rows-sent", "negative"])
+    def test_a_refusal_of_a_row_the_post_did_not_send_lands_on_the_non_form_errors(
+        self, ada: Any, index: int
+    ) -> None:
+        # A service's tree reaches the page as it raised it, so it can name a
+        # row no form sent: never an IndexError, and never the refusal of
+        # another form counted from the end of the list.
+        def refuses_a_row(**arguments: Any) -> None:
+            raise InvalidArguments({"items": {index: {"title": ["No such row."]}}})
+
+        spec = ServiceSpec(
+            service=refuses_a_row, many=True, validator=Watched(BookRow), permissions=OPEN
+        )
+        response = post(formset_view(spec), ada, posted({"title": "One"}))
+        assert response.status_code == 400
+        assert row_errors(response) == [{}]
+        assert non_form(response) == [f"items.{index}.title: No such row."]
+
     @pytest.mark.parametrize(
         ("kwargs", "message"),
         [
