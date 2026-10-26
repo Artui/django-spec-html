@@ -74,7 +74,7 @@ Non-negotiable. They keep the package navigable, and they are the kernel's.
 
 | Subpackage | Holds |
 | --- | --- |
-| `views/` | `SpecFormView`, a spec served as the page its form is, with the readers only a form needs (its widgets, its arguments, the fields it holds back); `utils.py` for `SpecPageBase`, the private base every page view subclasses (admission, the target and its display, dispatch, the refusal, the success and its message, the fragment wrapper, the commit rule), whose hooks a subclass supplies and `as_view()` refuses a class missing |
+| `views/` | `SpecFormView`, a spec served as the page its form is, with what only that page needs (the fields it holds back, the question it asks); `SpecFormSetView`, a `many` spec served as a formset of its form; `SpecConfirmView`, a spec with no Validator served as a target and a button; `utils.py` for `SpecPageBase`, the private base every page view subclasses (admission, the target and its display, dispatch, the refusal, the success and its message, the fragment wrapper, the commit rule), whose hooks a subclass supplies and `as_view()` refuses a class missing, and the form readers both form pages share (`form_values`, `without_errors`) |
 | `types/` | `Outcome`, the ways a page's post ends; it imports nothing else in the package (rule 8) |
 | `http/` | the JSON views (`SpecView`, `AsyncSpecView`, `dispatch_request`, `adispatch_request`), `error_response`, and the request readers both halves use: `request_arguments`, `route_arguments`, `request_principal`, `add_argument_errors`; `UnsupportedMediaType`, beside its raiser; `utils.py` for `SpecViewBase`, the helpers the entry points share, and `REFUSAL_STATUSES`, the status map the page reads too, with each refusal's `Outcome` |
 
