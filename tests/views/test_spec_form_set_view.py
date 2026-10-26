@@ -360,6 +360,20 @@ class TestGet:
         assert response.status_code == 302
         assert check.scopes == [None]
 
+    def test_a_service_s_refusal_asks_the_scope_check_once(self, ada: Any) -> None:
+        # Dispatch asked it before the service ran, and only an
+        # ``InvalidArguments`` may have been raised before it was asked.
+        def conflicts(**kwargs: Any) -> None:
+            raise ServiceConflict("Already shelved.")
+
+        check = Scoped()
+        spec = ServiceSpec(
+            service=conflicts, permissions=[check], many=True, validator=FormValidator(BookRow)
+        )
+        response = post(formset_view(spec), ada, posted({"title": "One"}))
+        assert response.status_code == 409
+        assert check.scopes == [None]
+
     @pytest.mark.parametrize(
         ("form_class", "data"),
         [

@@ -331,7 +331,7 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
                 # test_a_refused_post_asks_the_scope_check_once, the form
                 # page's check having been asked before the post was read, and
                 # the refusal's kind by
-                # test_a_principal_the_scope_check_refuses_is_never_offered_the_page.
+                # test_a_service_s_refusal_asks_the_scope_check_once.
                 with suppress(InvalidArguments):
                     _found(spec, principal, grant, kwargs, served, ask_scope=True)
             # The outcome is decided here, once, from the one map, and the
