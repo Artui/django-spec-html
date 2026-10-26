@@ -40,8 +40,13 @@ dependencies = [
     # kernel's specs, so this package cannot support a Django the kernel does
     # not.
     "django>=4.2",
-    # The page needs 0.17.0: ``form_keywords`` builds the page's form with the
-    # constructor keywords the Validator's form gets, and ``authorize`` takes
+    # Both halves need 0.18.0: dispatch, the permission checks, the
+    # affordances, ``form_keywords`` and ``base_pool`` read ``request`` and
+    # ``view`` off the call context this package hands them, so a spec
+    # callable or a seed's resolver naming either is handed this request and
+    # this view; below it the two names reach nothing, and such a callable
+    # raises ``TypeError``. The page needs 0.17.0: ``form_keywords`` builds
+    # the page's form with the constructor keywords the Validator's form gets, and ``authorize`` takes
     # ``pool_seeds``, so a class-level check naming a seed is asked with it.
     # The request hooks need 0.15.0: from 0.14.0 a permission check is offered
     # a registered seed by name, which is how a per-call seed reaches the
@@ -51,7 +56,7 @@ dependencies = [
     # the kernel's root also exported its own copy of the ten JSON names, so
     # one process held two ``SpecView`` classes. Every other name the moved
     # code reads at the kernel's root is public from 0.10.0.
-    "django-service-specs>=0.17.0",
+    "django-service-specs>=0.18.0",
 ]
 
 [project.urls]

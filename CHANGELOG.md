@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a service naming `request` or `view` beside it is handed the call's
   object, where this package used to hand it the submitted value. Read the
   field from `data`.
+- The `django-service-specs` floor is `>=0.18.0`, the release that reads
+  `request` and `view` off the call context for every callable it binds.
 
 ## [0.3.0] — 2026-10-26
 
