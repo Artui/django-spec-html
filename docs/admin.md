@@ -95,8 +95,11 @@ admin's own gates before the spec's, as Django's actions and change page do:
   `ModelAdmin`'s `has_view_or_change_permission()` admits, asked of the row
   on an object action; anyone else is refused with a 403.
 - **The admin's rows.** An object action's row is the admin's
-  `get_object()`, read from its `get_queryset()`, so a row outside it is a
-  404, as the change page answers it. A changelist action's selection is
+  `get_object()`, read from its `get_queryset()`, so a row outside it, which
+  `get_object()` finds no row for, is a 404. The change page redirects such
+  a key to the admin's index with a message instead; the action's page
+  answers it as any route does a row not found. A changelist action's
+  selection is
   narrowed to the same queryset before it is bound.
 
 **The spec's own checks run inside that scope**, on every request, the

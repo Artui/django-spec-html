@@ -706,8 +706,11 @@ class TestTheAdminsScope:
         assert client(me).get(url).status_code == 404
         assert client(me).post(url).status_code == 404
         assert Note.objects.get().archived is False
-        # A key that is no row's, as the change page answers it.
+        # A key that is no row's, which get_object() finds nothing for too.
         assert client(me).get(f"{SCOPED}abc/actions/one/").status_code == 404
+        # Where the change page redirects to the admin's index instead.
+        change = client(me).get(f"{SCOPED}{theirs.pk}/change/")
+        assert (change.status_code, change["Location"]) == (302, "/scoped/")
 
     def test_a_key_the_primary_key_refuses_is_a_bad_request(self, me: Any, mine: Note) -> None:
         # The parameter takes any string, and the primary key an integer.
@@ -716,14 +719,16 @@ class TestTheAdminsScope:
         shown = client(me).get(f"{SCOPED}actions/by_keys/?keys={mine.pk}")
         assert shown.context_data["target_count"] == 1
 
-    def test_a_staff_member_without_the_admin_s_permission_is_refused(self) -> None:
+    def test_a_staff_member_without_the_admin_s_permission_is_refused(self, note: Note) -> None:
+        # On the default admin too, by a spec open to every principal.
+        assert client(staff("stranger")).get(page("retitle", note)).status_code == 403
         nobody = staff("nobody")
         row = Note.objects.create(owner=nobody, title="x")
         assert client(nobody).get(SCOPED).status_code == 403
         for url in (f"{SCOPED}{row.pk}/actions/one/", f"{SCOPED}actions/many/?pks={row.pk}"):
             assert client(nobody).get(url).status_code == 403
             assert client(nobody).post(url).status_code == 403
-        assert Note.objects.get().archived is False
+        assert Note.objects.filter(archived=True).count() == 0
 
     def test_the_admin_s_permission_is_asked_of_the_row(self, me: Any) -> None:
         locked = Note.objects.create(owner=me, title="Locked")

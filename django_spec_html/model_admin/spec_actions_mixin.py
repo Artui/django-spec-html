@@ -285,8 +285,10 @@ class _AdminPage(SpecPageBase):
         (test_a_staff_member_without_the_admin_s_permission_is_refused,
         test_the_admin_s_permission_is_asked_of_the_row); then an object
         action's row from the admin's ``get_object()``, so a key outside its
-        ``get_queryset()`` is a 404, as the change page answers it, before
-        the spec's checks or its selector run. Of the 404's conditions,
+        ``get_queryset()``, which ``get_object()`` finds no row for, is a
+        404, before the spec's checks or its selector run. The change page
+        redirects such a key to the admin's index with a message instead; a
+        page acting on a row answers it as any route does a row not found. Of the 404's conditions,
         test_another_tenant_s_object_is_not_found holds the row and every
         changelist page the kind, a changelist action having no row to find.
         """
