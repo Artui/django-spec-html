@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-10-27
+
 ### Added
 - **A spec callable naming `request` or `view` is handed this request and the
   view serving it**, on both halves. `dispatch_request` and
@@ -308,7 +310,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Artui/django-spec-html/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Artui/django-spec-html/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Artui/django-spec-html/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/Artui/django-spec-html/compare/v0.1.1...v0.1.2
