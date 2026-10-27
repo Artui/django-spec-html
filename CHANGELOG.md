@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-27
+
 ### Added
 - **The admin face: a spec's page served as a `ModelAdmin`'s action.**
   `SpecActionsMixin` reads a `spec_actions` tuple of `SpecAction` entries and
@@ -357,7 +359,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Artui/django-spec-html/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Artui/django-spec-html/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Artui/django-spec-html/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Artui/django-spec-html/compare/v0.1.2...v0.2.0
