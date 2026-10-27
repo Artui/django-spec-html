@@ -370,6 +370,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    In the admin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../http/" class="md-nav__link">
         
   
@@ -1060,6 +1087,78 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-admin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The admin
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SpecActionsMixin
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SpecActionsMixin">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.get_urls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_urls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.get_actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_actions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.change_view" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        change_view
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_spec_html.types.spec_action.SpecAction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SpecAction
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1878,6 +1977,78 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-admin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The admin
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SpecActionsMixin
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SpecActionsMixin">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.get_urls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_urls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.get_actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_actions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.change_view" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        change_view
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_spec_html.types.spec_action.SpecAction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SpecAction
+      
+    </span>
+  </a>
   
 </li>
       
@@ -4415,6 +4586,377 @@ before Python 3.11 (held by <code>test_its_spelling_is_not_its_value</code>).</p
     </div>
 
 </div>
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h2 id="the-admin">The admin<a class="headerlink" href="#the-admin" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SpecActionsMixin</span>
+
+
+<a href="#django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="django.contrib.admin.ModelAdmin">ModelAdmin</span></code></p>
+
+
+
+        <p>A <code>ModelAdmin</code> offering each spec in <code>spec_actions</code> as an action, served by the spec's own page.</p>
+<p>Mixed in ahead of <code>admin.ModelAdmin</code>, or of any subclass of it, with
+one <code>SpecAction</code> per operation:</p>
+<div class="language-text highlight"><pre><span></span><code>@admin.register(Book)
+class BookAdmin(SpecActionsMixin, admin.ModelAdmin):
+    spec_actions = (
+        SpecAction("withdraw", withdraw_book_spec, "Withdraw", parameter="pk"),
+        SpecAction("publish", publish_books_spec, "Publish", parameter="pks"),
+    )
+</code></pre></div>
+<p><strong>Which kind of action</strong> is the spec's target's answer. A spec with an
+<code>instance_selector_spec</code> is an <strong>object action</strong>: a link among the
+change page's object tools, to <code>&lt;object_id&gt;/actions/&lt;name&gt;/</code>, whose
+<code>object_id</code> fills the selector's <code>parameter</code> through the page's
+<code>route_kwargs</code>, unquoted as the admin quotes it. A spec with a
+<code>collection_selector_spec</code> is a <strong>changelist action</strong>: an entry in the
+action dropdown, which redirects to <code>actions/&lt;name&gt;/</code> with the
+selected rows' primary keys in the query string, repeated under
+<code>parameter</code>. The page binds them to that parameter as
+<code>server_arguments</code>, read from the query string on GET and on the post
+the page sends back to its own URL, so nothing posted stands in for the
+selection; and the collection selector still decides the set, so a key
+it does not answer is not acted on.</p>
+<p><strong>The admin's scope comes first</strong>, as for its own actions and its change
+page: a page is served only to a principal holding the admin's view or
+change permission, the row's on an object action, and acts only on rows
+in the admin's <code>get_queryset()</code>. An object action's row outside it is
+a 404, and a changelist action's selection is narrowed to it before it
+is bound, so a key outside it never reaches the selector. Within that
+scope the spec's own checks run, and its selector decides the set.</p>
+<p><strong>Each page is the spec's own</strong>: <code>SpecFormView</code> for a spec validating
+with a <code>FormValidator</code>, <code>SpecConfirmView</code> for one with none, built
+once when the admin is registered, so <code>as_view()</code> refuses then what it
+refuses of any page. Its URL is added by <code>get_urls()</code> ahead of the
+admin's own, wrapped in <code>admin_site.admin_view()</code>, so only a signed-in
+staff member the site admits reaches it; the page then admits the
+principal by the admin's permission and the spec's own checks, as on
+any route, and answers the rest with the host's 403 page. Its templates,
+<code>django_spec_html/admin/spec_form.html</code> and
+<code>django_spec_html/admin/spec_confirm.html</code>, extend
+<code>admin/base_site.html</code> with the admin's breadcrumbs and title around
+the very fragment the shipped page includes, so an htmx request is
+answered with that fragment, as on any page. A success returns to the
+row's change page or to the changelist, with the page's
+<code>success_message</code> among the admin's messages.</p>
+<p><strong>Offered only to a principal both admit.</strong> The object-tools link and
+the dropdown entry are shown only where the kernel's <code>authorize</code>, the
+spec's class-level check, admits the request's principal, asked with
+the page's own seeds and call context, and the admin's view or change
+permission does too. The admin's model permissions say nothing about
+the spec's, so they are not the whole gate: the spec's checks are asked
+as well, and the page asks both again, the object-level ones included,
+on every request. An entry not offered is
+not in <code>get_actions()</code>, which the changelist reads again on the post
+that runs an action, so posting its name runs nothing.</p>
+<p>The change page is rendered from
+<code>django_spec_html/admin/change_form.html</code>, which extends
+<code>admin/change_form.html</code> and lists the links ahead of the admin's own
+tools: a <code>ModelAdmin</code> setting a <code>change_form_template</code> of its own
+extends that template to keep them.</p>
+<p><code>ImproperlyConfigured</code> is raised when the admin is registered for a
+declaration that is not a <code>SpecAction</code>, a name that is not a slug, is
+used twice or is one of the admin's own URL names, a label that does not
+format with the model's names, a spec that is not a
+<code>ServiceSpec</code>, a <code>many</code> spec, a spec with no target, a <code>parameter</code>
+its target selector does not read or, on a changelist action, one that
+is not an <code>array</code>, and a <code>page_kwargs</code> key the mixin answers for.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.spec_actions">spec_actions</span></code></td>
+            <td>
+                  <code><span title="collections.abc.Sequence">Sequence</span>[<a class="autorefs autorefs-internal" title="SpecAction
+
+
+  
+      dataclass
+   (django_spec_html.types.spec_action.SpecAction)" href="#django_spec_html.types.spec_action.SpecAction">SpecAction</a>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The actions, each a <code>SpecAction</code>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.change_form_template">change_form_template</span></code></td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>django_spec_html/admin/change_form.html</code>,
+which carries the object actions' links.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.get_urls" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">get_urls</span>
+
+
+<a href="#django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.get_urls" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">get_urls</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">URLPattern</span><span class="p">]</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Every action's page at an admin URL of its own, ahead of the admin's.</p>
+<p>Ahead, since the admin's last pattern takes any <code>&lt;object_id&gt;/</code> and
+redirects it to the change page
+(test_each_page_is_served_at_its_own_url).</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.get_actions" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">get_actions</span>
+
+
+<a href="#django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.get_actions" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">get_actions</span><span class="p">(</span><span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">action_location</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>The admin's actions, less each changelist action whose spec refuses this principal.</p>
+<p><code>action_location</code> is Django 6.1's, handed on only where Django
+hands it, so a Django that has none is called as it expects, and one
+that has it reads this signature as its own.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.change_view" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">change_view</span>
+
+
+<a href="#django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin.change_view" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">change_view</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">object_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">form_url</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">extra_context</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>The change page, its context carrying <code>spec_object_actions</code>: the object actions offered.</p>
+<p>Each a mapping of its <code>label</code>, formatted as the page's title is
+(test_a_label_is_formatted_alike_on_the_link_and_the_page), and its
+<code>url</code>, for the change form's object tools, in declaration order.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="django_spec_html.types.spec_action.SpecAction" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">SpecAction</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#django_spec_html.types.spec_action.SpecAction" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>A spec served as an admin action, and which of its target's reads the admin fills.</p>
+<p>A value and nothing more: <code>SpecActionsMixin</code> reads a <code>ModelAdmin</code>'s
+<code>spec_actions</code> when the admin is registered, and refuses there what it
+cannot serve. Which kind of action it is follows from the spec's target,
+never from the declaration: a spec with an <code>instance_selector_spec</code> is
+an <strong>object action</strong>, linked from the change page of the row it acts on,
+and one with a <code>collection_selector_spec</code> a <strong>changelist action</strong>,
+offered in the action dropdown with the selected rows as its set.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="django_spec_html.types.spec_action.SpecAction.name">name</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The action's name: the last segment of its URL, the suffix of
+its URL name (<code>admin:&lt;app&gt;_&lt;model&gt;_&lt;name&gt;</code>), and a changelist
+action's key among the admin's actions. A slug, unique among the
+admin's <code>spec_actions</code>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="django_spec_html.types.spec_action.SpecAction.spec">spec</span></code></td>
+            <td>
+                  <code><a class="autorefs autorefs-external" title="django_service_specs.ServiceSpec" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.specs.service_spec.ServiceSpec">ServiceSpec</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The operation, a <code>ServiceSpec</code> with one target selector. A
+<code>FormValidator</code> makes its page <code>SpecFormView</code>'s, no Validator
+<code>SpecConfirmView</code>'s.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="django_spec_html.types.spec_action.SpecAction.label">label</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>What the admin calls it: the object-tools link, the dropdown
+entry and the page's title. Formatted in each as Django formats
+an action's description, with the model's <code>verbose_name</code> and
+<code>verbose_name_plural</code>, so a literal <code>%</code> is written <code>%%</code>,
+and a label that does not format is refused when the admin is
+registered.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="django_spec_html.types.spec_action.SpecAction.parameter">parameter</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The target selector's read the admin fills: the change
+page's object id for an object action, the selected primary keys,
+an <code>array</code>, for a changelist action.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="django_spec_html.types.spec_action.SpecAction.page_kwargs">page_kwargs</span></code></td>
+            <td>
+                  <code><span title="collections.abc.Mapping">Mapping</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Any other keyword the page's <code>as_view()</code> takes, such
+as <code>display_target</code>, <code>commit_button</code>, <code>asked_fields</code> or
+<code>success_message</code>, checked by <code>as_view()</code> as on any page.
+Copied into a read-only mapping when the value is built.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
 
 
 

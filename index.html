@@ -428,6 +428,33 @@
   
   
     <li class="md-nav__item">
+      <a href="admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    In the admin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="http/" class="md-nav__link">
         
   
@@ -540,7 +567,8 @@
 <h1 id="django-spec-html">django-spec-html<a class="headerlink" href="#django-spec-html" title="Permanent link">&para;</a></h1>
 <p>A <a href="https://artui.github.io/django-service-specs/"><code>django-service-specs</code></a> spec served over plain Django, with no API
 framework between the request and the kernel's
-<a href="https://artui.github.io/django-service-specs/dispatching/"><code>dispatch</code></a>. Two halves:</p>
+<a href="https://artui.github.io/django-service-specs/dispatching/"><code>dispatch</code></a>. Two halves,
+and the admin face the pages are served from too:</p>
 <ul>
 <li><strong><a href="pages/">Pages</a>.</strong>
   <a class="autorefs autorefs-internal" title="SpecFormView" href="reference/#django_spec_html.views.spec_form_view.SpecFormView"><code>SpecFormView</code></a> serves
@@ -553,8 +581,13 @@ framework between the request and the kernel's
   <a class="autorefs autorefs-internal" title="AsyncSpecView" href="reference/#django_spec_html.http.async_spec_view.AsyncSpecView"><code>AsyncSpecView</code></a> and
   the functions they are built from serve a spec as JSON, for a script or a
   <code>fetch()</code>.</li>
+<li><strong><a href="admin/">In the admin</a>.</strong>
+  <a class="autorefs autorefs-internal" title="SpecActionsMixin" href="reference/#django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin"><code>SpecActionsMixin</code></a>
+  serves a spec's page as a Django admin action, on one row from its change
+  page or on the rows selected in its changelist, inside the admin's chrome
+  and its scope.</li>
 </ul>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_spec_html</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpecFormView</span><span class="p">,</span> <span class="n">SpecView</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_spec_html</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpecActionsMixin</span><span class="p">,</span> <span class="n">SpecFormView</span><span class="p">,</span> <span class="n">SpecView</span>
 </span></code></pre></div>
 <h2 id="installing">Installing<a class="headerlink" href="#installing" title="Permanent link">&para;</a></h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span>django-spec-html
