@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The admin face: a spec's page served as a `ModelAdmin`'s action.**
+  `SpecActionsMixin` reads a `spec_actions` tuple of `SpecAction` entries and
+  serves each through the pages this package already ships: `SpecFormView`
+  for a spec with a `FormValidator`, `SpecConfirmView` for one without, each
+  at an admin URL of its own from `get_urls()`, wrapped in
+  `admin_site.admin_view()` and named `admin:<app>_<model>_<name>`.
+  - A spec with an `instance_selector_spec` is an **object action**, linked
+    from the change form's object tools; the change URL's object id fills the
+    parameter the entry names.
+  - A spec with a `collection_selector_spec` is a **changelist action**,
+    offered in the action dropdown; it redirects to its page with the selected
+    keys in the query string, bound as a server argument so a posted value
+    cannot replace them. The selector still decides the set: a ticked row it
+    does not return is not acted on.
+  - **The admin's own scope comes first.** Each page needs the admin's view
+    or change permission, as the changelist and the change form do, and reads
+    only rows the `ModelAdmin`'s `get_queryset` returns: a changelist action's
+    keys are narrowed to them before the selector sees them, and an object
+    action on a row outside them is a 404. A key edited into the query string
+    or the URL reaches nothing the admin would not show.
+  - **An action is offered only to a principal the spec's class-level check
+    admits**, the link and the dropdown entry alike, and the page's own checks
+    remain the gate on its post. A staff member the spec refuses who reaches
+    the URL directly gets the page's denial.
+  - The mixin sets `change_form_template` to
+    `django_spec_html/admin/change_form.html`, which adds the object-tools
+    links. A `ModelAdmin` with a change form template of its own extends that
+    one to keep them.
+  - Admin templates under `django_spec_html/admin/`: the admin's chrome,
+    breadcrumbs and messages around the same `spec-form` fragment, so an htmx
+    request is answered as on the plain pages. A success redirects to the
+    change page or the changelist with the page's `success_message`.
+  - **Refused when the admin is built**, naming the admin and the entry: a
+    label that does not format with the model's names (write `%%` for a
+    literal percent sign), a `many` spec or one with no target, a name that is not a slug, repeats
+    another or is one of the admin's own URL names, a parameter the selector
+    does not read (or, for a changelist action, does not read as an array, or
+    reads with a `min_length` an empty selection fails), and a page keyword
+    the mixin sets itself.
+  - The confirmation an admin page asks gates the form route only; the agent
+    route beside it, where the admin carries an agent sidebar, is gated by the
+    agent runtime. The new docs page, "In the admin", says so.
+- `SpecAction` and `SpecActionsMixin` are importable from the package root,
+  and `import django_spec_html` still works in a project without
+  `django.contrib.admin` installed.
+
 ## [0.4.0] — 2026-10-27
 
 ### Added

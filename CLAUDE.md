@@ -61,7 +61,10 @@ Non-negotiable. They keep the package navigable, and they are the kernel's.
    `__init__.py` and `version.py`, and `templates/`, which Django's
    app-directories loader finds only there. Everything else lives in a subpackage named
    for a **concern**: `http/` (a spec as plain-Django JSON, and the request
-   readers both halves use) and `views/` (a spec as a page). `types/` is the
+   readers both halves use), `views/` (a spec as a page) and `model_admin/`
+   (those pages as a `ModelAdmin`'s actions; not `admin/`, which
+   `admin.autodiscover()` would import in every project installing the app).
+   `types/` is the
    one standing subpackage, for value types, when there are any.
 8. **`types/` imports nothing else in the package.** A subpackage's `__init__`
    re-exports its whole surface, so a module every subpackage imports must sit
@@ -77,11 +80,14 @@ Non-negotiable. They keep the package navigable, and they are the kernel's.
 | --- | --- |
 | `views/` | `SpecFormView`, a spec served as the page its form is, with what only that page needs (the fields it holds back, the question it asks); `SpecFormSetView`, a `many` spec served as a formset of its form; `SpecConfirmView`, a spec with no Validator served as a target and a button; `utils.py` for `SpecPageBase`, the private base every page view subclasses (admission, the target and its display, dispatch, the refusal, the success and its message, the fragment wrapper, the commit rule), whose hooks a subclass supplies and `as_view()` refuses a class missing, and the form readers both form pages share (`form_values`, `without_errors`) |
 | `templates/django_spec_html/` | the pages' default templates: `base.html`, which the three pages extend; `spec_form.html`, `spec_form_set.html` and `spec_confirm.html`, each including its form from a `*_fragment.html` of its own, which an htmx request is answered with on every Django; `target.html`, the target pane two of them share. Held by `tests/views/test_default_templates.py`, which mirrors no Python file |
-| `types/` | `Outcome`, the ways a page's post ends; it imports nothing else in the package (rule 8) |
+| `model_admin/` | `SpecActionsMixin`, a `ModelAdmin` serving a spec's page as an object action (an instance target, linked from the change form) or a changelist action (a collection target, the ticked rows as its set), each at an admin URL of its own within the admin's permission and `get_queryset`, through the `views/` pages; its templates are `templates/django_spec_html/admin/` |
+| `types/` | `Outcome`, the ways a page's post ends; `SpecAction`, one entry of a `ModelAdmin`'s `spec_actions`; it imports nothing else in the package (rule 8) |
 | `http/` | the JSON views (`SpecView`, `AsyncSpecView`, `dispatch_request`, `adispatch_request`), `error_response`, and the request readers both halves use: `request_arguments`, `route_arguments`, `request_principal`, `add_argument_errors`; `UnsupportedMediaType`, beside its raiser; `utils.py` for `SpecViewBase`, the helpers the entry points share, and `REFUSAL_STATUSES`, the status map the page reads too, with each refusal's `Outcome` |
 
-`views/` imports `http/`, never the reverse. The root re-exports both
-subpackages' `__all__` and `__version__`, and `tests/test_init.py` holds that.
+`views/` imports `http/`, never the reverse, and `model_admin/` imports
+`views/`. The root re-exports the three subpackages' `__all__` and
+`__version__`, and `tests/test_init.py` holds that, with the root imported in a
+project that does not install `django.contrib.admin`.
 
 ## Naming the concepts
 
@@ -96,7 +102,9 @@ Each of these reads as an oversight and is not.
 - **`SERVICE_SPECS_MAX_ARRAY_LENGTH` is the kernel's setting key.** The argument
   reader names it, and the kernel reads it. It is not this package's to rename.
 - **The test settings list no kernel app.** The package needs nothing of the
-  kernel switched on, and the suite shows it.
+  kernel switched on, and the suite shows it. They install the admin, sessions
+  and their middleware for the admin face; the messages app is added only in
+  the admin tests' fixtures, so the pages are still tested without it.
 - **The kernel no longer ships these names.** `django_service_specs.http` and
   its ten root names are gone from kernel 0.12.0, below the floor, so an
   import left pointing at the kernel fails at import rather than resolving to
