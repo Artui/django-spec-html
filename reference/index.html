@@ -2770,8 +2770,10 @@ callable: the class-level check, the target's lookup and its
 object-level or scope check, the form's <code>form_kwargs</code>, the
 affordances the page asks about, and dispatch. Seed what the
 request carries rather than the request itself, as on <code>SpecView</code>:
-a spec callable requiring a <code>request</code> raises <code>TypeError</code> on every
-reader that has none.</p>
+a spec callable naming <code>request</code> is handed this request here, and
+<code>None</code> on every reader that has none. A seed's resolver may name
+<code>request</code> or <code>view</code> and is handed this request and this page
+(test_a_seed_resolver_reading_the_request_binds).</p>
 
 
     </div>
@@ -3413,8 +3415,10 @@ callable: the class-level check, the target's lookup and its
 object-level or scope check, the form's <code>form_kwargs</code>, the
 affordances the page asks about, and dispatch. Seed what the
 request carries rather than the request itself, as on <code>SpecView</code>:
-a spec callable requiring a <code>request</code> raises <code>TypeError</code> on every
-reader that has none.</p>
+a spec callable naming <code>request</code> is handed this request here, and
+<code>None</code> on every reader that has none. A seed's resolver may name
+<code>request</code> or <code>view</code> and is handed this request and this page
+(test_a_seed_resolver_reading_the_request_binds).</p>
 
 
     </div>
@@ -4035,8 +4039,10 @@ callable: the class-level check, the target's lookup and its
 object-level or scope check, the form's <code>form_kwargs</code>, the
 affordances the page asks about, and dispatch. Seed what the
 request carries rather than the request itself, as on <code>SpecView</code>:
-a spec callable requiring a <code>request</code> raises <code>TypeError</code> on every
-reader that has none.</p>
+a spec callable naming <code>request</code> is handed this request here, and
+<code>None</code> on every reader that has none. A seed's resolver may name
+<code>request</code> or <code>view</code> and is handed this request and this page
+(test_a_seed_resolver_reading_the_request_binds).</p>
 
 
     </div>
@@ -4462,7 +4468,9 @@ attribute of its name: <code>get_pool_seeds(request)</code> for the seeds, so a
 tenant or a locale middleware resolved reaches a permission check, a
 selector or a Validator; and <code>get_server_arguments(request)</code> for the
 values the server answers for, which outrank whatever the client sent and
-whose names are the declared <code>server_arguments</code>' own.</p>
+whose names are the declared <code>server_arguments</code>' own. The view passes
+itself to <code>dispatch_request</code> as <code>view=</code>, so a spec callable naming
+<code>request</code> or <code>view</code> is handed this request and this view.</p>
 <p><code>as_view()</code> checks the configuration when the view is built, so a view
 with no spec, an <code>async def</code> hook, <code>route_kwargs</code> naming a parameter
 the spec does not declare or one the binding answers for, or a binding
@@ -4734,7 +4742,8 @@ cannot stand in for a sync one.</p>
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">grant</span><span class="p">:</span> <span class="n">Grant</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 </span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">pool_seeds</span><span class="p">:</span> <span class="n">PoolSeeds</span> <span class="o">=</span> <span class="n">DEFAULT_POOL_SEEDS</span><span class="p">,</span>
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">unknown_arguments</span><span class="p">:</span> <span class="n">UnknownArguments</span> <span class="o">=</span> <span class="n">UnknownArguments</span><span class="o">.</span><span class="n">REJECT</span><span class="p">,</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">view</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents first">
@@ -4760,7 +4769,14 @@ cannot stand in for a sync one.</p>
    <a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.dispatch.check_server_arguments.check_server_arguments"><code>check_server_arguments</code></a>
    once, when it is built, as <code>SpecView.as_view()</code> does.</li>
 <li><a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.dispatch.dispatch.dispatch"><code>dispatch</code></a>, with
-   <code>grant</code>, <code>pool_seeds</code> and <code>unknown_arguments</code> as given.</li>
+   <code>grant</code>, <code>pool_seeds</code> and <code>unknown_arguments</code> as given, and a
+   call context of its own holding <code>request</code> and <code>view</code>. So a spec
+   callable naming <code>request</code> - a seed's resolver, a selector, a
+   permission check, an affordance condition, a <code>form_kwargs</code>, the
+   service - is handed this very request, and one naming <code>view</code> is
+   handed <code>view</code>: the host's own view, which passes itself, as
+   <code>SpecView</code> does, and <code>None</code> where it passes nothing
+   (<code>TestTheRequestAndTheView</code> in <code>test_dispatch_request</code>).</li>
 <li><strong>The answer.</strong> A not-found result is 404 with a <code>detail</code>. Otherwise
    the presented value, bare, at <code>success_status</code> if given, else 204 for
    a service with nothing to present and 200 for everything else - the
@@ -4809,13 +4825,15 @@ exempts a view, and <code>csrf_exempt</code> is one line for a host that wants i
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">grant</span><span class="p">:</span> <span class="n">Grant</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 </span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">pool_seeds</span><span class="p">:</span> <span class="n">PoolSeeds</span> <span class="o">=</span> <span class="n">DEFAULT_POOL_SEEDS</span><span class="p">,</span>
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">unknown_arguments</span><span class="p">:</span> <span class="n">UnknownArguments</span> <span class="o">=</span> <span class="n">UnknownArguments</span><span class="o">.</span><span class="n">REJECT</span><span class="p">,</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">view</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HttpResponse</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents first">
 
         <p><a class="autorefs autorefs-internal" title="dispatch_request" href="#django_spec_html.http.dispatch_request.dispatch_request"><code>dispatch_request</code></a>, from async code.</p>
-<p>The same principal, arguments, statuses and refusals, reached through
+<p>The same principal, arguments, call context, statuses and refusals, and
+the same <code>view</code>, reached through
 <a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.dispatch.adispatch.adispatch"><code>adispatch</code></a> and
 <a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.dispatch.apresent.apresent"><code>apresent</code></a>, so the
 kernel's async rule holds: nothing that may query runs on the event loop.</p>

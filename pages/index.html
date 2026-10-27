@@ -1682,13 +1682,18 @@ page shows one, is presented with that same pool. A refused post that
 presents a display resolves it once more, for the presenter's. So a resolver answering a fresh object answers each step a
 different one. Write seed resolvers that answer the same each time.</p>
 <p><strong>One call context per request.</strong> The page creates one plain dict for each
-request and hands that same object to every kernel call it makes: the
+request, starting with <code>request</code>, this request, and <code>view</code>, this page, and
+hands that same object to every kernel call it makes: the
 class-level check, the target's lookup and its object-level or scope check,
 the affordances, the form's <code>form_kwargs</code> and dispatch. So a check, a
 condition, <code>form_kwargs</code> or the service declaring
 <a href="https://artui.github.io/django-service-specs/dispatching/"><code>call_context</code></a>
 reads what an earlier stage of the same request put there, and each request
-gets a dict of its own.</p>
+gets a dict of its own. A selector, a check, a condition, a seed's resolver,
+<code>form_kwargs</code> or the service naming <code>request</code> or <code>view</code> is handed the one in
+it, as on <a href="../http/#what-the-request-carries">the JSON views</a>, and the
+display's presenter reads the page's seeds as its ambient, never the
+context.</p>
 <p>The checks are the JSON views': <code>as_view()</code> refuses an <code>async def</code> hook,
 checks <code>server_arguments</code> with the kernel's <code>check_server_arguments</code> against
 the declared <code>pool_seeds</code>, and refuses a <code>route_kwargs</code> filling a name the
