@@ -5,7 +5,9 @@ Every request goes through Django's handler and the admin's own stack -
 client, since what the admin offers and refuses is decided there, and a call
 to an action's function would cross none of it. The module is its own
 URLconf: two admin sites over one model, the second deployed last, so a link
-the chrome resolves without naming its site resolves into the wrong one.
+the chrome resolves without naming its site resolves into the wrong one; and
+three more, each an admin answering one question differently - a key the
+admin quotes, a tenant's scope, a permission answered without the other.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from django.contrib.auth.models import Permission
 from django.contrib.messages import get_messages
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import QuerySet
-from django.test import Client
+from django.test import Client, RequestFactory
 from django.urls import path, reverse
 from django_service_specs import (
     DEFAULT_POOL_SEEDS,
@@ -42,7 +44,7 @@ from django_spec_html.model_admin.spec_actions_mixin import SpecActionsMixin
 from django_spec_html.types.spec_action import SpecAction
 from django_spec_html.views.utils import SpecPageBase
 from tests.dispatch.utils import PK, note_by_pk
-from tests.dispatch_app.models import Note
+from tests.dispatch_app.models import Note, Tag
 
 pytestmark = pytest.mark.django_db
 
@@ -101,8 +103,8 @@ archive_spec = ServiceSpec(
 )
 retitle_spec = ServiceSpec(
     service=retitle,
-    # Open to every staff member, so the page is reached by one the admin
-    # itself shows nothing of the model.
+    # Open to every principal, so a staff member the admin shows notes to
+    # and ``Editors`` refuses is still offered it.
     permissions=[Unrestricted()],
     validator=FormValidator(TitleForm),
     instance_selector_spec=SelectorSpec(kind=SelectorKind.RETRIEVE, selector=note_by_pk, reads=PK),
@@ -151,16 +153,22 @@ other_site = admin.AdminSite(name="other_admin")
 other_site.register(Note, NoteAdmin)
 
 
-def note_by_title(*, key: str) -> QuerySet[Note]:
-    return Note.objects.filter(title=key)
+def tag_by_key(*, key: str) -> QuerySet[Tag]:
+    return Tag.objects.filter(key=key)
 
 
-by_title_spec = ServiceSpec(
-    service=archive,
+def archive_tag(*, instance: Tag) -> Tag:
+    instance.archived = True
+    instance.save(update_fields=["archived"])
+    return instance
+
+
+tag_spec = ServiceSpec(
+    service=archive_tag,
     permissions=[Unrestricted()],
     instance_selector_spec=SelectorSpec(
         kind=SelectorKind.RETRIEVE,
-        selector=note_by_title,
+        selector=tag_by_key,
         reads=Parameters.of(Parameter("key", "string", required=True)),
     ),
 )
@@ -178,18 +186,104 @@ capped_spec = ServiceSpec(
 
 
 class KeyedAdmin(SpecActionsMixin, admin.ModelAdmin):
-    spec_actions = (
-        SpecAction("by_title", by_title_spec, "By title", "key"),
-        SpecAction("capped", capped_spec, "Capped", "pks"),
-    )
+    spec_actions = (SpecAction("capped", capped_spec, "Capped", "pks"),)
+
+
+class TagAdmin(SpecActionsMixin, admin.ModelAdmin):
+    spec_actions = (SpecAction("archive", tag_spec, "Archive", "key"),)
 
 
 keyed_site = admin.AdminSite(name="keyed_admin")
 keyed_site.register(Note, KeyedAdmin)
+keyed_site.register(Tag, TagAdmin)
+
+
+def by_pks(*, pks: list[int]) -> QuerySet[Note]:
+    # Every row it is handed, so the admin's scope is all that narrows it.
+    return Note.objects.filter(pk__in=pks)
+
+
+def by_keys(*, keys: list[str]) -> QuerySet[Note]:
+    return Note.objects.filter(pk__in=keys)
+
+
+class ScopedAdmin(SpecActionsMixin, admin.ModelAdmin):
+    """A tenant's admin: each staff member shown their own notes, and none titled Locked.
+
+    Its specs are open to every principal, so whatever the admin does not
+    show is kept from the pages by the admin alone.
+    """
+
+    spec_actions = (
+        SpecAction(
+            "one",
+            ServiceSpec(
+                service=archive,
+                permissions=[Unrestricted()],
+                instance_selector_spec=SelectorSpec(
+                    kind=SelectorKind.RETRIEVE, selector=note_by_pk, reads=PK
+                ),
+            ),
+            "Archive this %(verbose_name)s",
+            "pk",
+        ),
+        SpecAction(
+            "many",
+            ServiceSpec(
+                service=archive_all,
+                permissions=[Unrestricted()],
+                collection_selector_spec=SelectorSpec(
+                    kind=SelectorKind.LIST, selector=by_pks, reads=PKS
+                ),
+            ),
+            "Archive these",
+            "pks",
+        ),
+        SpecAction(
+            "by_keys",
+            ServiceSpec(
+                service=archive_all,
+                permissions=[Unrestricted()],
+                collection_selector_spec=SelectorSpec(
+                    kind=SelectorKind.LIST,
+                    selector=by_keys,
+                    reads=Parameters.of(Parameter("keys", "array", items="string")),
+                ),
+            ),
+            "By keys",
+            "keys",
+        ),
+    )
+
+    def get_queryset(self, request: Any) -> QuerySet[Note]:
+        return super().get_queryset(request).filter(owner=request.user)
+
+    def has_view_or_change_permission(self, request: Any, obj: Any = None) -> bool:
+        locked = obj is not None and obj.title == "Locked"
+        return not locked and super().has_view_or_change_permission(request, obj)
+
+
+scoped_site = admin.AdminSite(name="scoped_admin")
+scoped_site.register(Note, ScopedAdmin)
+
+
+class ViewlessAdmin(SpecActionsMixin, admin.ModelAdmin):
+    """An admin answering the change permission without the view one, as Django's allows."""
+
+    spec_actions = (ACTIONS[0],)
+
+    def has_view_permission(self, request: Any, obj: Any = None) -> bool:
+        return False
+
+
+viewless_site = admin.AdminSite(name="viewless_admin")
+viewless_site.register(Note, ViewlessAdmin)
 
 urlpatterns = [
     path("other/", other_site.urls),
     path("keyed/", keyed_site.urls),
+    path("scoped/", scoped_site.urls),
+    path("viewless/", viewless_site.urls),
     path("admin/", site.urls),
 ]
 
@@ -210,6 +304,10 @@ def staff(username: str, *codenames: str) -> Any:
 @pytest.fixture
 def editor() -> Any:
     return staff("editor", "view_note", "change_note")
+
+
+def tagger() -> Any:
+    return staff("tagger", "view_tag", "change_tag")
 
 
 @pytest.fixture
@@ -276,13 +374,22 @@ class TestTheUrls:
             assert response["Location"].startswith("/admin/login/?next=")
         assert Note.objects.get().archived is False
 
-    def test_a_quoted_key_reaches_the_selector_unquoted(self, editor: Any) -> None:
-        # A key holding a character the admin escapes in its URLs, read by a
-        # selector of a string, so only the key unquoted finds the row.
-        keyed = Note.objects.create(owner=editor, title="a/b")
-        url = f"/keyed/dispatch_app/note/{quote('a/b')}/actions/by_title/"
-        assert url == "/keyed/dispatch_app/note/a_2Fb/actions/by_title/"
-        assert client(editor).get(url).context_data["target"] == keyed
+    def test_a_quoted_key_reaches_the_selector_unquoted(self) -> None:
+        # A key holding a character the admin escapes in its URLs, so only
+        # the key unquoted finds the row.
+        keyed = Tag.objects.create(key="a/b")
+        url = f"/keyed/dispatch_app/tag/{quote('a/b')}/actions/archive/"
+        assert url == "/keyed/dispatch_app/tag/a_2Fb/actions/archive/"
+        assert client(tagger()).get(url).context_data["target"] == keyed
+
+    def test_a_success_returns_to_the_change_page_quoted_again(self) -> None:
+        Tag.objects.create(key="a/b")
+        response = client(tagger()).post("/keyed/dispatch_app/tag/a_2Fb/actions/archive/")
+        assert (response.status_code, response["Location"]) == (
+            302,
+            "/keyed/dispatch_app/tag/a_2Fb/change/",
+        )
+        assert Tag.objects.get().archived is True
 
 
 class TestTheObjectToolsLink:
@@ -379,14 +486,18 @@ class TestThePage:
         assert f'<a href="{change_page(note)}">{note}</a>' in body
         assert '<button type="submit">Confirm</button>' in body
 
-    def test_the_breadcrumbs_link_only_what_the_admin_shows(self, note: Note) -> None:
-        # Admitted by the open spec, and shown nothing by the admin.
-        response = client(staff("stranger")).get(page("retitle", note))
+    def test_the_breadcrumbs_link_only_what_the_admin_shows(self, editor: Any, note: Note) -> None:
+        # Admitted to the page by the change permission, by an admin that
+        # answers no view permission, so its changelist and its change page
+        # are not linked, as its own pages would not link them.
+        response = client(editor).get(page("archive", note, prefix="viewless"))
         body = response.content.decode()
         assert response.status_code == 200
         assert response.context_data["has_view_permission"] is False
-        assert CHANGELIST not in body
-        assert change_page(note) not in body
+        crumbs = body[body.index('<div class="breadcrumbs">') :].split("</div>")[0]
+        assert "Notes" in crumbs
+        assert str(note) in crumbs
+        assert "/viewless/dispatch_app/note/" not in crumbs
 
     def test_the_chrome_links_into_the_admin_site_serving_it(self, editor: Any, note: Note) -> None:
         body = client(editor).get(page("archive", note, prefix="other")).content.decode()
@@ -564,6 +675,92 @@ class TestTheChangelistAction:
         assert (response.status_code, response.context_data["target_count"]) == (200, 0)
 
 
+SCOPED = "/scoped/dispatch_app/note/"
+
+
+class TestTheAdminsScope:
+    """The admin's own scope around the pages: its permission and its ``get_queryset()``."""
+
+    @pytest.fixture
+    def me(self) -> Any:
+        return staff("me", "view_note", "change_note")
+
+    @pytest.fixture
+    def mine(self, me: Any) -> Note:
+        return Note.objects.create(owner=me, title="Mine")
+
+    @pytest.fixture
+    def theirs(self) -> Note:
+        return Note.objects.create(owner=staff("them", "view_note", "change_note"), title="x")
+
+    def test_another_tenant_s_key_is_not_acted_on(self, me: Any, mine: Note, theirs: Note) -> None:
+        url = f"{SCOPED}actions/many/?pks={mine.pk}&pks={theirs.pk}"
+        assert client(me).get(url).context_data["target_count"] == 1
+        response = client(me).post(url)
+        assert (response.status_code, response["Location"]) == (302, SCOPED)
+        archived = dict(Note.objects.values_list("pk", "archived"))
+        assert archived == {mine.pk: True, theirs.pk: False}
+
+    def test_another_tenant_s_object_is_not_found(self, me: Any, theirs: Note) -> None:
+        url = f"{SCOPED}{theirs.pk}/actions/one/"
+        assert client(me).get(url).status_code == 404
+        assert client(me).post(url).status_code == 404
+        assert Note.objects.get().archived is False
+        # A key that is no row's, which get_object() finds nothing for too.
+        assert client(me).get(f"{SCOPED}abc/actions/one/").status_code == 404
+        # Where the change page redirects to the admin's index instead.
+        change = client(me).get(f"{SCOPED}{theirs.pk}/change/")
+        assert (change.status_code, change["Location"]) == (302, "/scoped/")
+
+    def test_a_key_the_primary_key_refuses_is_a_bad_request(self, me: Any, mine: Note) -> None:
+        # The parameter takes any string, and the primary key an integer.
+        assert client(me).get(f"{SCOPED}actions/by_keys/?keys=abc").status_code == 400
+        assert client(me).post(f"{SCOPED}actions/by_keys/?keys=abc").status_code == 400
+        shown = client(me).get(f"{SCOPED}actions/by_keys/?keys={mine.pk}")
+        assert shown.context_data["target_count"] == 1
+
+    def test_a_staff_member_without_the_admin_s_permission_is_refused(self, note: Note) -> None:
+        # On the default admin too, by a spec open to every principal.
+        assert client(staff("stranger")).get(page("retitle", note)).status_code == 403
+        nobody = staff("nobody")
+        row = Note.objects.create(owner=nobody, title="x")
+        assert client(nobody).get(SCOPED).status_code == 403
+        for url in (f"{SCOPED}{row.pk}/actions/one/", f"{SCOPED}actions/many/?pks={row.pk}"):
+            assert client(nobody).get(url).status_code == 403
+            assert client(nobody).post(url).status_code == 403
+        assert Note.objects.filter(archived=True).count() == 0
+
+    def test_the_admin_s_permission_is_asked_of_the_row(self, me: Any) -> None:
+        locked = Note.objects.create(owner=me, title="Locked")
+        assert client(me).get(f"{SCOPED}{locked.pk}/actions/one/").status_code == 403
+        assert client(me).post(f"{SCOPED}{locked.pk}/actions/one/").status_code == 403
+        assert Note.objects.get().archived is False
+
+    def test_a_staff_member_without_the_admin_s_permission_is_offered_nothing(
+        self, me: Any
+    ) -> None:
+        scoped = ScopedAdmin(Note, admin.AdminSite())
+        nobody = client(staff("nobody")).get(SCOPED).wsgi_request
+        assert "many" not in scoped.get_actions(nobody)
+        assert "many" in scoped.get_actions(client(me).get(SCOPED).wsgi_request)
+
+    def test_a_deactivated_account_is_offered_nothing(self) -> None:
+        # Kept from the admin's pages by admin_view, and refused by the
+        # spec's check where a host asks for the actions itself.
+        request = RequestFactory().get(SCOPED)
+        request.user = staff("gone", "view_note", "change_note")
+        request.user.is_active = False
+        assert "many" not in ScopedAdmin(Note, admin.AdminSite()).get_actions(request)
+
+    def test_a_label_is_formatted_alike_on_the_link_and_the_page(self, me: Any, mine: Note) -> None:
+        url = f"{SCOPED}{mine.pk}/actions/one/"
+        change = client(me).get(f"{SCOPED}{mine.pk}/change/").content.decode()
+        assert f'<li><a href="{url}">Archive this note</a></li>' in change
+        shown = client(me).get(url)
+        assert shown.context_data["title"] == "Archive this note"
+        assert "<h1>Archive this note</h1>" in shown.content.decode()
+
+
 def built(*actions: Any, **attributes: Any) -> SpecActionsMixin:
     """A ``ModelAdmin`` declaring ``actions``, registered as ``admin.site.register`` builds one."""
     declared = type("Declared", (SpecActionsMixin, admin.ModelAdmin), {"spec_actions": actions})
@@ -590,11 +787,6 @@ class TestTheDeclaration:
                 (ACTIONS[0], SpecAction("archive", archive_all_spec, "Again", "pks")),
                 "Declared.spec_actions['archive']: another of the admin's spec_actions has the "
                 "name.",
-            ),
-            (
-                (SpecAction("history", archive_spec, "History", "pk"),),
-                "Declared.spec_actions['history']: 'history' is one of the admin's own URL "
-                "names for the model.",
             ),
             (
                 (
@@ -700,20 +892,71 @@ class TestTheDeclaration:
             "not-a-declaration",
             "not-a-slug",
             "a-name-twice",
-            "an-admin-url-name",
             "not-a-service-spec",
             "many",
             "no-target",
             "a-parameter-not-read",
             "a-selector-reading-nothing",
             "a-selection-that-is-not-a-list",
-            "a-keyword-the-admin-answers",
+            "keywords-the-admin-answers",
         ],
     )
     def test_is_refused_when_the_admin_is_built(self, actions: Any, message: str) -> None:
         with pytest.raises(ImproperlyConfigured) as refused:
             built(*actions)
         assert str(refused.value).startswith(message)
+
+    @pytest.mark.parametrize("name", ["add", "change", "changelist", "delete", "history"])
+    def test_an_admin_url_name_is_refused(self, name: str) -> None:
+        with pytest.raises(ImproperlyConfigured) as refused:
+            built(SpecAction(name, archive_all_spec, "Taken", "pks"))
+        assert str(refused.value) == (
+            f"Declared.spec_actions[{name!r}]: {name!r} is one of the admin's own URL names "
+            "for the model."
+        )
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "fragment_template_name",
+            "get_server_arguments",
+            "route_kwargs",
+            "server_arguments",
+            "spec",
+            "success_url",
+            "template_name",
+        ],
+    )
+    @pytest.mark.parametrize("spec", [archive_spec, archive_all_spec], ids=["object", "changelist"])
+    def test_a_keyword_the_admin_answers_is_refused(self, key: str, spec: Any) -> None:
+        parameter = "pk" if spec is archive_spec else "pks"
+        with pytest.raises(ImproperlyConfigured) as refused:
+            built(SpecAction("act", spec, "Act", parameter, {key: None}))
+        assert str(refused.value) == (
+            f"Declared.spec_actions['act']: page_kwargs sets {key}, which the admin answers for."
+        )
+
+    @pytest.mark.parametrize(
+        ("label", "why"),
+        [
+            ("One %", "incomplete format"),
+            ("%(verbose)s", "'verbose'"),
+            ("%d notes", "%d format: a real number is required, not dict"),
+        ],
+        ids=["a-lone-percent", "an-unknown-name", "a-conversion-needing-a-value"],
+    )
+    @pytest.mark.parametrize("spec", [archive_spec, archive_all_spec], ids=["object", "changelist"])
+    def test_a_label_that_does_not_format_is_refused(self, label: str, why: str, spec: Any) -> None:
+        # Formatted as Django formats an action's description, which the
+        # dropdown would fail on at render and the page at its title.
+        parameter = "pk" if spec is archive_spec else "pks"
+        with pytest.raises(ImproperlyConfigured) as refused:
+            built(SpecAction("act", spec, label, parameter))
+        assert str(refused.value) == (
+            f"Declared.spec_actions['act']: the label {label!r} is formatted with the model's "
+            f"names, as Django formats an action's description, and does not format ({why}); "
+            "write a literal % as %%."
+        )
 
     def test_the_page_s_own_check_names_the_declaration(self) -> None:
         # The page's ``as_view()`` is the page's: a keyword it does not take

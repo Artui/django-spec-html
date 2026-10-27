@@ -71,10 +71,14 @@ its `parameter` (`?pks=3&pks=5`), which must be an `array` the collection
 selector reads. The page binds them to that parameter as `server_arguments`,
 read from the query string on GET and on the post the page sends back to its
 own URL. So **nothing posted stands in for the selection**: a value posted
-under the name is dropped, as every value a binding answers for is. **The
-selector still decides the set**: a key it does not answer is not acted on,
-so the example reprices the published books among those ticked and leaves a
-draft as it was. A key the parameter refuses, `?pks=abc`, is a 400.
+under the name is dropped, as every value a binding answers for is. The
+keys are first narrowed to the admin's `get_queryset()`, as the changelist
+narrows the rows its own actions run on, so a key outside it never reaches
+the selector ([the admin's scope](#the-admins-scope-comes-first)). Within
+that, **the selector still decides the set**: a key it does not answer is
+not acted on, so the example reprices the published books among those
+ticked and leaves a draft as it was. A key the parameter or the primary key
+refuses, `?pks=abc`, is a 400.
 
 The keys travel in the URL, so a selection is as long as a URL and as the
 parameter takes: an array past its `max_length`, or past the kernel's
@@ -82,22 +86,47 @@ parameter takes: an array past its `max_length`, or past the kernel's
 Selecting every row of a long changelist is a filter's job, declared on the
 selector, rather than a list of keys.
 
+## The admin's scope comes first
+
+A page is the admin's as much as its change page is, so it answers to the
+admin's own gates before the spec's, as Django's actions and change page do:
+
+- **The admin's permission.** A page is served only to a principal the
+  `ModelAdmin`'s `has_view_or_change_permission()` admits, asked of the row
+  on an object action; anyone else is refused with a 403.
+- **The admin's rows.** An object action's row is the admin's
+  `get_object()`, read from its `get_queryset()`, so a row outside it, which
+  `get_object()` finds no row for, is a 404. The change page redirects such
+  a key to the admin's index with a message instead; the action's page
+  answers it as any route does a row not found. A changelist action's
+  selection is
+  narrowed to the same queryset before it is bound.
+
+**The spec's own checks run inside that scope**, on every request, the
+object-level check included, and its selector decides the set within it. So
+an admin whose `get_queryset()` shows each staff member their own rows keeps
+every other row from its spec actions too, whatever the spec's checks or
+selector would admit, and neither the URL nor the query string reaches past
+it.
+
 ## Who is offered an action
 
-**Only a principal the spec admits.** The object-tools link and the dropdown
-entry are shown where the kernel's `authorize`, the spec's class-level check,
-admits the signed-in principal, asked with the page's own seeds and call
-context. The admin's model permissions are not the gate: Django offers an
-action that declares no `allowed_permissions` to anyone who can view the
-changelist, and a spec's checks say what its operation needs whatever the
-admin shows. So the example's `IsEditor` decides, and a staff member who may
-view the books and is not an editor sees neither the link nor the entry.
+**Only a principal the spec and the admin both admit.** The object-tools link
+and the dropdown entry are shown where the kernel's `authorize`, the spec's
+class-level check, admits the signed-in principal, asked with the page's own
+seeds and call context, and the admin's `has_view_or_change_permission()`
+does too. The admin's model permissions are not the whole gate: Django
+offers an action that declares no `allowed_permissions` to anyone who can
+view the changelist, and a spec's checks say what its operation needs
+whatever the admin shows. So the example's `IsEditor` decides as well, and a
+staff member who may view the books and is not an editor sees neither the
+link nor the entry.
 
 The offer is advice. **The page's own checks are the gate**: a principal who
-reaches the URL directly is admitted or refused by the spec, the object-level
-check included, as on any route, and a refusal is the admin's 403. An entry
-not offered is not among `get_actions()`, which the changelist reads again on
-the post that runs an action, so posting its name runs nothing.
+reaches the URL directly is admitted or refused by the admin's scope and the
+spec, as on any route, and a refusal is the admin's 403. An entry not offered
+is not among `get_actions()`, which the changelist reads again on the post
+that runs an action, so posting its name runs nothing.
 
 ## The page
 
@@ -157,9 +186,18 @@ names the admin and the action, for:
 - an entry that is not a `SpecAction`;
 - a name that is not a slug, is used twice, or is one of the admin's own URL
   names for the model (`add`, `change`, `changelist`, `delete`, `history`);
+- a label that does not format with the model's names, as Django formats an
+  action's description for the dropdown and as the link and the page's title
+  are formatted too: `%(verbose_name)s` and `%(verbose_name_plural)s` are
+  the names, and a literal `%` is written `%%`;
 - a spec that is not a `ServiceSpec`, a `many` spec, or one with no target;
 - a `parameter` the target selector does not read, or, on a changelist
   action, one it does not read as an `array`;
+- on a changelist action, a `parameter` declaring a `min_length` of one or
+  more: the page is declared with the selection bound to no row, since which
+  rows are selected is known only on a request, and the kernel refuses a
+  binding its parameter does not take. Selecting no row is then a page acting
+  on none, rather than a refusal;
 - a `page_kwargs` key the mixin answers for;
 - anything the page's own `as_view()` refuses, under the admin's name for the
   action, `BookAdmin['withdraw']`, so the message says which declaration it

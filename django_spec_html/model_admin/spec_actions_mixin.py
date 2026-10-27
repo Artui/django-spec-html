@@ -10,9 +10,15 @@ from urllib.parse import urlencode
 
 from django.contrib import admin
 from django.contrib.admin.utils import model_format_dict, quote, unquote
-from django.core.exceptions import BadRequest, ImproperlyConfigured
+from django.core.exceptions import (
+    BadRequest,
+    ImproperlyConfigured,
+    PermissionDenied,
+    ValidationError,
+)
 from django.db.models import QuerySet
-from django.http import HttpRequest, HttpResponse, HttpResponseBase, HttpResponseRedirect
+from django.db.models.options import Options
+from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBase, HttpResponseRedirect
 from django.urls import URLPattern, path, reverse
 from django_service_specs import (
     DispatchResult,
@@ -86,14 +92,22 @@ class SpecActionsMixin(admin.ModelAdmin):
     selection; and the collection selector still decides the set, so a key
     it does not answer is not acted on.
 
+    **The admin's scope comes first**, as for its own actions and its change
+    page: a page is served only to a principal holding the admin's view or
+    change permission, the row's on an object action, and acts only on rows
+    in the admin's ``get_queryset()``. An object action's row outside it is
+    a 404, and a changelist action's selection is narrowed to it before it
+    is bound, so a key outside it never reaches the selector. Within that
+    scope the spec's own checks run, and its selector decides the set.
+
     **Each page is the spec's own**: ``SpecFormView`` for a spec validating
     with a ``FormValidator``, ``SpecConfirmView`` for one with none, built
     once when the admin is registered, so ``as_view()`` refuses then what it
     refuses of any page. Its URL is added by ``get_urls()`` ahead of the
     admin's own, wrapped in ``admin_site.admin_view()``, so only a signed-in
     staff member the site admits reaches it; the page then admits the
-    principal by the spec's own checks, as on any route, and answers the
-    rest with the host's 403 page. Its templates,
+    principal by the admin's permission and the spec's own checks, as on
+    any route, and answers the rest with the host's 403 page. Its templates,
     ``django_spec_html/admin/spec_form.html`` and
     ``django_spec_html/admin/spec_confirm.html``, extend
     ``admin/base_site.html`` with the admin's breadcrumbs and title around
@@ -102,14 +116,14 @@ class SpecActionsMixin(admin.ModelAdmin):
     row's change page or to the changelist, with the page's
     ``success_message`` among the admin's messages.
 
-    **Offered only to a principal the spec admits.** The object-tools link
-    and the dropdown entry are shown only where the kernel's ``authorize``,
-    the spec's class-level check, admits the request's principal, asked
-    with the page's own seeds and call context. Django offers an action with
-    no ``allowed_permissions`` to anyone who can view the changelist, and
-    the admin's model permissions say nothing about the spec's, so neither
-    is the gate: the spec's checks are, and the page asks them again, the
-    object-level ones included, on every request. An entry not offered is
+    **Offered only to a principal both admit.** The object-tools link and
+    the dropdown entry are shown only where the kernel's ``authorize``, the
+    spec's class-level check, admits the request's principal, asked with
+    the page's own seeds and call context, and the admin's view or change
+    permission does too. The admin's model permissions say nothing about
+    the spec's, so they are not the whole gate: the spec's checks are asked
+    as well, and the page asks both again, the object-level ones included,
+    on every request. An entry not offered is
     not in ``get_actions()``, which the changelist reads again on the post
     that runs an action, so posting its name runs nothing.
 
@@ -121,7 +135,8 @@ class SpecActionsMixin(admin.ModelAdmin):
 
     ``ImproperlyConfigured`` is raised when the admin is registered for a
     declaration that is not a ``SpecAction``, a name that is not a slug, is
-    used twice or is one of the admin's own URL names, a spec that is not a
+    used twice or is one of the admin's own URL names, a label that does not
+    format with the model's names, a spec that is not a
     ``ServiceSpec``, a ``many`` spec, a spec with no target, a ``parameter``
     its target selector does not read or, on a changelist action, one that
     is not an ``array``, and a ``page_kwargs`` key the mixin answers for.
@@ -141,7 +156,7 @@ class SpecActionsMixin(admin.ModelAdmin):
         names: set[str] = set()
         pages: list[_Page] = []
         for action in self.spec_actions:
-            selection = _check_declaration(label, action, names)
+            selection = _check_declaration(label, action, names, self.opts)
             names.add(action.name)
             pages.append(_built(self, action, selection, f"{label}[{action.name!r}]"))
         self._spec_pages = tuple(pages)
@@ -210,13 +225,16 @@ class SpecActionsMixin(admin.ModelAdmin):
     ) -> HttpResponse:
         """The change page, its context carrying ``spec_object_actions``: the object actions offered.
 
-        Each a mapping of its ``label`` and its ``url``, for the change
-        form's object tools, in declaration order.
+        Each a mapping of its ``label``, formatted as the page's title is
+        (test_a_label_is_formatted_alike_on_the_link_and_the_page), and its
+        ``url``, for the change form's object tools, in declaration order.
         """
         info = f"{self.opts.app_label}_{self.opts.model_name}"
+        # One branch to coverage: test_a_changelist_action_is_no_object_tool
+        # holds the kind, test_a_refused_principal_is_offered_no_link the offer.
         offered = [
             {
-                "label": page.action.label,
+                "label": _title(page.action, self.opts),
                 "url": reverse(
                     f"admin:{info}_{page.action.name}",
                     args=(object_id,),
@@ -237,7 +255,7 @@ class _Page:
     action: SpecAction
     selection: Parameter | None
     """The collection selector's read the selected keys fill; ``None`` on an object action."""
-    page_class: type[SpecPageBase]
+    page_class: type[_AdminPage]
     keywords: Mapping[str, Any]
     served: Callable[..., HttpResponseBase]
 
@@ -259,25 +277,51 @@ class _AdminPage(SpecPageBase):
     # is already this site's, so the chrome links within the site serving it
     # without one (test_the_chrome_links_into_the_admin_site_serving_it).
 
+    def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
+        """The page, behind the admin's own scope, asked as its change page asks it.
+
+        The admin's view or change permission first, the row's on an object
+        action, refused with a 403
+        (test_a_staff_member_without_the_admin_s_permission_is_refused,
+        test_the_admin_s_permission_is_asked_of_the_row); then an object
+        action's row from the admin's ``get_object()``, so a key outside its
+        ``get_queryset()``, which ``get_object()`` finds no row for, is a
+        404, before the spec's checks or its selector run. The change page
+        redirects such a key to the admin's index with a message instead; a
+        page acting on a row answers it as any route does a row not found. Of the 404's conditions,
+        test_another_tenant_s_object_is_not_found holds the row and every
+        changelist page the kind, a changelist action having no row to find.
+        """
+        model_admin = self.model_admin
+        object_action = self.selection is None
+        row = model_admin.get_object(request, kwargs["object_id"]) if object_action else None
+        if not model_admin.has_view_or_change_permission(request, row):
+            raise PermissionDenied
+        if object_action and row is None:
+            raise Http404(f"No {model_admin.opts.verbose_name} the admin shows has that key.")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         """The page's context inside the admin's: the site's own, ``opts``, and the action's ``title``.
 
-        ``title`` is the label formatted as the dropdown formats it, so a
-        changelist action's page is called what its entry was
-        (test_the_page_acts_on_the_selector_s_intersection_alone).
+        ``title`` is the label formatted as the dropdown and the object-tools
+        link format it, so the page is called what its entry was
+        (test_the_page_acts_on_the_selector_s_intersection_alone,
+        test_a_label_is_formatted_alike_on_the_link_and_the_page).
 
         The page's keys last, so nothing the admin carries stands in for one
         of them. ``spec_action`` is the declaration; for the breadcrumbs,
         ``object_id`` is the change page's key on an object action, and
         ``has_view_permission`` the admin's answer, as on its own pages, so a
-        principal the spec admits and the admin does not is shown no link it
-        cannot follow (test_the_breadcrumbs_link_only_what_the_admin_shows).
+        principal holding the change permission an admin answers without the
+        view one is shown no link it cannot follow
+        (test_the_breadcrumbs_link_only_what_the_admin_shows).
         """
         model_admin = self.model_admin
         return {
             **model_admin.admin_site.each_context(self.request),
             "opts": model_admin.opts,
-            "title": self.action.label % model_format_dict(model_admin.opts),
+            "title": _title(self.action, model_admin.opts),
             "spec_action": self.action,
             "object_id": self.kwargs.get("object_id"),
             "has_view_permission": model_admin.has_view_permission(self.request),
@@ -308,16 +352,35 @@ class _AdminPage(SpecPageBase):
         which it would refuse as a misconfiguration
         (test_a_key_the_parameter_refuses_is_a_bad_request). An object
         action binds nothing.
+
+        The keys are then narrowed to the rows of the admin's
+        ``get_queryset()``, as the changelist narrows the rows its own
+        actions run on, so a key outside it is never handed to the selector
+        (test_another_tenant_s_key_is_not_acted_on). Each is read as the
+        primary key reads it first, so a key the parameter takes and the
+        primary key does not is the client's 400 too, rather than the
+        database's error (test_a_key_the_primary_key_refuses_is_a_bad_request).
+        The keys bound are the coerced ones, in the order they came, so the
+        selector is handed what the parameter declares.
         """
         selection = self.selection
         if selection is None:
             return super().get_server_arguments(request)
         name = selection.name
         try:
-            selected = coerce_flat(Parameters.of(selection), {name: request.GET.getlist(name)})
+            keys = coerce_flat(Parameters.of(selection), {name: request.GET.getlist(name)})[name]
         except InvalidArguments as refused:
             raise BadRequest(str(refused.detail)) from refused
-        return ServerArguments(values=selected)
+        primary_key = self.model_admin.opts.pk
+        try:
+            read = [primary_key.to_python(key) for key in keys]
+        except ValidationError as refused:
+            raise BadRequest("; ".join(refused.messages)) from refused
+        scoped = self.model_admin.get_queryset(request).filter(pk__in=read)
+        shown = set(scoped.values_list("pk", flat=True))
+        return ServerArguments(
+            values={name: [key for key, value in zip(keys, read, strict=True) if value in shown]}
+        )
 
 
 class _AdminFormPage(_AdminPage, SpecFormView):
@@ -334,13 +397,27 @@ class _AdminConfirmPage(_AdminPage, SpecConfirmView):
     fragment_template_name = "django_spec_html/spec_confirm_fragment.html"
 
 
-def _check_declaration(label: str, action: Any, names: set[str]) -> Parameter | None:
+def _title(action: SpecAction, opts: Options[Any]) -> str:
+    """The action's label as the admin shows it, formatted as Django formats an action's description.
+
+    The one formatting of it, for the object-tools link and the page's
+    title alike, Django's dropdown formatting a changelist action's
+    description the same way. Formatted on each request, as Django formats
+    its own, so a lazily translated name is in the request's language.
+    """
+    return action.label % model_format_dict(opts)
+
+
+def _check_declaration(
+    label: str, action: Any, names: set[str], opts: Options[Any]
+) -> Parameter | None:
     """Refuse a declaration the admin could not serve, naming what is wrong; answer its selection.
 
     The page's own checks run after, when ``as_view()`` builds it, so this
-    refuses only what the admin adds: the name, the target's kind, the
-    parameter and the keywords the mixin answers for. Returns the read the
-    selected keys fill on a changelist action, ``None`` on an object action.
+    refuses only what the admin adds: the name, the label, the target's
+    kind, the parameter and the keywords the mixin answers for. Returns the
+    read the selected keys fill on a changelist action, ``None`` on an
+    object action.
     """
     if not isinstance(action, SpecAction):
         raise ImproperlyConfigured(
@@ -357,6 +434,16 @@ def _check_declaration(label: str, action: Any, names: set[str]) -> Parameter | 
         raise ImproperlyConfigured(
             f"{where}: {action.name!r} is one of the admin's own URL names for the model."
         )
+    try:
+        _title(action, opts)
+    # A lone ``%``, an unknown name and a conversion needing a value: each
+    # held by its case of test_a_label_that_does_not_format_is_refused.
+    except (ValueError, KeyError, TypeError) as refused:
+        raise ImproperlyConfigured(
+            f"{where}: the label {action.label!r} is formatted with the model's names, as "
+            f"Django formats an action's description, and does not format ({refused}); write "
+            "a literal % as %%."
+        ) from refused
     spec = action.spec
     if not isinstance(spec, ServiceSpec):
         raise ImproperlyConfigured(f"{where}: the spec must be a ServiceSpec; got {spec!r}.")
@@ -404,7 +491,7 @@ def _built(
     """
     base = _AdminFormPage if isinstance(action.spec.validator, FormValidator) else _AdminConfirmPage
     attributes = {"model_admin": model_admin, "action": action, "selection": selection}
-    page_class: type[SpecPageBase] = type(label, (base,), attributes)
+    page_class: type[_AdminPage] = type(label, (base,), attributes)
     keywords: dict[str, Any] = {"spec": action.spec, **action.page_kwargs}
     if selection is not None:
         # The binding declared with the names every request's binds, which
@@ -441,13 +528,19 @@ def _redirect(model_admin: SpecActionsMixin, action: SpecAction) -> Callable[...
 
 
 def _offered(page: _Page, request: HttpRequest) -> bool:
-    """Whether the spec's class-level check admits the request's principal, asked as the page asks it.
+    """Whether the spec's class-level check and the admin's permission admit the request's principal.
 
-    Of the page built for this request, so its own ``get_pool_seeds``
-    answers the seeds, and the check is handed this request and that page
-    as ``request`` and ``view``
-    (test_the_offer_is_asked_with_the_page_s_seeds_and_context). Advice, as
-    a page's affordances are: the page asks again on every request.
+    The spec's asked as the page asks it: of the page built for this
+    request, so its own ``get_pool_seeds`` answers the seeds, and the check
+    is handed this request and that page as ``request`` and ``view``
+    (test_the_offer_is_asked_with_the_page_s_seeds_and_context). A
+    deactivated account is refused by it, which ``admin_view`` keeps from
+    the admin's own pages and a host calling ``get_actions()`` need not
+    (test_a_deactivated_account_is_offered_nothing). Then the admin's view
+    or change permission, the class-level one, as the page asks it of the
+    row (test_a_staff_member_without_the_admin_s_permission_is_offered_nothing).
+    Advice, as a page's affordances are: the page asks again on every
+    request.
     """
     built = page.page_class(**page.keywords)
     built.setup(request)
@@ -458,6 +551,8 @@ def _offered(page: _Page, request: HttpRequest) -> bool:
             pool_seeds=built.get_pool_seeds(request),
             call_context={"request": request, "view": built},
         )
+    # Both held: NotPermitted by test_a_refused_principal_is_offered_no_entry,
+    # PrincipalUnavailable by test_a_deactivated_account_is_offered_nothing.
     except (NotPermitted, PrincipalUnavailable):
         return False
-    return True
+    return bool(page.page_class.model_admin.has_view_or_change_permission(request))
