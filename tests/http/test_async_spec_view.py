@@ -18,10 +18,13 @@ from tests.dispatch_app.models import Note
 from tests.http.utils import (
     ASYNC_FACTORY,
     DEEP_JSON,
+    HANDED_STAGES,
     Foreign,
+    Handed,
     SeesTenant,
     asking_for_tenant_spec,
     body,
+    handed_spec,
     limited_spec,
     note_spec,
     notes_spec,
@@ -294,3 +297,34 @@ def test_an_async_hook_is_refused_at_as_view(hook: str) -> None:
     with pytest.raises(ImproperlyConfigured) as refused:
         view.as_view()
     assert str(refused.value).startswith(f"Hooked.{hook} is async")
+
+
+def posted(user: Any, payload: Any) -> Any:
+    """A JSON post as ``send`` builds one, handed back so a test can name the very request."""
+    request = ASYNC_FACTORY.post("/", data=json.dumps(payload), content_type="application/json")
+    request.user = SimpleLazyObject(lambda: get_user_model().objects.get(pk=user.pk))
+    return request
+
+
+async def test_every_stage_is_handed_the_request_and_the_view(ada: Any) -> None:
+    handed = Handed()
+    note = await Note.objects.aget(owner=ada)
+    request = posted(ada, {"title": "Hi"})
+    view = AsyncSpecView.as_view(spec=handed_spec(handed), route_kwargs=("pk",))
+    assert (await view(request, pk=note.pk)).status_code == 204
+    assert handed.stages() == HANDED_STAGES
+    served = handed.one_view(request)
+    assert isinstance(served, AsyncSpecView)
+    assert served.request is request
+
+
+async def test_a_seed_resolver_reading_the_request_binds(ada: Any) -> None:
+    class Seeded(AsyncSpecView):
+        spec = titled_spec({"id": 1})
+
+        def get_pool_seeds(self, request: Any) -> PoolSeeds:
+            return self.pool_seeds.extend(asker=lambda *, request: request)
+
+    request = posted(ada, {"title": "x"})
+    assert (await Seeded.as_view()(request)).status_code == 200
+    assert Seeded.spec.service.calls[0]["asker"] is request

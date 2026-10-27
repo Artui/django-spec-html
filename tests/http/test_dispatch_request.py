@@ -11,8 +11,13 @@ import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ImproperlyConfigured
 from django_service_specs import (
+    DEFAULT_POOL_SEEDS,
     DataclassValidator,
     Grant,
+    Parameter,
+    Parameters,
+    SelectorKind,
+    SelectorSpec,
     ServerArguments,
     ServiceConflict,
     ServiceSpec,
@@ -34,13 +39,16 @@ from tests.dispatch.utils import (
 from tests.dispatch_app.models import Note
 from tests.http.utils import (
     FACTORY,
+    HANDED_STAGES,
     SPEC_OR_SOURCE,
     Conflicting,
     Foreign,
+    Handed,
     Seen,
     asking_for_tenant_spec,
     asking_spec,
     body,
+    handed_spec,
     note_spec,
     notes_spec,
     signed_in,
@@ -438,6 +446,67 @@ class TestAskedInput:
             422,
             {"detail": "Say which.", "schema": schema},
         )
+
+
+@dataclasses.dataclass
+class Asked:
+    """A Validator field named like the call's ``request``."""
+
+    request: str
+
+
+class TestTheRequestAndTheView:
+    """The call's context carries the request, and the view a host passes, to every stage."""
+
+    def test_every_stage_is_handed_the_request_and_no_view(self, ada: Any) -> None:
+        handed = Handed()
+        note = Note.objects.create(owner=ada, title="Ada's")
+        request = post(ada, {"title": "Hi"})
+        response = dispatch_request(handed_spec(handed), request, url_kwargs={"pk": note.pk})
+        assert response.status_code == 204
+        assert handed.stages() == HANDED_STAGES
+        assert handed.one_view(request) is None
+
+    def test_the_view_passed_is_the_one_every_stage_is_handed(self, ada: Any) -> None:
+        handed = Handed()
+        note = Note.objects.create(owner=ada, title="Ada's")
+        request = post(ada, {"title": "Hi"})
+        view = object()
+        response = dispatch_request(
+            handed_spec(handed), request, url_kwargs={"pk": note.pk}, view=view
+        )
+        assert response.status_code == 204
+        assert handed.stages() == HANDED_STAGES
+        assert handed.one_view(request) is view
+
+    def test_a_seed_resolver_reading_the_request_binds(self, ada: Any) -> None:
+        spec = titled_spec({"id": 1})
+        request = post(ada, {"title": "x"})
+        seeds = DEFAULT_POOL_SEEDS.extend(asker=lambda *, request: request)
+        assert dispatch_request(spec, request, pool_seeds=seeds).status_code == 200
+        assert spec.service.calls[0]["asker"] is request
+
+    def test_a_parameter_named_request_is_refused(self, ada: Any) -> None:
+        spec = SelectorSpec(
+            kind=SelectorKind.RETRIEVE,
+            selector=lambda **pool: Note.objects.none(),
+            reads=Parameters.of(Parameter("request", "string")),
+            permissions=OPEN,
+        )
+        with pytest.raises(ImproperlyConfigured, match="'request' and 'view' are the call's own"):
+            dispatch_request(spec, signed_in(FACTORY.get("/?request=x"), ada))
+
+    def test_a_field_named_request_is_read_from_data_beside_the_call_s(self, ada: Any) -> None:
+        seen: list[tuple[Any, Any]] = []
+
+        def service(*, data: Asked, request: Any) -> None:
+            seen.append((data.request, request))
+
+        spec = ServiceSpec(service=service, permissions=OPEN, validator=DataclassValidator(Asked))
+        request = post(ada, {"request": "submitted"})
+        assert dispatch_request(spec, request).status_code == 204
+        assert seen == [("submitted", request)]
+        assert seen[0][1] is request
 
 
 class TestSources:

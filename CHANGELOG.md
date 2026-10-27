@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A spec callable naming `request` or `view` is handed this request and the
+  view serving it**, on both halves. `dispatch_request` and
+  `adispatch_request` dispatch with a call context holding `request` and
+  `view`, and the pages start their one call context per request with
+  `request` and the page itself. The kernel hands each to any stage that
+  names it - a seed's resolver, a selector, a permission check, an affordance
+  condition, a `FormValidator`'s `form_kwargs`, the service - so a callable
+  written for HTTP binds here rather than receiving `None`. The pages also
+  resolve their own pool, the one their affordances and target display read,
+  against that context, so a `get_pool_seeds` resolver naming `request`
+  binds on a page's GET and on a refused post. No `request` seed is
+  registered: `SpecView.pool_seeds.reserved` is unchanged.
+- **`view=` on `dispatch_request` and `adispatch_request`**, keyword-only and
+  `None` by default, for a host's own view to pass itself. `SpecView` and
+  `AsyncSpecView` pass `view=self`.
+
+### Changed
+- **The kernel refuses a spec that declares `request` or `view` itself**, now
+  that the two are the call's: a parameter or a `kwargs` provider key of
+  either name raises `ImproperlyConfigured` on the first request, a page's GET
+  included; `as_view()` does not refuse it.
+  A Validator field of either name is not refused; it validates into `data`,
+  and a service naming `request` or `view` beside it is handed the call's
+  object, where this package used to hand it the submitted value. Read the
+  field from `data`.
+- The `django-service-specs` floor is `>=0.18.0`, the release that reads
+  `request` and `view` off the call context for every callable it binds.
+
 ## [0.3.0] — 2026-10-26
 
 ### Added

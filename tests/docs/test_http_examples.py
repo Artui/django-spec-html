@@ -38,9 +38,10 @@ from django_service_specs import (
     ServiceNotFound,
     ServiceValidationError,
     Unrestricted,
+    dispatch,
 )
 
-from django_spec_html import SpecView, UnsupportedMediaType, error_response
+from django_spec_html import SpecView, UnsupportedMediaType, dispatch_request, error_response
 from docs.examples import http
 from tests.dispatch_app.models import Note
 
@@ -223,21 +224,45 @@ class TestWhatTheRequestCarries:
         with pytest.raises(ImproperlyConfigured, match="the declared binding was checked"):
             Unbound.as_view()(request, team="red")
 
-    def test_no_request_seed_is_registered_by_default(self, ada: Any) -> None:
-        # So a spec callable requiring one raises, as it does on every reader
-        # with no request at all.
+    def test_a_callable_naming_request_is_handed_this_one_with_no_seed_registered(
+        self, member: Any
+    ) -> None:
+        # The request reaches it through the call's context, not as a seed: a
+        # reader with no request hands it ``None`` rather than refusing.
         assert "request" not in SpecView.pool_seeds.reserved
+        assert self.titles("/my-notes/", member) == ["A", "B", "C"]
+        # Another user's notes stay theirs: the request read is this one.
+        assert self.titles("/my-notes/", make_user("bo")) == []
+        # A reader with no request, here the kernel's own ``dispatch`` as the
+        # other transports call it, hands the same callable ``None``.
+        result = dispatch(http.my_notes_spec, principal=member, arguments={})
+        assert list(result.value) == []
 
-        def needs_request(*, request: Any) -> Any:
-            return Note.objects.none()
+    def test_a_host_view_passing_itself_is_the_view_a_callable_is_handed(self, member: Any) -> None:
+        handed: list[Any] = []
+
+        def needs_view(*, request: Any, view: Any) -> Any:
+            handed.append((request, view))
+            return http.my_notes(request=request)
 
         spec = SelectorSpec(
-            kind=SelectorKind.LIST, selector=needs_request, permissions=[Unrestricted()]
+            kind=SelectorKind.LIST,
+            selector=needs_view,
+            permissions=[Unrestricted()],
+            presenter=http.my_notes_spec.presenter,
         )
-        request = FACTORY.get("/")
-        request.user = ada
-        with pytest.raises(TypeError, match="required keyword-only argument: 'request'"):
-            SpecView.as_view(spec=spec)(request)
+
+        class Handing(http.MyNotes):
+            def get(self, request: Any) -> Any:
+                return dispatch_request(spec, request, view=self)
+
+        request = FACTORY.get("/my-notes/")
+        request.user = member
+        assert Handing.as_view()(request).status_code == 200
+        [(handed_request, view)] = handed
+        assert handed_request is request
+        assert isinstance(view, Handing)
+        assert view.request is request
 
 
 def _status_table() -> dict[str, int]:

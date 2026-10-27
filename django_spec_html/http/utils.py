@@ -337,10 +337,12 @@ class SpecViewBase(View):
 
         Seed what the request carries rather than the request itself -
         ``tenant=lambda: request.tenant`` - so a spec reading ``tenant`` reads
-        it from every transport that can seed one. A spec callable requiring a
-        ``request`` raises ``TypeError`` on every reader that has none: MCP,
-        the agent tools, the CLI and a task. That is why no ``request`` seed is
-        registered by default.
+        it from every transport that can seed one. No ``request`` seed is
+        registered, and none is needed: a spec callable naming ``request`` or
+        ``view`` is handed this request and this view off the call's context,
+        and ``None`` on every reader that has none - MCP, the agent tools, the
+        CLI and a task. A seed's resolver may name either too
+        (test_a_seed_resolver_reading_the_request_binds).
         """
         return self.pool_seeds
 

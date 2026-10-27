@@ -42,7 +42,14 @@ It reads the principal and the arguments, dispatches with the `grant`,
 `pool_seeds` and `unknown_arguments` it is given, and answers. The
 `route_kwargs` and `server_arguments` it also takes are
 [the route's kwargs a spec does not read](#kwargs-a-spec-does-not-read) and
-[the values the server answers for](#what-the-request-carries):
+[the values the server answers for](#what-the-request-carries). The call's
+context holds `request`, the request it was handed, and `view`, which is the
+`view=` a host's own view passes as itself and `None` where it passes nothing,
+so a spec callable naming either is handed it
+([what the request carries](#what-the-request-carries)). `SpecView` and
+`AsyncSpecView` pass themselves.
+
+The answer:
 
 - **A not-found result** is 404, `{"detail": "Not found."}`.
 - **A success** is the presented value, bare, with no envelope around it. The
@@ -275,11 +282,22 @@ docs/examples/http.py:request
 - **`get_pool_seeds(request)`** answers the seeds the call is resolved
   with, so a tenant, a locale or a team the request carries reaches a
   permission check, a selector or a Validator. **Seed what the request
-  carries, never the request itself**, and no `request` seed is registered
-  by default: a spec callable requiring `request` raises `TypeError` on
-  every reader that has none, which is MCP, the agent tools, the CLI and a
-  task, while a spec reading `team` is one definition every transport can
-  seed.
+  carries, never the request itself.** No `request` seed is registered,
+  and none is needed to reach one: a spec callable naming `request` or
+  `view` - a seed's resolver, a selector, a permission check, an affordance
+  condition, a `form_kwargs`, the service - is handed this request, and
+  the view serving it, read off the call's context. On a reader with no
+  request, which is MCP, the agent tools, the CLI and a task, the same
+  callable is handed `None`, so a spec reading `request.team` is written for
+  one transport. A spec reading `team` is one definition every transport
+  can seed, and the request reaches a callable with no hook at all:
+
+  ```python
+  --8<--
+  docs/examples/http.py:call_context
+  --8<--
+  ```
+
 - **`get_server_arguments(request)`** answers the kernel's
   [`ServerArguments`][django_service_specs.types.server_arguments.ServerArguments]:
   values the server answers for, which outrank whatever the client sent,

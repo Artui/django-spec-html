@@ -29,10 +29,13 @@ from tests.dispatch_app.models import Note
 from tests.http.utils import (
     DEEP_JSON,
     FACTORY,
+    HANDED_STAGES,
     Foreign,
+    Handed,
     SeesTenant,
     asking_for_tenant_spec,
     body,
+    handed_spec,
     limited_spec,
     note_spec,
     notes_spec,
@@ -587,6 +590,38 @@ class TestServerArguments:
             "Unchecked.get_server_arguments() binds pk and withholds nope, where "
             "server_arguments binds nothing and withholds nothing."
         )
+
+
+class TestTheRequestAndTheView:
+    """Every stage of the call is handed the request and this view, by name."""
+
+    def test_every_stage_is_handed_the_request_and_the_view(self, ada: Any) -> None:
+        handed = Handed()
+        note = Note.objects.get(owner=ada)
+        request = signed_in(
+            FACTORY.post("/", data=json.dumps({"title": "Hi"}), content_type="application/json"),
+            ada,
+        )
+        view = SpecView.as_view(spec=handed_spec(handed), route_kwargs=("pk",))
+        assert view(request, pk=note.pk).status_code == 204
+        assert handed.stages() == HANDED_STAGES
+        served = handed.one_view(request)
+        assert isinstance(served, SpecView)
+        assert served.request is request
+
+    def test_a_seed_resolver_reading_the_request_binds(self, ada: Any) -> None:
+        class Seeded(SpecView):
+            spec = titled_spec({"id": 1})
+
+            def get_pool_seeds(self, request: Any) -> PoolSeeds:
+                return self.pool_seeds.extend(asker=lambda *, request: request)
+
+        request = signed_in(
+            FACTORY.post("/", data=json.dumps({"title": "x"}), content_type="application/json"),
+            ada,
+        )
+        assert Seeded.as_view()(request).status_code == 200
+        assert Seeded.spec.service.calls[0]["asker"] is request
 
 
 class TestCsrf:

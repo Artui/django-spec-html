@@ -17,7 +17,14 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.functional import SimpleLazyObject
-from django_service_specs import Grant, Parameters, ServerArguments, ServiceSpec, UnknownArguments
+from django_service_specs import (
+    DEFAULT_POOL_SEEDS,
+    Grant,
+    Parameters,
+    ServerArguments,
+    ServiceSpec,
+    UnknownArguments,
+)
 
 from django_spec_html.http.adispatch_request import adispatch_request
 from tests.dispatch.utils import (
@@ -33,12 +40,15 @@ from tests.dispatch.utils import (
 from tests.dispatch_app.models import Note
 from tests.http.utils import (
     ASYNC_FACTORY,
+    HANDED_STAGES,
     SPEC_OR_SOURCE,
     Conflicting,
     Foreign,
+    Handed,
     asking_for_tenant_spec,
     asking_spec,
     body,
+    handed_spec,
     note_spec,
     notes_spec,
     titled_spec,
@@ -257,3 +267,34 @@ async def test_the_binding_is_applied_off_the_event_loop(ada: Any) -> None:
     )
     assert response.status_code == 200
     assert spec.service.calls[0]["data"] == {"title": "S"}
+
+
+async def test_every_stage_is_handed_the_request_and_no_view(ada: Any) -> None:
+    handed = Handed()
+    note = await Note.objects.aget(owner=ada)
+    request = post(ada, {"title": "Hi"})
+    response = await adispatch_request(handed_spec(handed), request, url_kwargs={"pk": note.pk})
+    assert response.status_code == 204
+    assert handed.stages() == HANDED_STAGES
+    assert handed.one_view(request) is None
+
+
+async def test_the_view_passed_is_the_one_every_stage_is_handed(ada: Any) -> None:
+    handed = Handed()
+    note = await Note.objects.aget(owner=ada)
+    request = post(ada, {"title": "Hi"})
+    view = object()
+    response = await adispatch_request(
+        handed_spec(handed), request, url_kwargs={"pk": note.pk}, view=view
+    )
+    assert response.status_code == 204
+    assert handed.stages() == HANDED_STAGES
+    assert handed.one_view(request) is view
+
+
+async def test_a_seed_resolver_reading_the_request_binds(ada: Any) -> None:
+    spec = titled_spec({"id": 1})
+    request = post(ada, {"title": "x"})
+    seeds = DEFAULT_POOL_SEEDS.extend(asker=lambda *, request: request)
+    assert (await adispatch_request(spec, request, pool_seeds=seeds)).status_code == 200
+    assert spec.service.calls[0]["asker"] is request

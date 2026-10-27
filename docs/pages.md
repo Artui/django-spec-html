@@ -551,13 +551,18 @@ presents a display resolves it once more, for the presenter's. So a resolver ans
 different one. Write seed resolvers that answer the same each time.
 
 **One call context per request.** The page creates one plain dict for each
-request and hands that same object to every kernel call it makes: the
+request, starting with `request`, this request, and `view`, this page, and
+hands that same object to every kernel call it makes: the
 class-level check, the target's lookup and its object-level or scope check,
 the affordances, the form's `form_kwargs` and dispatch. So a check, a
 condition, `form_kwargs` or the service declaring
 [`call_context`](https://artui.github.io/django-service-specs/dispatching/)
 reads what an earlier stage of the same request put there, and each request
-gets a dict of its own.
+gets a dict of its own. A selector, a check, a condition, a seed's resolver,
+`form_kwargs` or the service naming `request` or `view` is handed the one in
+it, as on [the JSON views](http.md#what-the-request-carries), and the
+display's presenter reads the page's seeds as its ambient, never the
+context.
 
 The checks are the JSON views': `as_view()` refuses an `async def` hook,
 checks `server_arguments` with the kernel's `check_server_arguments` against
