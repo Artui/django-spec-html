@@ -19,6 +19,9 @@ answered with a fragment of the same page at the same URL: a refusal the page
 re-renders is the form at 200, since htmx swaps no 4xx by default, a denial is
 raised for the host's handlers as on the page, and a success is `HX-Redirect`
 or a result fragment rendered in place.
+`SpecActionsMixin` serves the same pages inside the Django admin, as a
+`ModelAdmin`'s actions: an object action linked from a row's change form, and a
+changelist action over the rows ticked, each within the admin's own scope.
 Beside the pages, `SpecView`, `AsyncSpecView` and `dispatch_request` serve a
 spec as JSON, for a script or a `fetch()`.
 

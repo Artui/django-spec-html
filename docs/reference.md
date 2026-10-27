@@ -68,6 +68,16 @@ This package defines none. The argument reader reads one of the kernel's:
         - served_spec
 ::: django_spec_html.types.outcome.Outcome
 
+## The admin
+
+::: django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin
+    options:
+      members:
+        - get_urls
+        - get_actions
+        - change_view
+::: django_spec_html.types.spec_action.SpecAction
+
 ## JSON views
 
 ::: django_spec_html.http.spec_view.SpecView

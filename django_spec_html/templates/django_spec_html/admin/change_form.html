@@ -1,0 +1,8 @@
+{% extends "admin/change_form.html" %}
+{% comment %}
+The admin's change form, with a link to each object action the spec admits
+the signed-in principal to, ahead of the admin's own object tools. A
+ModelAdmin with a change_form_template of its own extends this one.
+{% endcomment %}
+{% block object-tools-items %}{% for action in spec_object_actions %}<li><a href="{{ action.url }}">{{ action.label }}</a></li>
+{% endfor %}{{ block.super }}{% endblock %}
