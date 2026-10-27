@@ -2,7 +2,8 @@
 
 A [`django-service-specs`](https://artui.github.io/django-service-specs/) spec served over plain Django, with no API
 framework between the request and the kernel's
-[`dispatch`](https://artui.github.io/django-service-specs/dispatching/). Two halves:
+[`dispatch`](https://artui.github.io/django-service-specs/dispatching/). Two halves,
+and the admin face the pages are served from too:
 
 - **[Pages](pages.md).**
   [`SpecFormView`][django_spec_html.views.spec_form_view.SpecFormView] serves
@@ -15,9 +16,14 @@ framework between the request and the kernel's
   [`AsyncSpecView`][django_spec_html.http.async_spec_view.AsyncSpecView] and
   the functions they are built from serve a spec as JSON, for a script or a
   `fetch()`.
+- **[In the admin](admin.md).**
+  [`SpecActionsMixin`][django_spec_html.model_admin.spec_actions_mixin.SpecActionsMixin]
+  serves a spec's page as a Django admin action, on one row from its change
+  page or on the rows selected in its changelist, inside the admin's chrome
+  and its scope.
 
 ```python
-from django_spec_html import SpecFormView, SpecView
+from django_spec_html import SpecActionsMixin, SpecFormView, SpecView
 ```
 
 ## Installing

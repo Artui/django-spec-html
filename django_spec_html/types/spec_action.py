@@ -31,9 +31,11 @@ class SpecAction:
             ``FormValidator`` makes its page ``SpecFormView``'s, no Validator
             ``SpecConfirmView``'s.
         label: What the admin calls it: the object-tools link, the dropdown
-            entry and the page's title. In the dropdown it is formatted as
-            Django formats an action's description, with the model's
-            ``verbose_name`` and ``verbose_name_plural``.
+            entry and the page's title. Formatted in each as Django formats
+            an action's description, with the model's ``verbose_name`` and
+            ``verbose_name_plural``, so a literal ``%`` is written ``%%``,
+            and a label that does not format is refused when the admin is
+            registered.
         parameter: The target selector's read the admin fills: the change
             page's object id for an object action, the selected primary keys,
             an ``array``, for a changelist action.

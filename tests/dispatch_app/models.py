@@ -6,6 +6,9 @@ and a write to be rolled back. The app has no migrations, so the test database
 creates its table directly, as Django does for any unmigrated app.
 
 ``archived`` is the row state an affordance condition reads.
+
+``Tag`` is keyed by a string, for the admin's URLs, which quote a key
+holding a character they escape.
 """
 
 from __future__ import annotations
@@ -24,3 +27,11 @@ class Note(models.Model):
     class Meta:
         app_label = "dispatch_app"
         ordering = ("pk",)
+
+
+class Tag(models.Model):
+    key = models.CharField(max_length=50, primary_key=True)
+    archived = models.BooleanField(default=False)
+
+    class Meta:
+        app_label = "dispatch_app"
