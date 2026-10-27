@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import pkgutil
+import subprocess
+import sys
 from types import ModuleType
 
 import django_service_specs
@@ -26,6 +28,7 @@ def test_the_package_has_the_subpackages_it_re_exports() -> None:
     # with nothing checked.
     assert sorted(package.__name__ for package in _subpackages()) == [
         "django_spec_html.http",
+        "django_spec_html.model_admin",
         "django_spec_html.types",
         "django_spec_html.views",
     ]
@@ -58,10 +61,12 @@ def test_the_root_names_nothing_it_does_not_define() -> None:
     assert [name for name in django_spec_html.__all__ if not hasattr(django_spec_html, name)] == []
 
 
-def test_the_root_serves_the_two_halves_and_the_version() -> None:
+def test_the_root_serves_the_two_halves_the_admin_face_and_the_version() -> None:
     assert sorted(django_spec_html.__all__) == [
         "AsyncSpecView",
         "Outcome",
+        "SpecAction",
+        "SpecActionsMixin",
         "SpecConfirmView",
         "SpecFormSetView",
         "SpecFormView",
@@ -80,6 +85,40 @@ def test_the_root_serves_the_two_halves_and_the_version() -> None:
         django_spec_html.__version__
         == importlib.import_module("django_spec_html.version").__version__
     )
+
+
+_WITHOUT_THE_ADMIN = """
+import django
+from django.conf import settings
+
+settings.configure(
+    INSTALLED_APPS=["django.contrib.contenttypes", "django.contrib.auth", "django_spec_html"],
+    DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}},
+)
+django.setup()
+
+import django_spec_html
+from django.apps import apps
+
+assert not apps.is_installed("django.contrib.admin")
+print(django_spec_html.SpecActionsMixin.__name__)
+"""
+
+
+def test_the_package_imports_in_a_project_without_the_admin() -> None:
+    # The root re-exports the admin face, so importing the package imports
+    # ``django.contrib.admin``, and does so while the app registry is being
+    # populated, since the package is an installed app. A project that does
+    # not install the admin must still be able to install this package, so
+    # the import may touch none of the admin's models. A process of its own,
+    # as this suite's settings install the admin.
+    ran = subprocess.run(
+        [sys.executable, "-c", _WITHOUT_THE_ADMIN],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (ran.returncode, ran.stdout, ran.stderr) == (0, "SpecActionsMixin\n", "")
 
 
 _MOVED_NAMES = [
