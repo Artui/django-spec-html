@@ -10,6 +10,7 @@ the chrome resolves without naming its site resolves into the wrong one.
 
 from __future__ import annotations
 
+import re
 import warnings
 from typing import Any
 
@@ -528,6 +529,35 @@ class TestTheChangelistAction:
         url = "/keyed/dispatch_app/note/actions/capped/"
         assert client(editor).get(f"{url}?pks={note.pk}").status_code == 200
         assert client(editor).get(f"{url}?pks={note.pk}&pks={note.pk + 1}").status_code == 400
+
+    def test_a_selection_past_the_kernel_s_array_length_is_a_bad_request(
+        self, editor: Any, note: Note, settings: Any
+    ) -> None:
+        # Where the parameter declares no max_length, the kernel's setting is
+        # the cap, read on the request.
+        settings.SERVICE_SPECS_MAX_ARRAY_LENGTH = 2
+        url = page("archive_all")
+        assert client(editor).get(f"{url}?pks={note.pk}&pks={note.pk + 1}").status_code == 200
+        three = f"{url}?pks={note.pk}&pks={note.pk + 1}&pks={note.pk + 2}"
+        assert client(editor).get(three).status_code == 400
+        assert client(editor).post(three).status_code == 400
+        assert Note.objects.get().archived is False
+
+    def test_the_form_posts_back_to_the_url_carrying_the_selection(
+        self, editor: Any, note: Note
+    ) -> None:
+        # The selection is in the query string alone, so a browser keeps it
+        # only by posting to the page's full URL: the form names no action,
+        # on the page and on the page a refusal re-renders.
+        url = run_action(editor, "retitle_all", note)["Location"]
+        shown = client(editor).get(url).content.decode()
+        refused = client(editor).post(url, {"title": ""})
+        assert refused.status_code == 400
+        for body in (shown, refused.content.decode()):
+            forms_posted = re.findall(r'<form method="post"[^>]*>', body)
+            assert len(forms_posted) == 1
+            assert "action=" not in forms_posted[0]
+        assert Note.objects.get().title == "Buy milk"
 
     def test_no_selection_is_the_empty_set(self, editor: Any, note: Note) -> None:
         response = client(editor).get(page("archive_all"))
