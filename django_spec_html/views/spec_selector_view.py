@@ -417,8 +417,9 @@ def _check_paging(label: str, spec: SelectorSpec, configured: Mapping[str, Any])
         raise ImproperlyConfigured(
             f"{label}.page_kwarg must be the query key naming the page; got {page_kwarg!r}."
         )
-    # One branch to coverage, so each condition is held by its own case of
-    # test_a_page_size_kwarg_that_is_no_key_is_refused: ``empty`` and
+    # One branch to coverage, so each condition is held by its own test:
+    # every view with no size key holds the ``None`` test, and the cases of
+    # test_a_page_size_kwarg_that_is_no_key_is_refused the rest: ``empty`` and
     # ``a-number`` the first, ``the-page-key`` the second.
     if size_kwarg is not None and (not _is_key(size_kwarg) or size_kwarg == page_kwarg):
         raise ImproperlyConfigured(
@@ -427,13 +428,17 @@ def _check_paging(label: str, spec: SelectorSpec, configured: Mapping[str, Any])
         )
     for name in ("paginate_by", "max_page_size"):
         size = configured[name]
-        # One branch to coverage, so each condition is held by its own case
-        # of test_a_size_that_is_no_positive_int_is_refused: ``a-string`` the
-        # first, ``true`` the second (a bool is an int), ``zero`` the third.
+        # One branch to coverage, so each condition is held by its own test:
+        # every view leaving a size unset holds the ``None`` test, and the
+        # cases of test_a_size_that_is_no_positive_int_is_refused the rest:
+        # ``a-string`` the first, ``true`` the second (a bool is an int),
+        # ``zero`` the third.
         if size is not None and (not isinstance(size, int) or isinstance(size, bool) or size < 1):
             raise ImproperlyConfigured(
                 f"{label}.{name} must be None or a positive int; got {size!r}."
             )
+    # One branch to coverage: every view with no size key holds the first
+    # condition, and test_it_is_read_and_bounded the second.
     if size_kwarg is not None and configured["max_page_size"] is None:
         raise ImproperlyConfigured(
             f"{label}.page_size_kwarg lets a client choose the page size, and max_page_size "
@@ -441,11 +446,8 @@ def _check_paging(label: str, spec: SelectorSpec, configured: Mapping[str, Any])
         )
     if spec.kind is not SelectorKind.LIST:
         return
-    taken = sorted(
-        name
-        for name in (page_kwarg, size_kwarg)
-        if name is not None and name in spec.parameters().names()
-    )
+    # An unset size key is ``None``, which names no parameter.
+    taken = sorted(name for name in (page_kwarg, size_kwarg) if name in spec.parameters().names())
     if taken:
         raise ImproperlyConfigured(
             f"{label} pages by {', '.join(taken)}, which the spec declares as a parameter: the "
@@ -457,6 +459,8 @@ def _check_paging(label: str, spec: SelectorSpec, configured: Mapping[str, Any])
 
 def _check_table(label: str, spec: SelectorSpec, order_by_field: Any) -> None:
     """Refuse a ``table_order_by_field`` the spec does not declare, which every header link would send."""
+    # One branch to coverage: every view with no table holds the first
+    # condition, and test_a_header_link_is_a_query_the_spec_reads the second.
     if order_by_field is None or order_by_field in spec.parameters().names():
         return
     raise ImproperlyConfigured(

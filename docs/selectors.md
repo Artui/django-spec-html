@@ -33,8 +33,9 @@ docs/examples/spec_selector.py:urls
 The module is a whole project's URLconf over the shipped templates, so it
 serves real pages: set `ROOT_URLCONF = "docs.examples.spec_selector"`, list
 `django_spec_html`, `django_tables2` and `tests.adapter_app` in
-`INSTALLED_APPS`, migrate, call `docs.examples.spec_selector.seed()` once from
-a shell, and open `/books/`.
+`INSTALLED_APPS`, run `manage.py migrate --run-syncdb` (the test app ships
+no migrations), call `docs.examples.spec_selector.seed()` once from
+`manage.py shell`, and open `/books/`.
 
 ## What the page renders
 

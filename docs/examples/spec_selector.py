@@ -2,8 +2,9 @@
 
 The module is a whole URLconf over the shipped templates, so it serves real
 pages: set ``ROOT_URLCONF = "docs.examples.spec_selector"``, add
-``django_tables2`` to ``INSTALLED_APPS`` beside ``django_spec_html``, call
-``seed()`` once, and open ``/books/``. ``tests/docs/test_spec_selector_examples.py``
+``django_tables2`` and ``tests.adapter_app`` to ``INSTALLED_APPS`` beside
+``django_spec_html``, run ``migrate --run-syncdb`` (the test app ships no
+migrations), call ``seed()`` once, and open ``/books/``. ``tests/docs/test_spec_selector_examples.py``
 requests each page as a browser would and follows the links it renders, so
 ``docs/selectors.md`` cannot describe a page, a link or a query count the
 view does not make.
