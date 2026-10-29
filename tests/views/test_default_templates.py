@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Annotated, Any
 
+import django_filters
 import pytest
 from django import forms
 from django.core.exceptions import ImproperlyConfigured
@@ -36,7 +37,8 @@ from django_service_specs import (
 from django_spec_html.views.spec_confirm_view import SpecConfirmView
 from django_spec_html.views.spec_form_set_view import SpecFormSetView
 from django_spec_html.views.spec_form_view import SpecFormView
-from django_spec_html.views.utils import SpecPageBase
+from django_spec_html.views.spec_selector_view import SpecSelectorView
+from django_spec_html.views.utils import SpecPageBase, SpecRequestBase
 from tests.dispatch.utils import OPEN, PK, Record, make_user, note_by_pk
 from tests.dispatch_app.models import Note
 from tests.http.utils import FACTORY, signed_in
@@ -129,8 +131,12 @@ def raising(exc: Exception) -> Callable[..., Any]:
     return service
 
 
-def built(view_class: type[SpecPageBase], spec: ServiceSpec, **initkwargs: Any) -> Any:
-    initkwargs.setdefault("success_url", "/done/")
+def built(
+    view_class: type[SpecRequestBase], spec: ServiceSpec | SelectorSpec, **initkwargs: Any
+) -> Any:
+    # A page that writes leaves for somewhere; the selector page has nowhere to go.
+    if issubclass(view_class, SpecPageBase):
+        initkwargs.setdefault("success_url", "/done/")
     if "pk" in spec.parameters().names():
         initkwargs.setdefault("route_kwargs", ("pk",))
     return view_class.as_view(spec=spec, **initkwargs)
@@ -176,10 +182,11 @@ class TestTheShippedNames:
             (SpecFormView, "spec_form.html", "spec_form_fragment.html"),
             (SpecFormSetView, "spec_form_set.html", "spec_form_set_fragment.html"),
             (SpecConfirmView, "spec_confirm.html", "spec_confirm_fragment.html"),
+            (SpecSelectorView, "spec_selector.html", "spec_selector_fragment.html"),
         ],
     )
     def test_the_shipped_page_s_fragment_is_its_own_file(
-        self, view_class: type[SpecPageBase], page: str, fragment: str
+        self, view_class: type[SpecRequestBase], page: str, fragment: str
     ) -> None:
         view = view_class()
         assert view.get_template_names() == [f"django_spec_html/{page}"]
@@ -548,6 +555,115 @@ class TestTheConfirmationPage:
         assert "<button" in rendered
 
 
+def listed(**kwargs: Any) -> Any:
+    kwargs.setdefault("presenter", DataclassPresenter(NoteOut))
+    return SpecSelectorView.as_view(
+        spec=SelectorSpec(
+            kind=SelectorKind.LIST,
+            selector=lambda: Note.objects.all(),
+            permissions=OPEN,
+            filter_set=kwargs.pop("filter_set", None),
+            presenter=kwargs.pop("presenter"),
+        ),
+        **kwargs,
+    )
+
+
+class TitleFilters(django_filters.FilterSet):
+    title = django_filters.CharFilter(lookup_expr="icontains")
+    archived = django_filters.BooleanFilter(widget=forms.HiddenInput)
+
+    class Meta:
+        model = Note
+        fields: list[str] = []
+
+
+class TestTheSelectorPage:
+    def test_get_renders_each_row_by_its_label_in_a_document(self, ada: Any, note: Note) -> None:
+        rendered = body(get(listed(), ada))
+
+        assert rendered.startswith(DOCUMENT)
+        assert "<title>Results</title>" in rendered
+        assert '<div id="spec-results"><ul>\n<li>Buy milk</li>' in rendered
+        assert "<form" not in rendered
+
+    def test_a_row_with_no_label_is_its_fields_escaped(self, ada: Any) -> None:
+        Note.objects.create(owner=ada, title="<b>milk</b>")
+
+        rendered = body(get(listed(presenter=DataclassPresenter(UnlabelledOut)), ada))
+
+        assert "<dt>title</dt><dd>&lt;b&gt;milk&lt;/b&gt;</dd>" in rendered
+
+    def test_no_rows_says_nothing_matches(self, ada: Any) -> None:
+        assert "<p>Nothing matches.</p>" in body(get(listed(), ada))
+
+    def test_the_page_links_to_its_neighbours(self, ada: Any) -> None:
+        for title in ("a", "b", "c"):
+            Note.objects.create(owner=ada, title=title)
+        view = listed(paginate_by=1)
+
+        rendered = body(view(signed_in(FACTORY.get("/?page=2"), ada)))
+
+        assert (
+            '<nav><a href="?page=1" rel="prev">Previous</a> Page 2 of 3 '
+            '<a href="?page=3" rel="next">Next</a></nav>'
+        ) in rendered
+
+    def test_the_filter_form_is_a_get_showing_its_fields_and_no_error(self, ada: Any) -> None:
+        view = listed(filter_set=TitleFilters)
+
+        rendered = body(view(signed_in(FACTORY.get("/?archived=maybe"), ada)))
+
+        form = rendered[rendered.index("<form") : rendered.index("</form>")]
+        assert form.startswith('<form method="get">')
+        assert (
+            '<label for="id_title">Title contains:</label> <input type="text" name="title"' in form
+        )
+        assert '<input type="hidden" name="archived" value="maybe"' in form
+        assert "errorlist" not in form
+        assert '<ul class="errorlist"><li>archived: Enter true, false, 1 or 0.</li></ul>' in (
+            rendered
+        )
+
+    def test_a_refusal_s_message_is_escaped_and_its_code_is_on_the_list(self, ada: Any) -> None:
+        def closed() -> Any:
+            raise ActionUnavailable(code="shut", message="<b>Closed</b>")
+
+        view = SpecSelectorView.as_view(
+            spec=SelectorSpec(kind=SelectorKind.LIST, selector=closed, permissions=OPEN),
+            display_rows=False,
+        )
+
+        rendered = body(get(view, ada))
+
+        assert '<ul class="errorlist" data-code="shut"><li>&lt;b&gt;Closed&lt;/b&gt;</li></ul>' in (
+            rendered
+        )
+
+    def test_the_fragment_is_the_results_alone(self, ada: Any, note: Note) -> None:
+        rendered = body(get(listed(paginate_by=5), ada, HTMX))
+
+        assert rendered.startswith("<ul>\n<li>Buy milk</li>")
+        assert DOCUMENT not in rendered
+        assert "<form" not in rendered
+
+    def test_the_instance_page_shows_its_one_row_and_no_paging(self, ada: Any, note: Note) -> None:
+        view = SpecSelectorView.as_view(
+            spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE,
+                selector=note_by_pk,
+                permissions=OPEN,
+                reads=PK,
+                presenter=DataclassPresenter(NoteOut),
+            )
+        )
+
+        rendered = body(get(view, ada, pk=note.pk))
+
+        assert "<li>Buy milk</li>" in rendered
+        assert "<nav>" not in rendered
+
+
 class TestAPageNoEngineCanRender:
     @pytest.mark.parametrize(
         ("view_class", "spec", "page"),
@@ -555,10 +671,15 @@ class TestAPageNoEngineCanRender:
             (SpecFormView, form_spec(), "spec_form.html"),
             (SpecFormSetView, many_spec(), "spec_form_set.html"),
             (SpecConfirmView, confirm_spec(), "spec_confirm.html"),
+            (
+                SpecSelectorView,
+                dataclasses.replace(EVERY_NOTE, presenter=DataclassPresenter(NoteOut)),
+                "spec_selector.html",
+            ),
         ],
     )
     def test_is_refused_at_as_view_without_the_app(
-        self, view_class: type[SpecPageBase], spec: ServiceSpec, page: str
+        self, view_class: type[SpecRequestBase], spec: ServiceSpec | SelectorSpec, page: str
     ) -> None:
         with (
             override_settings(INSTALLED_APPS=WITHOUT_THE_APP),
