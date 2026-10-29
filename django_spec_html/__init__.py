@@ -1,6 +1,6 @@
 """A django-service-specs spec as a server-rendered page, plus the plain-Django JSON views.
 
-``views`` serves a spec as the page its form is, ``model_admin`` serves those
+``views`` serves a spec as the page its form is, or a read as its rows, ``model_admin`` serves those
 pages as a ``ModelAdmin``'s actions, and ``http`` serves a spec as JSON with
 nothing between the request and the kernel's ``dispatch``. ``types`` holds
 ``Outcome``, the vocabulary a page's post ends in, and ``SpecAction``, the
@@ -25,6 +25,7 @@ from django_spec_html.version import __version__
 from django_spec_html.views.spec_confirm_view import SpecConfirmView
 from django_spec_html.views.spec_form_set_view import SpecFormSetView
 from django_spec_html.views.spec_form_view import SpecFormView
+from django_spec_html.views.spec_selector_view import SpecSelectorView
 
 __all__ = [
     "AsyncSpecView",
@@ -34,6 +35,7 @@ __all__ = [
     "SpecConfirmView",
     "SpecFormSetView",
     "SpecFormView",
+    "SpecSelectorView",
     "SpecView",
     "UnsupportedMediaType",
     "__version__",

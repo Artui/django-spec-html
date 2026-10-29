@@ -1,0 +1,13 @@
+{% extends "django_spec_html/base.html" %}{% load i18n %}
+{% block title %}{% translate "Results" %}{% endblock %}
+{% block content %}{% comment %}
+A selector's page: its filter form, a plain GET that works with no script,
+and its results, which an htmx request is answered with alone. The form shows
+its fields and no errors of its own: a refusal's every message is in the
+results, which is the part a live search swaps.
+{% endcomment %}{% if filter %}
+<form method="get">
+{% for field in filter.form %}{% if field.is_hidden %}{{ field }}{% else %}<p>{{ field.label_tag }} {{ field }}</p>{% endif %}
+{% endfor %}<button type="submit">{% translate "Search" %}</button>
+</form>
+{% endif %}<div id="spec-results">{% include "django_spec_html/spec_selector_fragment.html" %}</div>{% endblock %}

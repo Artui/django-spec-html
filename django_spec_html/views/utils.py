@@ -86,6 +86,7 @@ from django_service_specs import (
     enforce_affordances,
     project_payload,
     resolve_target,
+    row_affordance_answers,
     unmet_operation_affordance,
 )
 
@@ -115,14 +116,18 @@ _SPEC_FORM: Final = "spec-form"
 _SPEC_RESULT: Final = "spec-result"
 """The fragment a success is answered with in place, where the fragment template defines one."""
 
+SPEC_RESULTS: Final = "spec-results"
+"""The fragment a selector page's results are, addressed as ``<template_name>#spec-results`` by default."""
+
 _SHIPPED_FRAGMENTS: Final = MappingProxyType(
     {
         "django_spec_html/spec_form.html": "django_spec_html/spec_form_fragment.html",
         "django_spec_html/spec_form_set.html": "django_spec_html/spec_form_set_fragment.html",
         "django_spec_html/spec_confirm.html": "django_spec_html/spec_confirm_fragment.html",
+        "django_spec_html/spec_selector.html": "django_spec_html/spec_selector_fragment.html",
     }
 )
-"""Each page this package ships, a view's ``template_name`` by default, and the file its form is.
+"""Each page this package ships, a view's ``template_name`` by default, and the file its fragment is.
 
 A file of its own rather than a ``spec-form`` ``{% partialdef %}`` inside
 the page, because below Django 6.0 a page using that tag fails to parse
@@ -492,7 +497,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
             # The target is shown again, and a set counted again, here and
             # never on a success: a post that redirects renders nothing.
             context = {
-                **_refusal_code(refused),
+                **refusal_code(refused),
                 **self._target_context(spec, principal, target, served, None),
             }
             if requested is not None:
@@ -1063,7 +1068,7 @@ def _found(
 
 
 def with_binding(
-    spec: ServiceSpec, arguments: Mapping[str, Any], server: ServerArguments | None
+    spec: ServiceSpec | SelectorSpec, arguments: Mapping[str, Any], server: ServerArguments | None
 ) -> Mapping[str, Any]:
     """``arguments`` under ``server``, by the kernel's ``apply_server_arguments``, or as they are with no binding."""
     if server is None:
@@ -1244,7 +1249,7 @@ def _without_handles(payload: Any, projection: AudienceProjection) -> Any:
     }
 
 
-def _refusal_code(refused: DispatchError | ServiceError) -> dict[str, str]:
+def refusal_code(refused: DispatchError | ServiceError) -> dict[str, str]:
     """The refusal's ``code`` under that name, for a refusal carrying one, as ``error_response`` puts it in the body."""
     if isinstance(refused, ActionUnavailable):
         return {"code": refused.code}
@@ -1351,6 +1356,53 @@ def _wire(field: forms.Field, value: Any) -> Any:
     if isinstance(typed, float) and not math.isfinite(typed):
         return value
     return typed
+
+
+_ANSWERS: Final = "_django_spec_html_answers"
+"""The attribute a served row carries its affordance answers under, for the ``available`` filter.
+
+Underscored, so a template cannot read it past the filter, and named for this
+package, so it takes no name a model or an annotation could hold."""
+
+
+class _AnsweredRow(dict):
+    """A mapping row's copy, which can carry the answers a ``dict`` cannot hold as an attribute.
+
+    A copy rather than the row, as the kernel's ``rows_with_affordances`` adds
+    a mapping's answers to a new mapping and leaves the selector's own object
+    alone: a list a selector returns may be a module's constant, which a page
+    must not write to (test_a_mapping_row_is_copied_and_the_selector_s_own_left_alone).
+    A template and a table read its keys as the row's.
+    """
+
+
+def answered_rows(spec: SelectorSpec, rows: list[Any]) -> list[Any]:
+    """``rows``, each carrying its affordance answers for the ``available`` filter, read once here.
+
+    The answers are the kernel's ``row_affordance_answers``, which reads the
+    flags dispatch annotated in bulk, so asking costs no query whatever the
+    number of rows or of affordances. A model instance carries them as an
+    attribute; a mapping row is copied into one that can. A row that takes no
+    attribute - a tuple from ``values_list()``, a frozen dataclass - is
+    served as it is, carrying none, and the filter says so when asked about
+    one (test_a_row_that_takes_no_attribute_is_served_without_answers). The
+    kernel refuses a declared condition on any row but an instance or a
+    mapping before this is reached, so such a row's spec declares no
+    affordances and its answers would have been empty.
+    """
+    answered: list[Any] = []
+    for row in rows:
+        answers = row_affordance_answers(spec, row)
+        carrier = _AnsweredRow(row) if isinstance(row, Mapping) else row
+        with suppress(AttributeError):
+            setattr(carrier, _ANSWERS, answers)
+        answered.append(carrier)
+    return answered
+
+
+def row_answers(row: Any) -> dict[str, dict[str, Any]] | None:
+    """The answers ``answered_rows`` put on ``row``, or ``None`` for a row it never served."""
+    return getattr(row, _ANSWERS, None)
 
 
 def refusal_tree(refused: DispatchError | ServiceError) -> Mapping[Any, Any]:

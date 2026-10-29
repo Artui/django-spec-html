@@ -92,6 +92,11 @@ dev = [
     # setting on those versions. 23.3 is the first release with partialdef
     # and its inline argument; earlier ones spell the tag startpartial.
     "django-template-partials>=23.3",
+    # The selector page composes a host's django-tables2 ``Table`` and never
+    # imports it, so the package declares no extra for it: the tests and the
+    # selector example build a real one. 2.7.0 is the first release
+    # supporting Django 5.0.
+    "django-tables2>=2.7.0",
 ]
 docs = [
     "mkdocs>=1.6.0",
