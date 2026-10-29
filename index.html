@@ -428,6 +428,33 @@
   
   
     <li class="md-nav__item">
+      <a href="selectors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serving a read
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="admin/" class="md-nav__link">
         
   
@@ -576,6 +603,10 @@ and the admin face the pages are served from too:</p>
   in on. A refused post comes back as the page again, with the refusal placed
   on its form. An htmx request is answered with a fragment of the same page
   (<a href="pages/#an-htmx-request">an htmx request</a>).</li>
+<li><strong><a href="selectors/">Serving a read</a>.</strong>
+  <a class="autorefs autorefs-internal" title="SpecSelectorView" href="reference/#django_spec_html.views.spec_selector_view.SpecSelectorView"><code>SpecSelectorView</code></a>
+  serves a selector spec as a list page, filtered and paged, or as one row's
+  page, and the <code>available</code> filter asks each row what its operations allow.</li>
 <li><strong><a href="http/">JSON views</a>.</strong>
   <a class="autorefs autorefs-internal" title="SpecView" href="reference/#django_spec_html.http.spec_view.SpecView"><code>SpecView</code></a>,
   <a class="autorefs autorefs-internal" title="AsyncSpecView" href="reference/#django_spec_html.http.async_spec_view.AsyncSpecView"><code>AsyncSpecView</code></a> and
@@ -587,13 +618,13 @@ and the admin face the pages are served from too:</p>
   page or on the rows selected in its changelist, inside the admin's chrome
   and its scope.</li>
 </ul>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_spec_html</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpecActionsMixin</span><span class="p">,</span> <span class="n">SpecFormView</span><span class="p">,</span> <span class="n">SpecView</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_spec_html</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpecActionsMixin</span><span class="p">,</span> <span class="n">SpecFormView</span><span class="p">,</span> <span class="n">SpecSelectorView</span><span class="p">,</span> <span class="n">SpecView</span>
 </span></code></pre></div>
 <h2 id="installing">Installing<a class="headerlink" href="#installing" title="Permanent link">&para;</a></h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span>django-spec-html
 </span></code></pre></div>
 <p>It installs <a href="https://artui.github.io/django-service-specs/"><code>django-service-specs</code></a>, the kernel whose specs it serves,
-from 0.18.0, on Python 3.10 and Django 4.2 or later. The JSON views need no
+from 0.20.0, on Python 3.10 and Django 4.2 or later. The JSON views need no
 entry in <code>INSTALLED_APPS</code>; the pages' default templates are found as any app's
 are, so list <code>django_spec_html</code> there to use them, or give each page a
 <code>template_name</code> of its own (<a href="pages/#the-pages-template">the page's template</a>).</p>
