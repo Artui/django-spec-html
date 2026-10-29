@@ -45,6 +45,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a list page, a table page with a column asking each row what it offers, an
   instance page and the confirmation page a row links to.
 
+### Changed
+- **A query string and a form are read by the kernel's `flat_arguments`.**
+  `request_arguments` reads one through the kernel's reader rather than this
+  package's own copy of it, with the same rules: the comma split for typed
+  arrays, a blank as absent unless `""` is a value the parameter takes, an
+  array read no further than one past its cap, and the CSRF field dropped.
+- **Requires `django-service-specs>=0.20.0`**, the release carrying that
+  reader; the list pages need 0.19.0's `row_affordance_answers`.
+
+### Fixed
+- **A changelist action's selection is read by the same flat rules.** The
+  admin page read its selected keys with `getlist` alone, so `?pks=1,2` was
+  one key the parameter refused rather than two, a blank selection was a
+  malformed key rather than none, and a comma list was not held to the
+  array's cap until after it was split.
+
 ## [0.5.0] — 2026-10-27
 
 ### Added

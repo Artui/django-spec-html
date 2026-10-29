@@ -634,6 +634,21 @@ class TestTheChangelistAction:
         assert client(editor).post(f"{page('archive_all')}?pks=abc").status_code == 400
         assert Note.objects.get().archived is False
 
+    def test_a_comma_list_selection_is_read_as_its_keys(self, editor: Any, note: Note) -> None:
+        # The selection is read by the flat rules every query string is, so a
+        # comma list of integer keys is its elements rather than one key the
+        # parameter refuses.
+        other = Note.objects.create(owner=editor, title="Buy bread")
+        url = f"{page('archive_all')}?pks={note.pk},{other.pk}"
+        assert client(editor).get(url).context_data["target_count"] == 2
+        assert client(editor).post(url).status_code == 302
+        assert Note.objects.filter(archived=True).count() == 2
+
+    def test_a_blank_selection_is_no_keys(self, editor: Any, note: Note) -> None:
+        # A blank value is absent under the flat rules, so it selects nothing
+        # rather than being refused as a malformed key.
+        assert client(editor).get(f"{page('archive_all')}?pks=").context_data["target_count"] == 0
+
     def test_a_selection_past_the_parameter_s_length_is_a_bad_request(
         self, editor: Any, note: Note
     ) -> None:

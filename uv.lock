@@ -461,16 +461,16 @@ wheels = [
 
 [[package]]
 name = "django-service-specs"
-version = "0.19.0"
+version = "0.20.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django", version = "5.2.18", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "django", version = "6.1.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a6/87/e675305c449d1327b3807177f6798d7e972941654c6e1124719f47d8351f/django_service_specs-0.19.0.tar.gz", hash = "sha256:5bc5d1625fa96779329af8c0eaccd6ec382108822145237ec3a9d5bbd279ee9b", size = 1046173, upload-time = "2026-10-28T06:52:01.711Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/33/c6/ef2aabba656bc6d5bd8a9a8d86b65e41158c8001ea4f170dd5332f310bc2/django_service_specs-0.20.0.tar.gz", hash = "sha256:1f3ab9207daf7c36a536cc6ed5efb11a9f3eb0f94d48a0f37391757f7992c5c6", size = 1067439, upload-time = "2026-10-29T12:54:04.51Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a9/42/fd4fe8483fd3700417db8cdba91d381439ab1e6722a43d955beeaa32a10c/django_service_specs-0.19.0-py3-none-any.whl", hash = "sha256:b308d855660030652adb54620ac5914f3ac73084cf25e7879ebf86d27c46c4b9", size = 465018, upload-time = "2026-10-28T06:52:00.131Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/3d/8b8ba888adb4db2e00fdda7d016931e716c0d88106c48910da85af6337eb/django_service_specs-0.20.0-py3-none-any.whl", hash = "sha256:96ca1c82f0e69f1784d948ec393a256b16fc191e8058b81443539e7be1be5e3f", size = 473448, upload-time = "2026-10-29T12:54:02.597Z" },
 ]
 
 [package.optional-dependencies]
@@ -518,7 +518,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=4.2" },
-    { name = "django-service-specs", specifier = ">=0.19.0" },
+    { name = "django-service-specs", specifier = ">=0.20.0" },
 ]
 
 [package.metadata.requires-dev]

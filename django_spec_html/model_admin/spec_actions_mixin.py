@@ -32,6 +32,7 @@ from django_service_specs import (
     ServiceSpec,
     authorize,
     coerce_flat,
+    flat_arguments,
 )
 
 from django_spec_html.http.request_principal import request_principal
@@ -368,7 +369,12 @@ class _AdminPage(SpecPageBase):
             return super().get_server_arguments(request)
         name = selection.name
         try:
-            keys = coerce_flat(Parameters.of(selection), {name: request.GET.getlist(name)})[name]
+            declared = Parameters.of(selection)
+            # Read by the flat rules every query string here is read by, so
+            # ``?ids=1,2`` is two keys and a list past the array's cap is refused
+            # at its name before a million keys reach ``to_python``; a selection
+            # left blank is absent, which is no keys.
+            keys = coerce_flat(declared, flat_arguments(declared, request.GET)).get(name, [])
         except InvalidArguments as refused:
             raise BadRequest(str(refused.detail)) from refused
         primary_key = self.model_admin.opts.pk
