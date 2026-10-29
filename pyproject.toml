@@ -40,7 +40,10 @@ dependencies = [
     # kernel's specs, so this package cannot support a Django the kernel does
     # not.
     "django>=4.2",
-    # Both halves need 0.18.0: dispatch, the permission checks, the
+    # The list pages need 0.19.0: ``row_affordance_answers`` reads a row's
+    # bulk-annotated affordance flags into the answers a template asks per
+    # row, which below it only the kernel's private reader could. Both halves
+    # need 0.18.0: dispatch, the permission checks, the
     # affordances, ``form_keywords`` and ``base_pool`` read ``request`` and
     # ``view`` off the call context this package hands them, so a spec
     # callable or a seed's resolver naming either is handed this request and
@@ -56,7 +59,7 @@ dependencies = [
     # the kernel's root also exported its own copy of the ten JSON names, so
     # one process held two ``SpecView`` classes. Every other name the moved
     # code reads at the kernel's root is public from 0.10.0.
-    "django-service-specs>=0.18.0",
+    "django-service-specs>=0.19.0",
 ]
 
 [project.urls]
