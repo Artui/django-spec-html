@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`SpecSelectorView`: a selector spec served as a page to read.** It
+  answers `GET` and `HEAD`, admits the request as every page does, reads the
+  query string as the spec's arguments and runs `dispatch`. A `LIST` spec is a
+  list page, a `RETRIEVE` spec one row's page, and a row the selector does not
+  find is `Http404`. The template is handed the selector's own rows, as
+  `rows` and, on an instance page, `row`; the shipped `spec_selector.html`
+  shows each as its Output marks it, so `as_view()` refuses a spec whose
+  Output it cannot display unless `table_class` is set or
+  `display_rows = False`.
+  - **Paging** by the kernel's `paginate_output`, one `COUNT` and the page:
+    `page_kwarg`, `paginate_by`, `max_page_size`, and an opt-in
+    `page_size_kwarg` a client chooses the size with, bounded by
+    `max_page_size`. The paging keys are taken off the query before the spec
+    reads it, so `?page=2` is never refused as an undeclared argument, and
+    `as_view()` refuses a list spec declaring a parameter under a paging key.
+    A page or size that is not a whole number is the default; the context's
+    `page`, `previous_page_query` and `next_page_query` keep every filter.
+  - **Filters**: the spec's `filter_set`, as `filter`, bound to the query for
+    display and never validated by the page. Dispatch's refusal is placed on
+    its form, and the page renders at the refusal's status with every
+    message in `errors`; an htmx request is answered with the results alone,
+    a refusal at 200.
+  - **django-tables2, composed and never imported.** `table_class` builds a
+    host's `Table` over the page's rows with no request and `order_by=()`,
+    so the table never pages or reorders what the spec returned.
+    `table_order_by_field` names the spec's own ordering parameter for the
+    header links, and `as_view()` refuses one the spec does not declare.
+- **The `available` template filter**, `{% load django_spec_html %}` and
+  `{% if row|available:"withdraw" %}`. It reads the answers the page
+  attached to each row it served, from the flags dispatch annotated on the
+  page's one query, so asking costs no query and a page costs the same
+  number of queries for three rows as for thirty. A name the row's spec does
+  not declare raises `TemplateSyntaxError`, naming those it does.
+- `docs/selectors.md` and a runnable example, `docs/examples/spec_selector.py`:
+  a list page, a table page with a column asking each row what it offers, an
+  instance page and the confirmation page a row links to.
+
 ## [0.5.0] — 2026-10-27
 
 ### Added

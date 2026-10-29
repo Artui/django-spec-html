@@ -939,6 +939,15 @@ class TestATable:
         ]
         assert followed.context_data["next_page_query"] == "page=2&o=-title"
 
+    def test_a_column_renders_without_the_page_s_context(self, ada: Any, notes: list[Note]) -> None:
+        class Posting(tables.Table):
+            title = tables.TemplateColumn("[{% csrf_token %}{{ view }}]")
+
+        response = shown(listing(), user=ada, table_class=Posting)
+
+        assert response.content.decode().count("[]") == 5
+        assert "csrfmiddlewaretoken" not in response.content.decode()
+
     def test_a_shipped_page_includes_the_table_s_own_template(
         self, ada: Any, notes: list[Note]
     ) -> None:

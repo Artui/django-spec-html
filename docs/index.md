@@ -11,6 +11,10 @@ and the admin face the pages are served from too:
   in on. A refused post comes back as the page again, with the refusal placed
   on its form. An htmx request is answered with a fragment of the same page
   ([an htmx request](pages.md#an-htmx-request)).
+- **[Serving a read](selectors.md).**
+  [`SpecSelectorView`][django_spec_html.views.spec_selector_view.SpecSelectorView]
+  serves a selector spec as a list page, filtered and paged, or as one row's
+  page, and the `available` filter asks each row what its operations allow.
 - **[JSON views](http.md).**
   [`SpecView`][django_spec_html.http.spec_view.SpecView],
   [`AsyncSpecView`][django_spec_html.http.async_spec_view.AsyncSpecView] and
@@ -23,7 +27,7 @@ and the admin face the pages are served from too:
   and its scope.
 
 ```python
-from django_spec_html import SpecActionsMixin, SpecFormView, SpecView
+from django_spec_html import SpecActionsMixin, SpecFormView, SpecSelectorView, SpecView
 ```
 
 ## Installing

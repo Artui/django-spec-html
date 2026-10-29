@@ -11,6 +11,11 @@ page again with the refusal on its form. An htmx request decides the same
 outcome and is answered with a fragment of the page instead: the form at 200 for
 a refusal the page re-renders, `HX-Redirect` or a result fragment for a success,
 and a denial raised in both modes.
+`SpecSelectorView` serves a selector spec as a page to read: a list, filtered
+through the spec's `filter_set` and paged by the kernel's `paginate_output`,
+or one row; dispatch answers each row's affordances in bulk and the
+`available` template filter reads them. A django-tables2 `Table` is composed,
+never imported: the package depends on no table library.
 Beside the pages, `http/` serves a spec as plain-Django JSON (`SpecView`,
 `AsyncSpecView`, `dispatch_request`, `error_response`, `request_arguments`), for
 a client that wants JSON with no API framework.
@@ -61,9 +66,11 @@ Non-negotiable. They keep the package navigable, and they are the kernel's.
    `__init__.py` and `version.py`, and `templates/`, which Django's
    app-directories loader finds only there. Everything else lives in a subpackage named
    for a **concern**: `http/` (a spec as plain-Django JSON, and the request
-   readers both halves use), `views/` (a spec as a page) and `model_admin/`
+   readers both halves use), `views/` (a spec as a page), `model_admin/`
    (those pages as a `ModelAdmin`'s actions; not `admin/`, which
-   `admin.autodiscover()` would import in every project installing the app).
+   `admin.autodiscover()` would import in every project installing the app)
+   and `templatetags/`, which Django finds only under that name and whose
+   library file is named for what `{% load %}` reads, not for a symbol.
    `types/` is the
    one standing subpackage, for value types, when there are any.
 8. **`types/` imports nothing else in the package.** A subpackage's `__init__`
@@ -78,14 +85,15 @@ Non-negotiable. They keep the package navigable, and they are the kernel's.
 
 | Subpackage | Holds |
 | --- | --- |
-| `views/` | `SpecFormView`, a spec served as the page its form is, with what only that page needs (the fields it holds back, the question it asks); `SpecFormSetView`, a `many` spec served as a formset of its form; `SpecConfirmView`, a spec with no Validator served as a target and a button; `utils.py` for `SpecPageBase`, the private base every page view subclasses (admission, the target and its display, dispatch, the refusal, the success and its message, the fragment wrapper, the commit rule), whose hooks a subclass supplies and `as_view()` refuses a class missing, and the form readers both form pages share (`form_values`, `without_errors`) |
-| `templates/django_spec_html/` | the pages' default templates: `base.html`, which the three pages extend; `spec_form.html`, `spec_form_set.html` and `spec_confirm.html`, each including its form from a `*_fragment.html` of its own, which an htmx request is answered with on every Django; `target.html`, the target pane two of them share. Held by `tests/views/test_default_templates.py`, which mirrors no Python file |
+| `views/` | `SpecFormView`, a spec served as the page its form is, with what only that page needs (the fields it holds back, the question it asks); `SpecFormSetView`, a `many` spec served as a formset of its form; `SpecConfirmView`, a spec with no Validator served as a target and a button; `SpecSelectorView`, a selector spec served as a list page or an instance page; `utils.py` for `SpecRequestBase`, what every page reads off a request (the seeds, the server binding, the fragment, the Vary header), with `SpecPageBase`, the private base every page view subclasses (admission, the target and its display, dispatch, the refusal, the success and its message, the fragment wrapper, the commit rule), whose hooks a subclass supplies and `as_view()` refuses a class missing, and the form readers both form pages share (`form_values`, `without_errors`), and the row answers the selector page attaches and the filter reads (`answered_rows`, `row_answers`) |
+| `templatetags/` | `django_spec_html.py`, the `{% load django_spec_html %}` library: the `available` filter, which reads the answers `SpecSelectorView` attached to each row. Named for the library rather than its symbol (rule 7), and mirrored by `tests/templatetags/test_django_spec_html.py` |
+| `templates/django_spec_html/` | the pages' default templates: `base.html`, which the four pages extend; `spec_form.html`, `spec_form_set.html`, `spec_confirm.html` and `spec_selector.html`, each including its form from a `*_fragment.html` of its own, which an htmx request is answered with on every Django; `target.html`, the target pane two of them share. Held by `tests/views/test_default_templates.py`, which mirrors no Python file |
 | `model_admin/` | `SpecActionsMixin`, a `ModelAdmin` serving a spec's page as an object action (an instance target, linked from the change form) or a changelist action (a collection target, the ticked rows as its set), each at an admin URL of its own within the admin's permission and `get_queryset`, through the `views/` pages; its templates are `templates/django_spec_html/admin/` |
 | `types/` | `Outcome`, the ways a page's post ends; `SpecAction`, one entry of a `ModelAdmin`'s `spec_actions`; it imports nothing else in the package (rule 8) |
 | `http/` | the JSON views (`SpecView`, `AsyncSpecView`, `dispatch_request`, `adispatch_request`), `error_response`, and the request readers both halves use: `request_arguments`, `route_arguments`, `request_principal`, `add_argument_errors`; `UnsupportedMediaType`, beside its raiser; `utils.py` for `SpecViewBase`, the helpers the entry points share, and `REFUSAL_STATUSES`, the status map the page reads too, with each refusal's `Outcome` |
 
-`views/` imports `http/`, never the reverse, and `model_admin/` imports
-`views/`. The root re-exports the three subpackages' `__all__` and
+`views/` imports `http/`, never the reverse, and `model_admin/` and
+`templatetags/` import `views/`. The root re-exports the three subpackages' `__all__` and
 `__version__`, and `tests/test_init.py` holds that, with the root imported in a
 project that does not install `django.contrib.admin`.
 
