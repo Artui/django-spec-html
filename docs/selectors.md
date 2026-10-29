@@ -161,7 +161,9 @@ With no `table_order_by_field`, no column is orderable and no header links a
 sort. Set it to a parameter the spec declares - a filter set's
 `OrderingFilter`, `o` in the example - and each orderable column's header
 links `?o=<column>`, which dispatch reads as any other argument. `as_view()`
-refuses a field the spec does not declare. Mark a column the filter cannot
+refuses a field the spec does not declare. A table whose `Meta` sets a `prefix`
+links the prefixed key, `?t-o=<column>` for a prefix of `t-`, so that key is the
+one the spec must declare. Mark a column the filter cannot
 order by `orderable=False`, as the example's `author` is: its link would send
 a value the `OrderingFilter` refuses, and answer 400.
 

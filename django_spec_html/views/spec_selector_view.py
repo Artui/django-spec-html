@@ -117,7 +117,9 @@ class SpecSelectorView(SpecRequestBase):
     clamps a link someone edited, and the page served says which it is. A
     client chooses the page size only where ``page_size_kwarg`` names the
     key it sends, bounded by ``max_page_size``, which ``as_view()`` then
-    requires; a value that is not a whole number is ``paginate_by``.
+    requires; a value that is not a whole number is ``paginate_by``, and a
+    whole number below one is a page of one row, as ``paginate_output``
+    clamps it.
 
     **The filters are the spec's.** ``filter.form`` is the ``FilterSet``'s
     form bound to the query for display, its own validation never run:
@@ -227,7 +229,12 @@ class SpecSelectorView(SpecRequestBase):
         spec = _selector(label, initkwargs.get("spec", cls.spec))
         check_request_hooks(cls, initkwargs, spec)
         _check_paging(label, spec, {**_attributes(cls), **initkwargs})
-        _check_table(label, spec, initkwargs.get("table_order_by_field", cls.table_order_by_field))
+        _check_table(
+            label,
+            spec,
+            initkwargs.get("table_class", cls.table_class),
+            initkwargs.get("table_order_by_field", cls.table_order_by_field),
+        )
         # One branch to coverage, so each condition is held by its own test:
         # test_a_spec_with_no_output_is_refused (the rows are displayed) and
         # test_display_rows_off_needs_no_output and
@@ -350,7 +357,10 @@ class SpecSelectorView(SpecRequestBase):
         The table is built with ``order_by=()``, which django-tables2 reads as
         "remove any ordering": with nothing orderable, its sort is by no key
         and leaves the spec's order, even where the table's ``Meta`` declares
-        an ``order_by`` (test_a_table_s_own_order_by_never_reorders_the_rows).
+        an ``order_by``: test_a_table_s_own_order_by_never_reorders_the_rows for
+        a table with nothing orderable, and
+        test_a_table_s_own_order_by_never_reorders_a_sorted_page for one whose
+        headers sort, where the ``Meta.order_by`` would otherwise apply.
         No ``request`` is handed to it, since a table built with one runs
         django-tables2's ``RequestConfig``, which pages and orders the data
         from the query string.
@@ -457,16 +467,26 @@ def _check_paging(label: str, spec: SelectorSpec, configured: Mapping[str, Any])
         )
 
 
-def _check_table(label: str, spec: SelectorSpec, order_by_field: Any) -> None:
-    """Refuse a ``table_order_by_field`` the spec does not declare, which every header link would send."""
-    # One branch to coverage: every view with no table holds the first
-    # condition, and test_a_header_link_is_a_query_the_spec_reads the second.
-    if order_by_field is None or order_by_field in spec.parameters().names():
+def _check_table(label: str, spec: SelectorSpec, table_class: Any, order_by_field: Any) -> None:
+    """Refuse a ``table_order_by_field`` the spec does not declare, which every header link would send.
+
+    The key a header link sends is the table's ``Meta.prefix`` followed by the
+    field, as django-tables2 builds ``prefixed_order_by_field``, so the
+    prefixed name is the one the spec must declare
+    (test_a_prefixed_table_s_order_field_is_read_with_its_prefix). Read off
+    the class's options, since the page builds the table with no prefix of
+    its own.
+    """
+    if order_by_field is None:
+        return
+    key = f"{getattr(getattr(table_class, '_meta', None), 'prefix', '') or ''}{order_by_field}"
+    if key in spec.parameters().names():
         return
     raise ImproperlyConfigured(
-        f"{label}.table_order_by_field is {order_by_field!r}, which the spec does not declare: "
-        "every header link would send it, and dispatch refuse it. Name the spec's own "
-        "ordering parameter, such as its filter set's OrderingFilter."
+        f"{label}.table_order_by_field is {order_by_field!r}, so every header link sends "
+        f"{key!r}, which the spec does not declare: dispatch would refuse it. Name the spec's "
+        "own ordering parameter, such as its filter set's OrderingFilter, less any prefix "
+        "the table's Meta sets."
     )
 
 

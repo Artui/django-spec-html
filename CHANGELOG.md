@@ -57,9 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **A changelist action's selection is read by the same flat rules.** The
   admin page read its selected keys with `getlist` alone, so `?pks=1,2` was
-  one key the parameter refused rather than two, a blank selection was a
-  malformed key rather than none, and a comma list was not held to the
-  array's cap until after it was split.
+  one key the parameter refused rather than two, and a blank selection was a
+  malformed key rather than none.
 
 ## [0.5.0] — 2026-10-27
 

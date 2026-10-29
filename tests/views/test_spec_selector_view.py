@@ -256,8 +256,26 @@ class TestAsView:
             SpecSelectorView.as_view(spec=listing(), table_class=object, table_order_by_field="o")
 
         assert str(refused.value).startswith(
-            "SpecSelectorView.table_order_by_field is 'o', which the spec does not declare"
+            "SpecSelectorView.table_order_by_field is 'o', so every header link sends 'o', "
+            "which the spec does not declare"
         )
+
+    def test_a_prefixed_table_s_order_field_is_read_with_its_prefix(self) -> None:
+        # django-tables2 links a header as ``<Meta.prefix><order_by_field>``,
+        # so a prefixed table's links would each be refused as an unknown
+        # argument; the spec's ordering parameter does not carry the prefix.
+        class Prefixed(tables.Table):
+            title = tables.Column()
+
+            class Meta:
+                prefix = "t-"
+
+        with pytest.raises(ImproperlyConfigured) as refused:
+            SpecSelectorView.as_view(
+                spec=listing(filter_set=Ordered), table_class=Prefixed, table_order_by_field="o"
+            )
+
+        assert "every header link sends 't-o'" in str(refused.value)
 
 
 class TestTheRowsDisplay:
@@ -911,6 +929,23 @@ class TestATable:
 
         table = response.context_data["table"]
         assert [row.record.title for row in table.rows] == [note.title for note in notes]
+
+    def test_a_table_s_own_order_by_never_reorders_a_sorted_page(
+        self, ada: Any, notes: list[Note]
+    ) -> None:
+        # NoteTable's Meta orders by -title. With headers that sort, tables2
+        # would apply that order to the page the spec sorted by ?o=title,
+        # unless the page builds the table with no ordering of its own.
+        view = SpecSelectorView.as_view(
+            spec=listing(filter_set=Ordered, affordances=OFFERED),
+            table_class=NoteTable,
+            table_order_by_field="o",
+        )
+        response = view(signed_in(FACTORY.get("/notes/?o=title"), ada))
+        response.render()
+
+        rows = response.context_data["table"].rows
+        assert [row.record.title for row in rows] == sorted(note.title for note in notes)
 
     def test_with_no_order_field_no_header_links_a_sort(self, ada: Any, notes: list[Note]) -> None:
         response = shown(listing(affordances=OFFERED), user=ada, table_class=NoteTable)
