@@ -20,7 +20,7 @@ from collections.abc import Callable, Mapping
 from contextlib import suppress
 from decimal import Decimal
 from types import MappingProxyType
-from typing import Any, Final, cast
+from typing import Any, ClassVar, Final, cast
 from urllib.parse import unquote
 
 from django import forms
@@ -68,6 +68,7 @@ from django_service_specs import (
     PresentationContext,
     Presenter,
     PrincipalUnavailable,
+    SelectorSpec,
     ServerArguments,
     ServiceError,
     ServiceNotFound,
@@ -150,7 +151,155 @@ test_dates_in_the_forms_input_formats_are_read_as_the_form_reads_them (both
 date rows)."""
 
 
-class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta):
+class SpecRequestBase(TemplateResponseMixin, ContextMixin, View):
+    """What every page reads off a request, whatever it serves: the hooks, the call context and the wrapper.
+
+    The request's two hooks and the checks of what they answer, the call
+    context handed to the kernel, the fragment predicate with the ``Vary``
+    every answer carries, the fragment's templates, and the render choosing
+    the page or the fragment. ``SpecPageBase``, the pages a post commits on,
+    and ``SpecSelectorView``, a read served as a page, each build on it, so a
+    page and a list read one request by one set of rules.
+    ``fragment_name`` is the ``{% partialdef %}`` an htmx request is answered
+    with by default, inside the page's own template.
+    """
+
+    fragment_template_name: str | None = None
+    fragment_name: ClassVar[str] = _SPEC_FORM
+    pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS
+    unknown_arguments: UnknownArguments = UnknownArguments.REJECT
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None
+    server_arguments: ServerArguments | None = None
+
+    def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
+        """Django's ``dispatch``, every answer varying on the headers the wrapper is chosen by.
+
+        Here rather than in either wrapper, so a 405 and a success redirect
+        vary too. A denial is raised, so the host's 403 or 404 page sets its
+        own headers.
+        """
+        response = super().dispatch(request, *args, **kwargs)
+        patch_vary_headers(response, _MODE_HEADERS)
+        return response
+
+    def get_pool_seeds(self, request: HttpRequest) -> PoolSeeds:
+        """The seeds this request's call is resolved with: ``pool_seeds`` unless overridden.
+
+        Read once per request and handed to every step that resolves a spec
+        callable: the class-level check, the target's lookup and its
+        object-level or scope check, the form's ``form_kwargs``, the
+        affordances the page asks about, and dispatch; on a selector page,
+        the class-level check and dispatch. Seed what the
+        request carries rather than the request itself, as on ``SpecView``:
+        a spec callable naming ``request`` is handed this request here, and
+        ``None`` on every reader that has none. A seed's resolver may name
+        ``request`` or ``view`` and is handed this request and this page
+        (test_a_seed_resolver_reading_the_request_binds).
+        """
+        return self.pool_seeds
+
+    def get_server_arguments(self, request: HttpRequest) -> ServerArguments | None:
+        """The values the server answers for on this request's call: ``server_arguments`` unless overridden.
+
+        The names it binds and withholds are the declared
+        ``server_arguments``' own, which ``as_view`` checked; only the values
+        may vary per request, and the kernel's ``apply_server_arguments``
+        checks each on every call.
+        """
+        return self.server_arguments
+
+    def wants_fragment(self, request: HttpRequest) -> bool:
+        """Whether ``request`` is answered with a fragment rather than the page.
+
+        An htmx request is, unless it is boosted or a history restore: a
+        boosted link or form swaps the whole body, and a history restore after
+        a cache miss needs the whole page back, so both get the page. Read from
+        django-htmx's ``request.htmx`` where its middleware set it, and from
+        the three headers where it did not, so a host with django-htmx and one
+        without get the same answer. Override it for another rule; the headers
+        every answer varies on stay these three.
+
+        Each condition, on each path, is held by its own row:
+        ``test_read_from_the_headers`` (``htmx-false``, ``boosted``,
+        ``history-restore``) and ``test_read_from_django_htmx_where_its_middleware_ran``
+        (``not-htmx``, ``boosted``, ``history-restore``), whose headers say
+        the opposite of the details, so reading the wrong one fails it.
+        """
+        details = getattr(request, "htmx", None)
+        if details is not None:
+            return bool(details) and not details.boosted and not details.history_restore_request
+        headers = request.headers
+        return (
+            headers.get("HX-Request") == "true"
+            and headers.get("HX-Boosted") != "true"
+            and headers.get("HX-History-Restore-Request") != "true"
+        )
+
+    def get_fragment_template_names(self) -> list[str]:
+        """The templates a fragment renders: ``fragment_template_name``, or each page's ``#<fragment_name>``.
+
+        The default addresses a ``{% partialdef %}`` inside the page's
+        template, named by ``fragment_name``: ``spec-form`` on a page that
+        posts, ``spec-results`` on a selector page. So turning htmx on is a
+        template change. The tag
+        and the ``#name`` address are Django 6.0's. Below it they are
+        django-template-partials', configured in ``TEMPLATES`` with its tag
+        as a builtin, ``"builtins": ["template_partials.templatetags.partials"]``,
+        and its loader around the project's: installed as an app alone, it
+        wraps the loader and the page fails to parse at ``{% partialdef %}``.
+        Without either, the default is a ``TemplateDoesNotExist`` naming it.
+
+        A page this package ships is the exception: its fragment is a file of
+        its own, which the page includes, so the fragment is that file on
+        every Django (test_the_shipped_page_s_fragment_is_its_own_file). A
+        project overriding a shipped page's file keeps the shipped
+        fragment, and overrides the fragment's file to change it.
+        """
+        if self.fragment_template_name is not None:
+            return [self.fragment_template_name]
+        return [
+            _SHIPPED_FRAGMENTS.get(name) or _address(name, self.fragment_name)
+            for name in self.get_template_names()
+        ]
+
+    def _served(self, request: HttpRequest) -> Served:
+        """What both hooks answer for ``request``, checked as ``SpecView`` checks them, once.
+
+        The per-call binding must bind and withhold the declared names, and a
+        seed added per call may not take one of them; the checks are the
+        JSON views', in ``http/utils.py``. The call context starts with
+        ``request`` and ``view``, this request and this page, which the kernel
+        hands to every stage naming either.
+        """
+        label = type(self).__name__
+        server = checked_binding(label, self.get_server_arguments(request), self.server_arguments)
+        seeds = checked_seeds(label, self.get_pool_seeds(request), self.pool_seeds, server)
+        return Served(
+            route_kwargs=self.route_kwargs,
+            server=server,
+            seeds=seeds,
+            call_context={"request": request, "view": self},
+        )
+
+    def _rendered(self, context: dict[str, Any], *, status: int) -> HttpResponse:
+        """``context`` as the page at ``status``, or as the form's fragment at 200.
+
+        A fragment answers every outcome it renders at 200, since htmx swaps
+        no 4xx by default and a refusal answered at one would land nowhere;
+        the outcome is in the body, and in the one map.
+        """
+        if self.wants_fragment(self.request):
+            return self.response_class(
+                request=self.request,
+                template=self.get_fragment_template_names(),
+                context=context,
+                using=self.template_engine,
+                content_type=self.content_type,
+            )
+        return self.render_to_response(context, status=status)
+
+
+class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
     """Everything a spec served as a page shares, whatever the page renders for its post.
 
     Admission, the target and its display, the affordances, the post's
@@ -167,11 +316,6 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
 
     spec: ServiceSpec | None = None
     success_url: Any = None
-    fragment_template_name: str | None = None
-    pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS
-    unknown_arguments: UnknownArguments = UnknownArguments.REJECT
-    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None
-    server_arguments: ServerArguments | None = None
     display_target: bool = False
     target_display_limit: int = 10
     commit_button: str | None = None
@@ -207,19 +351,8 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         spec = initkwargs.get("spec", cls.spec)
         check_request_hooks(cls, initkwargs, spec)
         cls._check_page(cls.__name__, spec, initkwargs)
-        _check_shipped_templates(cls, initkwargs)
+        check_shipped_templates(cls, initkwargs)
         return view
-
-    def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
-        """Django's ``dispatch``, every answer varying on the headers the wrapper is chosen by.
-
-        Here rather than in either wrapper, so a 405 and a success redirect
-        vary too. A denial is raised, so the host's 403 or 404 page sets its
-        own headers.
-        """
-        response = super().dispatch(request, *args, **kwargs)
-        patch_vary_headers(response, _MODE_HEADERS)
-        return response
 
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         """The page, with an unbound form showing the target row, for a principal admitted to it."""
@@ -244,7 +377,7 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         """
         spec = self.served_spec()
         served = self._served(request)
-        principal, grant = _admitted(spec, request, url_kwargs, served)
+        principal, grant = admitted(spec, request, url_kwargs, served)
         try:
             target, _ = _found(spec, principal, grant, url_kwargs, served, ask_scope=True)
         except InvalidArguments as refused:
@@ -253,7 +386,7 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
             raise BadRequest(str(refused.detail)) from refused
         # One pool for the affordances and the presenter's context, so the
         # target's display costs no seed resolution of its own on GET.
-        pool = _pool(principal, served)
+        pool = call_pool(principal, served)
         unavailable = _unavailable(spec, target, served, pool)
         # Absent when every condition is met, as ``code`` is on a refusal
         # that has none, so a template's ``{% if unavailable %}`` reads one
@@ -283,7 +416,7 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         # it waits too. The grant hands dispatch the check already made, so it
         # runs once.
         served = self._served(request)
-        principal, grant = _admitted(spec, request, kwargs, served)
+        principal, grant = admitted(spec, request, kwargs, served)
         # Then the target, found as the page finds it, so the form a refused
         # post re-renders shows the row - its held file, and the clear
         # checkbox beside it - and the object-level and scope checks and a
@@ -301,7 +434,7 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
             result = dispatch(
                 spec,
                 principal=principal,
-                arguments=_bound(spec, read, served.server),
+                arguments=with_binding(spec, read, served.server),
                 grant=grant,
                 pool_seeds=served.seeds,
                 unknown_arguments=self.unknown_arguments,
@@ -341,7 +474,7 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
             # answer is held by test_the_pages_outcome_table_is_the_one_shipped.
             outcome = refusal_outcome(refused)
             if outcome is Outcome.DENIED:
-                raise _denial(refused) from refused
+                raise denial(refused) from refused
             # A question is read off the map's row, as every outcome is, never
             # off the refusal's class: one that is a dispatch refusal as well
             # answers at its dispatch row, failed, and asks nothing
@@ -419,58 +552,6 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         """
         return self.success_message % result.data
 
-    def get_pool_seeds(self, request: HttpRequest) -> PoolSeeds:
-        """The seeds this request's call is resolved with: ``pool_seeds`` unless overridden.
-
-        Read once per request and handed to every step that resolves a spec
-        callable: the class-level check, the target's lookup and its
-        object-level or scope check, the form's ``form_kwargs``, the
-        affordances the page asks about, and dispatch. Seed what the
-        request carries rather than the request itself, as on ``SpecView``:
-        a spec callable naming ``request`` is handed this request here, and
-        ``None`` on every reader that has none. A seed's resolver may name
-        ``request`` or ``view`` and is handed this request and this page
-        (test_a_seed_resolver_reading_the_request_binds).
-        """
-        return self.pool_seeds
-
-    def get_server_arguments(self, request: HttpRequest) -> ServerArguments | None:
-        """The values the server answers for on this request's call: ``server_arguments`` unless overridden.
-
-        The names it binds and withholds are the declared
-        ``server_arguments``' own, which ``as_view`` checked; only the values
-        may vary per request, and the kernel's ``apply_server_arguments``
-        checks each on every call.
-        """
-        return self.server_arguments
-
-    def wants_fragment(self, request: HttpRequest) -> bool:
-        """Whether ``request`` is answered with a fragment rather than the page.
-
-        An htmx request is, unless it is boosted or a history restore: a
-        boosted link or form swaps the whole body, and a history restore after
-        a cache miss needs the whole page back, so both get the page. Read from
-        django-htmx's ``request.htmx`` where its middleware set it, and from
-        the three headers where it did not, so a host with django-htmx and one
-        without get the same answer. Override it for another rule; the headers
-        every answer varies on stay these three.
-
-        Each condition, on each path, is held by its own row:
-        ``test_read_from_the_headers`` (``htmx-false``, ``boosted``,
-        ``history-restore``) and ``test_read_from_django_htmx_where_its_middleware_ran``
-        (``not-htmx``, ``boosted``, ``history-restore``), whose headers say
-        the opposite of the details, so reading the wrong one fails it.
-        """
-        details = getattr(request, "htmx", None)
-        if details is not None:
-            return bool(details) and not details.boosted and not details.history_restore_request
-        headers = request.headers
-        return (
-            headers.get("HX-Request") == "true"
-            and headers.get("HX-Boosted") != "true"
-            and headers.get("HX-History-Restore-Request") != "true"
-        )
-
     def commits(self, request: HttpRequest) -> bool:
         """Whether a post runs the operation, or re-renders its form with the post's values.
 
@@ -508,31 +589,6 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         trigger = _trigger_name(request)
         another = trigger != button and trigger in request.POST
         return button in request.POST and not another
-
-    def get_fragment_template_names(self) -> list[str]:
-        """The templates a fragment's form renders: ``fragment_template_name``, or each page's ``#spec-form``.
-
-        The default addresses a ``{% partialdef spec-form %}`` inside the
-        page's template, so turning htmx on is a template change. The tag
-        and the ``#name`` address are Django 6.0's. Below it they are
-        django-template-partials', configured in ``TEMPLATES`` with its tag
-        as a builtin, ``"builtins": ["template_partials.templatetags.partials"]``,
-        and its loader around the project's: installed as an app alone, it
-        wraps the loader and the page fails to parse at ``{% partialdef %}``.
-        Without either, the default is a ``TemplateDoesNotExist`` naming it.
-
-        A page this package ships is the exception: its form is a file of
-        its own, which the page includes, so the fragment is that file on
-        every Django (test_the_shipped_page_s_fragment_is_its_own_file). A
-        project overriding a shipped page's file keeps the shipped
-        fragment, and overrides the fragment's file to change the form.
-        """
-        if self.fragment_template_name is not None:
-            return [self.fragment_template_name]
-        return [
-            _SHIPPED_FRAGMENTS.get(name) or _address(name, _SPEC_FORM)
-            for name in self.get_template_names()
-        ]
 
     def fragment_success(self, result: DispatchResult) -> HttpResponse:
         """A success, answered to the htmx request that posted it.
@@ -575,25 +631,6 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         response["HX-Trigger"] = _SUCCEEDED
         return response
 
-    def _served(self, request: HttpRequest) -> Served:
-        """What both hooks answer for ``request``, checked as ``SpecView`` checks them, once.
-
-        The per-call binding must bind and withhold the declared names, and a
-        seed added per call may not take one of them; the checks are the
-        JSON views', in ``http/utils.py``. The call context starts with
-        ``request`` and ``view``, this request and this page, which the kernel
-        hands to every stage naming either.
-        """
-        label = type(self).__name__
-        server = checked_binding(label, self.get_server_arguments(request), self.server_arguments)
-        seeds = checked_seeds(label, self.get_pool_seeds(request), self.pool_seeds, server)
-        return Served(
-            route_kwargs=self.route_kwargs,
-            server=server,
-            seeds=seeds,
-            call_context={"request": request, "view": self},
-        )
-
     def _target_context(
         self,
         spec: ServiceSpec,
@@ -612,7 +649,7 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         ``target``; a set is ``target`` beside ``target_count`` and
         ``target_counted_at``, counted here, at the moment the page is
         rendered. ``target_display`` is the target projected for a person,
-        on a page that sets ``display_target``, as ``_display`` builds it;
+        on a page that sets ``display_target``, as ``display_of`` builds it;
         otherwise no presenter is asked and no pool is built for it
         (test_a_page_not_opted_in_never_presents_its_target).
 
@@ -628,10 +665,10 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         # test_a_create_carries_no_target (``None`` is no row to show).
         if target is UNSET or target is None:
             return {}
-        shown = _display(spec) if self.display_target else None
+        shown = display_of(spec) if self.display_target else None
         presented: PresentationContext | None = None
         if shown is not None:
-            ambient = _pool(principal, served) if pool is None else pool
+            ambient = call_pool(principal, served) if pool is None else pool
             presented = PresentationContext(
                 principal,
                 target,
@@ -642,7 +679,7 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
             context: dict[str, Any] = {"target": target}
             if shown is not None:
                 presenter, projection = shown
-                context["target_display"] = _displayed(
+                context["target_display"] = displayed(
                     presenter.presented(target, presented), projection
                 )
             return context
@@ -671,27 +708,10 @@ class SpecPageBase(TemplateResponseMixin, ContextMixin, View, metaclass=ABCMeta)
         if shown is not None:
             presenter, projection = shown
             context["target_display"] = [
-                _displayed(each, projection)
+                displayed(each, projection)
                 for each in presenter.presented_rows(tuple(rows), presented)
             ]
         return context
-
-    def _rendered(self, context: dict[str, Any], *, status: int) -> HttpResponse:
-        """``context`` as the page at ``status``, or as the form's fragment at 200.
-
-        A fragment answers every outcome it renders at 200, since htmx swaps
-        no 4xx by default and a refusal answered at one would land nowhere;
-        the outcome is in the body, and in the one map.
-        """
-        if self.wants_fragment(self.request):
-            return self.response_class(
-                request=self.request,
-                template=self.get_fragment_template_names(),
-                context=context,
-                using=self.template_engine,
-                content_type=self.content_type,
-            )
-        return self.render_to_response(context, status=status)
 
     def served_spec(self) -> ServiceSpec:
         """``spec``, which ``as_view`` refused to build a view without."""
@@ -825,11 +845,11 @@ def _check_configuration(cls: type[SpecPageBase], initkwargs: Mapping[str, Any])
             f"{label}.target_display_limit must be a positive int; got {limit!r}."
         )
     if initkwargs.get("display_target", cls.display_target):
-        _check_display(label, spec)
+        check_display(label, spec)
     _check_commit_button(label, initkwargs.get("commit_button", cls.commit_button))
 
 
-def _check_shipped_templates(cls: type[SpecPageBase], initkwargs: Mapping[str, Any]) -> None:
+def check_shipped_templates(cls: type[SpecRequestBase], initkwargs: Mapping[str, Any]) -> None:
     """Refuse a page rendering a template this package ships that the view's template engine does not find.
 
     The shipped templates are found as any app's are, so a project lists
@@ -868,7 +888,7 @@ def _check_shipped_templates(cls: type[SpecPageBase], initkwargs: Mapping[str, A
     engine = initkwargs.get("template_engine", cls.template_engine)
     fragment = initkwargs.get("fragment_template_name", cls.fragment_template_name)
     fragments = initkwargs.get("get_fragment_template_names", cls.get_fragment_template_names)
-    own = fragment is not None or fragments is not SpecPageBase.get_fragment_template_names
+    own = fragment is not None or fragments is not SpecRequestBase.get_fragment_template_names
     # Named, the engine is the one the advice is about: the app may be
     # installed and found by every engine but this one.
     finder = (
@@ -950,8 +970,11 @@ def _address(template_name: str, fragment: str) -> str:
     return f"{template_name.partition('#')[0]}#{fragment}"
 
 
-def _admitted(
-    spec: ServiceSpec, request: HttpRequest, url_kwargs: Mapping[str, Any], served: Served
+def admitted(
+    spec: ServiceSpec | SelectorSpec,
+    request: HttpRequest,
+    url_kwargs: Mapping[str, Any],
+    served: Served,
 ) -> tuple[Any, Grant]:
     """The principal and its grant, once the route and the class-level check pass.
 
@@ -973,7 +996,7 @@ def _admitted(
             spec, principal, pool_seeds=served.seeds, call_context=served.call_context
         )
     except (NotPermitted, PrincipalUnavailable) as refused:
-        raise _denial(refused) from refused
+        raise denial(refused) from refused
 
 
 def _found(
@@ -1010,7 +1033,7 @@ def _found(
     """
     parameters = spec.parameters()
     route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
-    arguments = _bound(spec, coerce_flat(parameters, route), served.server)
+    arguments = with_binding(spec, coerce_flat(parameters, route), served.server)
     try:
         if spec.many:
             if ask_scope:
@@ -1033,13 +1056,13 @@ def _found(
             call_context=served.call_context,
         )
     except (NotPermitted, PrincipalUnavailable, ServiceNotFound) as refused:
-        raise _denial(refused) from refused
+        raise denial(refused) from refused
     if isinstance(resolved, DispatchResult):
         raise Http404
     return resolved
 
 
-def _bound(
+def with_binding(
     spec: ServiceSpec, arguments: Mapping[str, Any], server: ServerArguments | None
 ) -> Mapping[str, Any]:
     """``arguments`` under ``server``, by the kernel's ``apply_server_arguments``, or as they are with no binding."""
@@ -1048,7 +1071,7 @@ def _bound(
     return apply_server_arguments(spec, arguments, server)
 
 
-def _pool(principal: Any, served: Served) -> dict[str, Any]:
+def call_pool(principal: Any, served: Served) -> dict[str, Any]:
     """The pool the page's affordances and its display read, built from the call's own seeds.
 
     Built as dispatch builds its own: the seeds resolve against a pool
@@ -1116,24 +1139,33 @@ def _unavailable(
         # Never ``None`` here, since a spec with no affordances refuses nothing.
         return next(each for each in spec.affordances or () if each.code == refused.code)
     except ServiceNotFound as refused:
-        raise _denial(refused) from refused
+        raise denial(refused) from refused
     return None
 
 
-def _display(spec: ServiceSpec) -> tuple[Presenter, AudienceProjection]:
-    """The presenter and the markings a person's view of the target is read through.
+def display_of(spec: ServiceSpec | SelectorSpec) -> tuple[Presenter, AudienceProjection]:
+    """The presenter and the markings a person's view of a row is read through.
 
-    Asked only of a page that set ``display_target``, whose spec ``as_view``
-    checked has an Output marking one of its own fields, so there is a
-    presenter to present through. The projection is built per request rather
-    than kept from that check: a choice's display is read in the language
-    active when it is built.
+    Asked only of a page that displays its rows - a page that set
+    ``display_target``, or a selector page rendering its rows by the
+    shipped template - whose spec ``as_view`` checked has an Output marking
+    one of its own fields, so there is a presenter to present through: a
+    service spec's ``presenter_for_output()``, a selector spec's own. The
+    projection is built per request rather than kept from that check: a
+    choice's display is read in the language active when it is built.
     """
-    return cast("Presenter", spec.presenter_for_output()), audience_projection_for_spec(spec)
+    presenter = spec.presenter if isinstance(spec, SelectorSpec) else spec.presenter_for_output()
+    return cast("Presenter", presenter), audience_projection_for_spec(spec)
 
 
-def _check_display(label: str, spec: ServiceSpec) -> None:
-    """Refuse a page displaying its target whose spec's Output cannot display one, naming both.
+def check_display(
+    label: str,
+    spec: ServiceSpec | SelectorSpec,
+    *,
+    shown: str = "its target",
+    remedy: str = "leave display_target off",
+) -> None:
+    """Refuse a page displaying ``shown`` whose spec's Output cannot display it, naming both.
 
     Three refusals, each its own test in ``TestDisplayingTheTargetIsOptIn``:
     a spec with no Output (test_a_spec_with_no_output_is_refused); one whose
@@ -1142,30 +1174,39 @@ def _check_display(label: str, spec: ServiceSpec) -> None:
     one marking none of its own fields, its choices alone or only a nested
     object's (test_an_output_marking_none_of_its_own_fields_is_refused), since
     a person's display is driven by the row's own markings. Whether the Output
-    describes the target's rows is not known until one is presented.
+    describes the target's rows is not known until one is presented. A
+    selector page asks the same of its rows, with its own ``shown`` and
+    ``remedy``, and names the selector, where a service spec names its service
+    (``TestTheRowsDisplay`` in ``test_spec_selector_view``).
     """
-    service = spec.service
-    named = f"the spec of {getattr(service, '__qualname__', type(service).__qualname__)}"
+    if isinstance(spec, SelectorSpec):
+        called = spec.selector
+        named = f"the selector spec of {getattr(called, '__qualname__', type(called).__qualname__)}"
+        source = "a presenter"
+    else:
+        called = spec.service
+        named = f"the spec of {getattr(called, '__qualname__', type(called).__qualname__)}"
+        source = "a presenter or an output_selector_spec"
     if spec.output() is None:
         raise ImproperlyConfigured(
-            f"{label} displays its target through its spec's Output, and {named} declares "
-            "none: give it a presenter or an output_selector_spec, or leave display_target off."
+            f"{label} displays {shown} through its spec's Output, and {named} declares "
+            f"none: give it {source}, or {remedy}."
         )
     try:
         projection = audience_projection_for_spec(spec)
     except ImproperlyConfigured as refused:
         raise ImproperlyConfigured(
-            f"{label} cannot display the target of {named}: {refused}"
+            f"{label} cannot display {shown.replace('its ', 'the ', 1)} of {named}: {refused}"
         ) from refused
     if not projection.fields:
         raise ImproperlyConfigured(
-            f"{label} displays its target by its Output's markings, and {named}'s Output "
+            f"{label} displays {shown} by its Output's markings, and {named}'s Output "
             "marks none of its own fields with a FieldMarking: mark the field naming the "
-            "row FieldMarking.label(), or leave display_target off."
+            f"row FieldMarking.label(), or {remedy}."
         )
 
 
-def _displayed(presented: Any, projection: AudienceProjection) -> dict[str, Any]:
+def displayed(presented: Any, projection: AudienceProjection) -> dict[str, Any]:
     """One presented row as a person reads it: its ``fields``, the same as ``pairs``, and its ``label``.
 
     ``pairs`` is the fields as name and value, in order, for a template to
@@ -1210,7 +1251,7 @@ def _refusal_code(refused: DispatchError | ServiceError) -> dict[str, str]:
     return {}
 
 
-def _denial(refused: DispatchError | ServiceError) -> PermissionDenied | Http404:
+def denial(refused: DispatchError | ServiceError) -> PermissionDenied | Http404:
     """A refusal answered 403 or 404 as Django's own exception, for the host's 403 and 404 pages."""
     if refusal_status(refused) == 403:
         return PermissionDenied(refused.message)
