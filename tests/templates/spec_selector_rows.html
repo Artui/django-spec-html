@@ -1,0 +1,3 @@
+{% load django_spec_html %}{% for row in rows %}
+{{ row.title }}:{% if row|available:"rename" %}rename{% else %}-rename{% endif %},{% if row|available:"reopen" %}reopen{% else %}-reopen{% endif %}
+{% endfor %}
