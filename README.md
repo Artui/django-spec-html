@@ -19,6 +19,10 @@ answered with a fragment of the same page at the same URL: a refusal the page
 re-renders is the form at 200, since htmx swaps no 4xx by default, a denial is
 raised for the host's handlers as on the page, and a success is `HX-Redirect`
 or a result fragment rendered in place.
+`SpecSelectorView` serves a selector spec as a page to read: a list a person
+filters and pages through, optionally as a django-tables2 table, or one row's
+page, with each row answering what its operations allow through the
+`available` template filter, in the page's one query.
 `SpecActionsMixin` serves the same pages inside the Django admin, as a
 `ModelAdmin`'s actions: an object action linked from a row's change form, and a
 changelist action over the rows ticked, each within the admin's own scope.
@@ -38,7 +42,7 @@ longer ships these names: import them from `django_spec_html`.
 pip install django-spec-html
 ```
 
-Python 3.10 or later, Django 4.2 or later, and `django-service-specs` 0.18.0 or
+Python 3.10 or later, Django 4.2 or later, and `django-service-specs` 0.20.0 or
 later, which it installs. The JSON views need no entry in `INSTALLED_APPS`; the
 pages' default templates are found as any app's are, so list `django_spec_html`
 there to use them, or give each page a `template_name` of its own.

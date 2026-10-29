@@ -96,6 +96,7 @@ nav:
   - Pages: pages.md
   - Confirming: confirm.md
   - Formsets: formsets.md
+  - Serving a read: selectors.md
   - In the admin: admin.md
   - JSON views: http.md
   - API reference: reference.md

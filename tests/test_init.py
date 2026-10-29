@@ -29,6 +29,7 @@ def test_the_package_has_the_subpackages_it_re_exports() -> None:
     assert sorted(package.__name__ for package in _subpackages()) == [
         "django_spec_html.http",
         "django_spec_html.model_admin",
+        "django_spec_html.templatetags",
         "django_spec_html.types",
         "django_spec_html.views",
     ]
@@ -70,6 +71,7 @@ def test_the_root_serves_the_two_halves_the_admin_face_and_the_version() -> None
         "SpecConfirmView",
         "SpecFormSetView",
         "SpecFormView",
+        "SpecSelectorView",
         "SpecView",
         "UnsupportedMediaType",
         "__version__",

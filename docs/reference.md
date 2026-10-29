@@ -66,7 +66,26 @@ This package defines none. The argument reader reads one of the kernel's:
         - get_fragment_template_names
         - fragment_success
         - served_spec
+::: django_spec_html.views.spec_selector_view.SpecSelectorView
+    options:
+      inherited_members:
+        - as_view
+        - dispatch
+        - get
+        - get_context_data
+        - get_pool_seeds
+        - get_server_arguments
+        - wants_fragment
+        - get_fragment_template_names
+        - served_spec
 ::: django_spec_html.types.outcome.Outcome
+
+## Template filters
+
+`{% load django_spec_html %}` loads them: the library is named for the
+package, so a template reads which package it loads.
+
+::: django_spec_html.templatetags.django_spec_html.available
 
 ## The admin
 

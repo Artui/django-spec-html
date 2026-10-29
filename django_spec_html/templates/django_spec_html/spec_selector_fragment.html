@@ -1,0 +1,15 @@
+{% load i18n %}{% comment %}
+A selector's results, and what an htmx request for its page is answered with:
+the refusal's messages, or the rows - the table where the view builds one,
+otherwise each row as its Output marks it for a person, never the row's own
+string - then the links to the pages beside this one, every filter kept.
+{% endcomment %}{% if errors %}<ul class="errorlist"{% if code %} data-code="{{ code }}"{% endif %}>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+{% elif table %}{% include table.template_name %}
+{% elif rows %}<ul>
+{% for shown in row_displays %}<li>{% if shown.label %}{{ shown.label }}{% else %}<dl>{% for name, value in shown.pairs %}<dt>{{ name }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% endif %}</li>
+{% endfor %}</ul>
+{% else %}<p>{% translate "Nothing matches." %}</p>
+{% endif %}{% if page %}<nav>{% if previous_page_query %}<a href="?{{ previous_page_query }}" rel="prev">{% translate "Previous" %}</a> {% endif %}{% blocktranslate with number=page.page total=page.total_pages trimmed %}
+Page {{ number }} of {{ total }}
+{% endblocktranslate %}{% if next_page_query %} <a href="?{{ next_page_query }}" rel="next">{% translate "Next" %}</a>{% endif %}</nav>
+{% endif %}
