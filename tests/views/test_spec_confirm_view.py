@@ -21,9 +21,11 @@ from django.contrib import messages
 from django.contrib.messages import get_messages
 from django.contrib.messages.storage.cookie import CookieStorage
 from django.core.exceptions import BadRequest, ImproperlyConfigured, PermissionDenied
+from django.db import connection
 from django.db.models import QuerySet
 from django.http import Http404, HttpResponse
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import path
 from django_service_specs import (
     UNSET,
@@ -789,6 +791,57 @@ class TestARefusalRedirect:
             ["Archiving is paused."],
             "paused",
         )
+
+    @pytest.mark.parametrize(
+        ("refused", "status"),
+        [
+            (ServiceValidationError({}), 400),
+            (ServiceValidationError({"x": []}), 400),
+            (ServiceValidationError([]), 400),
+            (ServiceConflict(""), 409),
+        ],
+        ids=["empty-tree", "empty-list-at-a-key", "empty-list", "empty-message"],
+    )
+    @pytest.mark.parametrize("store", [True, False], ids=["with-a-store", "without-a-store"])
+    def test_a_refusal_with_nothing_to_say_is_the_page_again(
+        self, ada: Any, note: Note, refused: Any, status: int, store: bool
+    ) -> None:
+        # A redirect with no message would lose the refusal, store or none:
+        # nothing is sent to fail, and Django's storage drops an empty one.
+        view = ReturnsToTheList.as_view(spec=raising(refused))
+        request = signed_in(
+            FACTORY.post(f"/notes/{note.pk}/archive/{FROM_THE_LIST}", data=PRESSED), ada
+        )
+        if store:
+            request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+        response = view(request, pk=note.pk)
+        assert (response.status_code, response.has_header("Location")) == (status, False)
+        assert stored(request) == []
+
+    def test_a_refusal_sent_back_reads_no_target(self, ada: Any, note: Note) -> None:
+        # A set target, displayed: rendering the page again counts it and
+        # reads its rows for the presenter. Sent back, the page reads neither.
+        # The page rendered is the control, so the test cannot pass on a
+        # target that is never read.
+        spec = ServiceSpec(
+            service=raising(ServiceConflict("Not now.")).service,
+            permissions=OPEN,
+            collection_selector_spec=SelectorSpec(kind=SelectorKind.LIST, selector=drafts),
+            presenter=DataclassPresenter(NoteOut),
+        )
+        for redirects in (False, True):
+            view = ReturnsToTheList.as_view(
+                spec=spec, route_kwargs=None, display_target=True, refusal_redirect=redirects
+            )
+            request = signed_in(FACTORY.post(f"/notes/{FROM_THE_LIST}", data=PRESSED), ada)
+            request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+            with CaptureQueriesContext(connection) as queries:
+                response = view(request)
+            # Dispatch's own savepoint is the only statement left once sent back.
+            read = [each["sql"] for each in queries.captured_queries if "SELECT" in each["sql"]]
+            assert (response.status_code, bool(read)) == (
+                (302, False) if redirects else (409, True)
+            )
 
     def test_off_by_default_the_refusal_is_the_page_again(self, ada: Any, note: Note) -> None:
         view = ReturnsToTheList.as_view(

@@ -36,7 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `redirect_field_name` reads, else `success_url`. Under htmx it answers
   `HX-Redirect`. A denial is raised as before. Without the messages middleware
   Django raises `MessageFailure`, and the page is rendered as it is without
-  `refusal_redirect`, so the refusal is never lost. `as_view()` refuses it on a
+  `refusal_redirect`, so the refusal is never lost; a refusal with no message
+  to send is the page again too. A refusal sent back counts and presents no
+  target. `as_view()` refuses it on a
   page with no `success_url` that does not override `get_refusal_url`.
 
 ## [0.6.0] — 2026-10-29

@@ -807,6 +807,11 @@ class TestReturningToNext:
         data = {"title": "Hi", "next": f"{scheme}://testserver/list/"}
         assert posted_to(view, ada, "/", data, secure=True).url == expected
 
+    def test_a_padded_next_is_followed_as_it_was_checked(self, ada: Any) -> None:
+        view = ReturnsToNext.as_view(spec=entry_spec())
+        response = posted_to(view, ada, "/", {"title": "Hi", "next": " /list/\n"})
+        assert response["Location"] == "/list/"
+
     def test_a_page_naming_no_field_reads_no_next(self, ada: Any) -> None:
         response = posted_to(form_view(entry_spec()), ada, "/?next=/list/", {"title": "Hi"})
         assert response.url == "/done/"

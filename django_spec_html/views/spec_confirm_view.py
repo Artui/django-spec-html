@@ -28,7 +28,13 @@ from django_service_specs import (
 
 from django_spec_html.http.route_arguments import route_arguments
 from django_spec_html.http.utils import route_targets
-from django_spec_html.views.utils import ClientRedirect, Served, SpecPageBase, refusal_tree
+from django_spec_html.views.utils import (
+    ClientRedirect,
+    Served,
+    SpecPageBase,
+    refusal_code,
+    refusal_tree,
+)
 
 
 class SpecConfirmView(SpecPageBase):
@@ -103,8 +109,8 @@ class SpecConfirmView(SpecPageBase):
     ``get_refusal_url(refused)``: the safe URL ``redirect_field_name`` reads,
     else ``success_url``. Under htmx it answers ``HX-Redirect`` to the same
     URL. A denial is raised as ever. Without the messages middleware there is
-    nowhere to keep the messages, so the page is rendered as without
-    ``refusal_redirect``.
+    nowhere to keep the messages, and a refusal with no message has nothing
+    to send, so either is the page rendered as without ``refusal_redirect``.
 
     **A question is shown, and cannot be answered here.** A service raising
     ``AdditionalInputRequired`` re-renders the page at 422, its schema first
@@ -265,38 +271,49 @@ class SpecConfirmView(SpecPageBase):
         ``add_argument_errors`` prefixes a key no field declares
         (test_a_service_s_tree_is_flattened_with_each_path). A question's
         ``requested_input`` is the base's, its message and its schema: there
-        is no field to answer it with.
+        is no field to answer it with. A refusal ``refusal_redirect`` sends
+        back never reaches here: ``_refused_elsewhere`` answered it.
+        """
+        context["errors"] = _errors(refused)
+        return self._rendered(self.get_context_data(**context), status=status)
 
-        With ``refusal_redirect``, the page is not rendered: each of those
-        messages is sent through ``messages.error``, carrying the refusal's
-        ``code`` as ``extra_tags`` where it has one, and the post redirects
-        to ``get_refusal_url(refused)``, or under htmx is sent there with
+    def _refused_elsewhere(self, refused: DispatchError | ServiceError) -> HttpResponse | None:
+        """With ``refusal_redirect``, the refusal's messages sent and the post redirected; otherwise ``None``.
+
+        Each message the page would show in ``errors`` is sent through
+        ``messages.error``, carrying the refusal's ``code`` as ``extra_tags``
+        where it has one, and the post redirects to
+        ``get_refusal_url(refused)``, or under htmx is sent there with
         ``HX-Redirect``
         (test_an_unmet_affordance_returns_to_next_with_its_reason,
-        test_htmx_is_sent_back_with_hx_redirect). Where the messages
-        middleware does not run, Django raises ``MessageFailure`` on the first
-        message, before any is stored, and the page is rendered as without
-        it, so the refusal is never lost to a redirect
-        (test_without_the_messages_middleware_it_is_the_page_again). A denial
-        never reaches here: it is raised before.
+        test_htmx_is_sent_back_with_hx_redirect). Asked before the target's
+        context is built, so a redirected refusal reads nothing for a page it
+        never renders (test_a_refusal_sent_back_reads_no_target).
+
+        ``None``, and so the page, wherever the refusal could be lost to the
+        redirect. Where the messages middleware does not run, Django raises
+        ``MessageFailure`` on the first message, before any is stored. And a
+        refusal with no message to send - an empty tree, or an empty
+        message, which Django's storage drops - would redirect saying
+        nothing, with or without the middleware. One branch to coverage, so
+        each condition is held by its own test:
+        test_off_by_default_the_refusal_is_the_page_again (the page
+        redirects) and test_a_refusal_with_nothing_to_say_is_the_page_again
+        (there is a message to send).
         """
-        errors = [
-            f"{'.'.join(where)}: {message}" if where else message
-            for where, message in refusal_messages(refusal_tree(refused))
-        ]
-        if self.refusal_redirect:
-            try:
-                for error in errors:
-                    messages.error(self.request, error, extra_tags=context.get("code", ""))
-            except MessageFailure:
-                ...
-            else:
-                url = self.get_refusal_url(refused)
-                if self.wants_fragment(self.request):
-                    return ClientRedirect(url)
-                return HttpResponseRedirect(url)
-        context["errors"] = errors
-        return self._rendered(self.get_context_data(**context), status=status)
+        sent = [error for error in _errors(refused) if error]
+        if not (self.refusal_redirect and sent):
+            return None
+        code = refusal_code(refused).get("code", "")
+        try:
+            for error in sent:
+                messages.error(self.request, error, extra_tags=code)
+        except MessageFailure:
+            return None
+        url = self.get_refusal_url(refused)
+        if self.wants_fragment(self.request):
+            return ClientRedirect(url)
+        return HttpResponseRedirect(url)
 
     def get_refusal_url(self, refused: DispatchError | ServiceError) -> str:
         """Where a refused post returns, with ``refusal_redirect`` on: the way back, or ``success_url``.
@@ -323,6 +340,14 @@ class SpecConfirmView(SpecPageBase):
         Override it to read the result, under ``result.value``.
         """
         return self.success_message % {"target": result.instance}
+
+
+def _errors(refused: DispatchError | ServiceError) -> list[str]:
+    """Every message of the refusal's tree, in its order, one at a parameter prefixed with its path."""
+    return [
+        f"{'.'.join(where)}: {message}" if where else message
+        for where, message in refusal_messages(refusal_tree(refused))
+    ]
 
 
 def _check_supplied(

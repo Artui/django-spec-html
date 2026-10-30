@@ -629,6 +629,8 @@ class TestTheWayBack:
     ) -> None:
         rendered = refused_post(view_class, spec, {**data, "next": "/list/"}, ada, note.pk)
         assert 'name="next"' not in rendered
+        # Nor an input with no name: the input is rendered only with a URL.
+        assert '<input type="hidden" name="" value="">' not in rendered
 
     @pytest.mark.parametrize(("view_class", "spec", "data"), REFUSED_POSTS)
     def test_an_unsafe_next_is_never_rendered(

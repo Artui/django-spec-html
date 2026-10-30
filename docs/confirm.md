@@ -196,7 +196,11 @@ docs/examples/spec_confirm.py:from-the-list
 - **Without the messages middleware the page is rendered as above.** Django
   raises `MessageFailure` with nowhere to keep a message, before any is
   stored, so the page renders the refusal itself rather than lose it in a
-  redirect.
+  redirect. A refusal with no message to send - an empty detail, or an empty
+  message, which Django's storage drops - is the page again too.
+- **A refusal sent back reads nothing for the page.** The redirect is decided
+  before the target is shown again, so a set is not counted and no presenter
+  is asked.
 
 `as_view()` refuses `refusal_redirect` on a page with no `success_url` that
 does not override `get_refusal_url`, since a refused post naming no safe URL

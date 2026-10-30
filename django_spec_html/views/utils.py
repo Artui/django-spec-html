@@ -496,6 +496,14 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
             if outcome is Outcome.NEEDS_INPUT:
                 requested = cast("AdditionalInputRequired", refused)
                 check_requested_input(spec, requested.schema, pool_seeds=served.seeds)
+            # A page answering the refusal with something other than itself
+            # answers here, once the outcome and the question are decided and
+            # before the target is shown again, so a set is not counted and
+            # no presenter asked for a page nobody renders
+            # (test_a_refusal_sent_back_reads_no_target).
+            elsewhere = self._refused_elsewhere(refused)
+            if elsewhere is not None:
+                return elsewhere
             # The target is shown again, and a set counted again, here and
             # never on a success: a post that redirects renders nothing.
             context = {
@@ -592,7 +600,11 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         safe = url_has_allowed_host_and_scheme(
             url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
         )
-        return cast("str", url) if safe else ""
+        # Django's check strips the value before reading it, so the stripped
+        # value is the one checked, and the one followed: the raw one would
+        # reach ``Location`` with its padding encoded into the path
+        # (test_a_padded_next_is_followed_as_it_was_checked).
+        return cast("str", url).strip() if safe else ""
 
     def get_success_url(self, result: DispatchResult) -> str:
         """Where a successful post redirects: ``success_url``, resolved as ``redirect()`` reads it.
@@ -778,6 +790,17 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
                 for each in presenter.presented_rows(tuple(rows), presented)
             ]
         return context
+
+    def _refused_elsewhere(self, refused: DispatchError | ServiceError) -> HttpResponse | None:
+        """An answer to a refused post other than the page again, or ``None`` for the page.
+
+        Asked of a refusal the post renders - never a denial, which is
+        raised - before the target's context is built, so an answer that
+        renders nothing reads nothing for it. ``None`` by default: every
+        page re-renders its refusal through ``_render_refused``.
+        ``SpecConfirmView`` answers its ``refusal_redirect`` here.
+        """
+        return None
 
     def served_spec(self) -> ServiceSpec:
         """``spec``, which ``as_view`` refused to build a view without."""
