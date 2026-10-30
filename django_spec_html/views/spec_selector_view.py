@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import inspect
 from collections.abc import Callable, Mapping
 from typing import Any, cast
 
@@ -92,8 +93,8 @@ class SpecSelectorView(SpecRequestBase):
       ``limit``, ``total``, ``total_pages``, ``has_next`` - its ``items``
       the same list as ``rows``, so a template reading either reads no row
       twice. ``previous_page_query`` and ``next_page_query``, where those
-      pages exist, are the request's own query string with the page key
-      replaced, every filter kept, for a link's ``?``.
+      pages exist, are the query the page read with the page key replaced,
+      every filter kept, for a link's ``?``.
     - ``filter``: the spec's ``filter_set``, a django-filter ``FilterSet``,
       bound to the query for display only, where the spec declares one.
     - ``table``: ``table_class`` built over ``rows``, where it is set.
@@ -120,6 +121,12 @@ class SpecSelectorView(SpecRequestBase):
     requires; a value that is not a whole number is ``paginate_by``, and a
     whole number below one is a page of one row, as ``paginate_output``
     clamps it.
+
+    **The query a page reads is ``get_query(request)``**, the request's own
+    query string unless a subclass answers another: a list that opens where
+    the last visit left it reads a query the host kept in the session. The
+    paging, the filter form, the spec's arguments and the links all read
+    that one answer, and the template's ``request`` carries it as ``GET``.
 
     **The filters are the spec's.** ``filter.form`` is the ``FilterSet``'s
     form bound to the query for display, its own validation never run:
@@ -228,6 +235,13 @@ class SpecSelectorView(SpecRequestBase):
         label = cls.__name__
         spec = _selector(label, initkwargs.get("spec", cls.spec))
         check_request_hooks(cls, initkwargs, spec)
+        # This page's own request hook, beside the two every view shares,
+        # read as ``check_request_hooks`` reads them: a keyword first.
+        if inspect.iscoroutinefunction(initkwargs.get("get_query", cls.get_query)):
+            raise ImproperlyConfigured(
+                f"{label}.get_query is async, and the view calls it without awaiting it, so it "
+                "would answer a coroutine: define it with def."
+            )
         _check_paging(label, spec, {**_attributes(cls), **initkwargs})
         _check_table(
             label,
@@ -259,10 +273,16 @@ class SpecSelectorView(SpecRequestBase):
         served = self._served(request)
         principal, grant = admitted(spec, request, kwargs, served)
         listing = spec.kind is SelectorKind.LIST
-        query, page, limit = self._paging(request.GET) if listing else (request.GET, None, None)
+        read = self._query(request)
+        query, page, limit = self._paging(read) if listing else (read, None, None)
         # After the admission, so a principal the class-level check refuses
         # is never shown a choice the form lists: its choices may query.
-        context: dict[str, Any] = {}
+        # The template's ``request`` reads ``GET`` as the query the page read,
+        # since a template tag building a link from it - django-tables2's
+        # header sort - would otherwise drop a query the hook answered
+        # (test_a_table_s_header_links_keep_the_remembered_query). A key of
+        # the view's context outranks the request context processor's.
+        context: dict[str, Any] = {"request": _reading(request, read)}
         form: Any = None
         if spec.filter_set is not None:
             context["filter"] = filters = spec.filter_set(data=query, request=request)
@@ -315,7 +335,7 @@ class SpecSelectorView(SpecRequestBase):
             # (test_page_items_are_the_rows).
             rows = answered_rows(spec, list(served_page.items))
             context["page"] = dataclasses.replace(served_page, items=rows)
-            context.update(_links(request.GET, self.page_kwarg, served_page))
+            context.update(_links(read, self.page_kwarg, served_page))
         else:
             rows = [] if result.value is None else answered_rows(spec, [result.value])
             if rows:
@@ -323,6 +343,38 @@ class SpecSelectorView(SpecRequestBase):
         context["rows"] = rows
         context.update(self._shown(spec, rows, result))
         return self._rendered(self.get_context_data(**context), status=200)
+
+    def get_query(self, request: HttpRequest) -> QueryDict:
+        """The query string the page reads: ``request.GET`` unless overridden.
+
+        Asked once per request, and its answer is the one query the page
+        reads: the paging keys taken off it, the filter form bound to it, the
+        spec's arguments read from it, and the links built from it. The
+        template is handed a ``request`` whose ``GET`` is this answer, so a
+        tag building a link from ``request.GET``, as django-tables2's header
+        sort does, keeps it. A list that remembers its last filter, sort and
+        page answers the session's copy on a bare visit, and saves a visit
+        that sends anything:
+
+            class Remembered(SpecSelectorView):
+                def get_query(self, request):
+                    if request.GET:
+                        request.session["books"] = request.GET.urlencode()
+                        return request.GET
+                    return QueryDict(request.session.get("books", ""))
+
+        A hook like this one saves the query before dispatch judges it, so a
+        saved query the spec refuses - a filter value no longer valid - is
+        refused on every bare visit until the host forgets it; the selector
+        guide's example forgets it on ``?reset=1``.
+
+        A plain ``def``, as ``as_view()`` requires of every request hook: the
+        page does not await it. The answer must be a ``QueryDict``, since the
+        paging keys are popped off a copy of it as lists; anything else is a
+        ``TypeError`` naming the hook. The answer is never changed in place
+        (test_the_hook_s_answer_is_left_as_it_came).
+        """
+        return request.GET
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         """Django's context - ``view``, and ``extra_context`` - with the ``spec`` served."""
@@ -333,10 +385,20 @@ class SpecSelectorView(SpecRequestBase):
         """``spec``, compiled: ``as_view`` refused to build a view whose spec does not compile to a ``SelectorSpec``."""
         return cast("SelectorSpec", kernel_spec(cast("SelectorSpec | SpecSource", self.spec)))
 
+    def _query(self, request: HttpRequest) -> QueryDict:
+        """``get_query(request)``, refused unless it is a ``QueryDict``, which the paging copies and pops lists off."""
+        query = self.get_query(request)
+        if not isinstance(query, QueryDict):
+            raise TypeError(
+                f"{type(self).__name__}.get_query() must answer a QueryDict, such as "
+                f"request.GET or QueryDict(saved); got {type(query).__name__}."
+            )
+        return query
+
     def _paging(self, sent: QueryDict) -> tuple[QueryDict, int | None, int | None]:
         """The query without its paging keys, and the page and the page size they asked for.
 
-        Taken off a copy, so the request's own query is left as it came, for
+        Taken off a copy, so the query the page read is left as it came, for
         the links that keep it. Each value is the last sent under its key, as
         ``QueryDict`` reads a repeated one, and one that is not a whole
         number is no value: page 1, and ``paginate_by``
@@ -506,12 +568,13 @@ def _whole(sent: list[str]) -> int | None:
 
 
 def _reading(request: HttpRequest, query: QueryDict) -> HttpRequest:
-    """``request`` as ``request_arguments`` reads it: its query string ``query``.
+    """``request`` with its query string ``query``, as ``request_arguments`` and the template read it.
 
-    A shallow copy, so the request's own query is left as it came, for the
-    filter's binding and the links; the reader takes a request, and a query
-    without the paging keys is what the spec is sent
-    (test_the_page_key_never_reaches_the_spec).
+    A shallow copy, so the request's own query is left as it came. The
+    reader takes a request, and the query the page read, without the paging
+    keys on a list, is what the spec is sent
+    (test_the_page_key_never_reaches_the_spec); the template is handed one
+    carrying the whole query the page read.
     """
     # ``Any``, as the stubs declare ``GET`` an immutable ``QueryDict``, which a
     # copy taken to drop keys is not; the reader only reads it.
@@ -523,7 +586,7 @@ def _reading(request: HttpRequest, query: QueryDict) -> HttpRequest:
 def _links(sent: QueryDict, page_kwarg: str, page: OutputPage) -> dict[str, str]:
     """``previous_page_query`` and ``next_page_query``, where those pages exist.
 
-    The request's own query with the page key replaced and everything else
+    The query the page read with the page key replaced and everything else
     kept: the filters, and a client's page size. Built off the page served,
     which is not always the page asked for, so a link from a clamped page
     leads where its label says.

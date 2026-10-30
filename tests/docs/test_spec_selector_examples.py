@@ -267,3 +267,55 @@ def test_unavailable_says_why_each_row_has_no_button(
         else:
             expected = f'<a href="/books/{row.pk}/withdraw/">Withdraw</a>'
         assert rendered == expected
+
+
+def test_a_bare_visit_opens_the_remembered_list_where_the_last_one_left_it() -> None:
+    seed()
+    client = Client()
+
+    sent = page_of(client, "/books/remembered/?title=Book&page=2")
+    bare = page_of(client, "/books/remembered/")
+
+    assert bare == sent
+    assert "Page 2 of 3" in bare
+    assert "<li>Book 11</li>" in bare
+    assert link(bare, "next") == "?title=Book&page=3"
+
+
+def test_a_visit_that_sends_a_key_wins_and_is_remembered() -> None:
+    seed()
+    client = Client()
+    page_of(client, "/books/remembered/?title=Book&page=2")
+
+    narrowed = page_of(client, "/books/remembered/?title=Book+2")
+    bare = page_of(client, "/books/remembered/")
+
+    assert narrowed.count("<li>Book ") == 6
+    assert "Page 1 of 1" in narrowed
+    assert bare == narrowed
+
+
+def test_a_bare_visit_keeps_the_remembered_sort() -> None:
+    seed()
+    client = Client()
+    page_of(client, "/books/remembered/?o=-price")
+
+    bare = page_of(client, "/books/remembered/")
+
+    assert bare.index("<li>Book 25</li>") < bare.index("<li>Book 24</li>")
+
+
+def test_reset_forgets_a_remembered_query_the_spec_refuses() -> None:
+    seed()
+    client = Client()
+    assert client.get("/books/remembered/?author=999").status_code == 400
+    assert client.get("/books/remembered/").status_code == 400
+
+    reset = page_of(client, "/books/remembered/?reset=1")
+    bare = page_of(client, "/books/remembered/")
+
+    assert "Page 1 of 3" in reset
+    assert bare == reset
+    # Forgotten rather than saved as a query of its own, which a list
+    # ignoring undeclared keys would serve just as well.
+    assert link(bare, "next") == "?page=2"

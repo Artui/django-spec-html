@@ -19,6 +19,7 @@ from typing import Annotated
 import django_filters
 import django_tables2 as tables
 from django.db.models import Q, QuerySet
+from django.http import HttpRequest, QueryDict
 from django.urls import path, reverse_lazy
 from django_service_specs import (
     Affordance,
@@ -185,6 +186,34 @@ urlpatterns = [
     ),
 ]
 # --8<-- [end:urls]
+
+
+# --8<-- [start:remembered]
+class RememberedBooks(SpecSelectorView):
+    """The book list, opened where this session's last visit left it."""
+
+    def get_query(self, request: HttpRequest) -> QueryDict:
+        # ?reset=1 forgets the saved query: the way out of one the spec
+        # refuses, since it is saved before dispatch judges it.
+        if "reset" in request.GET:
+            request.session.pop("books_query", None)
+            return QueryDict()
+        # A visit that sends anything is the query, and is remembered...
+        if request.GET:
+            request.session["books_query"] = request.GET.urlencode()
+            return request.GET
+        # ...and a bare visit reads the last one: its filters, sort and page.
+        return QueryDict(request.session.get("books_query", ""))
+
+
+urlpatterns += [
+    path(
+        "books/remembered/",
+        RememberedBooks.as_view(spec=book_list_spec, paginate_by=10),
+        name="remembered-books",
+    ),
+]
+# --8<-- [end:remembered]
 
 
 def seed(count: int = 25) -> list[Book]:

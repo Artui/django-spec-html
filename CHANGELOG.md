@@ -70,6 +70,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     name there draws nothing and raises nothing, and
     `{% with ok=row|available:"withdraw" %}{% if not ok %}` resolves the filter
     outside `{% if %}`, where a misspelt name raises.
+- **`SpecSelectorView.get_query(request)`, the query string a page reads.**
+  It answers `request.GET` unless a subclass answers another `QueryDict`, and
+  the page asks it once a request. On a list page the paging keys, the filter
+  form, the spec's arguments and the previous and next links all read its
+  answer; an instance page, which is not paged, reads the spec's arguments
+  from it. The template is handed a `request` whose `GET` is that answer, so a
+  django-tables2 table's header sort links keep it. A list that opens where
+  the last visit left it answers a query kept in the session on a bare visit;
+  the selector guide shows one, with a `?reset=1` that forgets a saved query
+  the spec refuses. Like every request hook it is a plain `def`, and
+  `as_view()` refuses an `async def` one; an answer that is not a `QueryDict`
+  raises `TypeError` naming the hook.
 
 ## [0.6.0] — 2026-10-29
 
