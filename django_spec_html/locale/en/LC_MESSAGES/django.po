@@ -1,0 +1,88 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#, python-format
+msgid "Unsupported media type \"%(media_type)s\" in request."
+msgstr ""
+
+msgid "The request body is not valid JSON."
+msgstr ""
+
+msgid "The request body is in a format this transport does not read."
+msgstr ""
+
+msgid "Not found."
+msgstr ""
+
+msgid "Home"
+msgstr ""
+
+msgid "Confirm"
+msgstr ""
+
+msgid "Form"
+msgstr ""
+
+msgid "A field left blank is left as it is."
+msgstr ""
+
+msgid "Save"
+msgstr ""
+
+msgid "Forms"
+msgstr ""
+
+#, python-format
+msgid "Row %(number)s"
+msgstr ""
+
+msgid "Add another"
+msgstr ""
+
+msgid "Results"
+msgstr ""
+
+msgid "Search"
+msgstr ""
+
+msgid "Nothing matches."
+msgstr ""
+
+msgid "Previous"
+msgstr ""
+
+#, python-format
+msgid "Page %(number)s of %(total)s"
+msgstr ""
+
+msgid "Next"
+msgstr ""
+
+#, python-format
+msgid "%(counter)s row selected, counted at %(at)s."
+msgid_plural "%(counter)s rows selected, counted at %(at)s."
+msgstr[0] ""
+msgstr[1] ""
+
+#, python-format
+msgid "The first row is shown."
+msgid_plural "The first %(counter)s rows are shown."
+msgstr[0] ""
+msgstr[1] ""

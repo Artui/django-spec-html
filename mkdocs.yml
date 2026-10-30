@@ -99,4 +99,5 @@ nav:
   - Serving a read: selectors.md
   - In the admin: admin.md
   - JSON views: http.md
+  - Translations: translations.md
   - API reference: reference.md

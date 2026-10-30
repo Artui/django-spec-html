@@ -25,6 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `input_data` fills is judged as posted, so a required one left blank is
     refused by the refresh and accepted by the commit.
   - The confirmation and formset pages are unchanged.
+- **The package ships its source catalog.**
+  `django_spec_html/locale/en/LC_MESSAGES/django.po` lists every msgid the
+  package marks, untranslated: the Python `gettext` calls and the templates'
+  `{% translate %}` and `{% blocktranslate %}` text. It is what a contributed
+  language starts from, and it loads for a project that lists `django_spec_html`
+  in `INSTALLED_APPS`, as the shipped templates require. No translated language
+  ships. `make messages` regenerates it (it needs GNU gettext) and `make
+  messages-check`, which CI runs, fails when it is stale. The new
+  [translations page](https://artui.github.io/django-spec-html/translations/)
+  covers loading it, the kernel's catalog beside it, and merging both into a
+  project's own.
+  - `UnsupportedMediaType`'s default message was a bare string that
+    `makemessages` never extracted. It is now marked, so it is in the catalog,
+    and is still looked up in the active language each time the refusal is built
+    with no message of its own.
 
 ## [0.7.0] — 2026-10-30
 
