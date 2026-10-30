@@ -174,3 +174,29 @@ def test_seed_makes_every_third_book_a_draft() -> None:
         Status.DRAFT,
     ] * 2
     assert Book.objects.count() == 6
+
+
+def test_a_bare_visit_opens_the_remembered_list_where_the_last_one_left_it() -> None:
+    seed()
+    client = Client()
+
+    sent = page_of(client, "/books/remembered/?title=Book&page=2")
+    bare = page_of(client, "/books/remembered/")
+
+    assert bare == sent
+    assert "Page 2 of 3" in bare
+    assert "<li>Book 11</li>" in bare
+    assert link(bare, "next") == "?title=Book&page=3"
+
+
+def test_a_visit_that_sends_a_key_wins_and_is_remembered() -> None:
+    seed()
+    client = Client()
+    page_of(client, "/books/remembered/?title=Book&page=2")
+
+    narrowed = page_of(client, "/books/remembered/?title=Book+2")
+    bare = page_of(client, "/books/remembered/")
+
+    assert narrowed.count("<li>Book ") == 6
+    assert "Page 1 of 1" in narrowed
+    assert bare == narrowed

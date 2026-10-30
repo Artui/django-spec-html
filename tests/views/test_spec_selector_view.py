@@ -19,7 +19,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
 from django.db.models import QuerySet
-from django.http import Http404
+from django.http import Http404, HttpRequest, QueryDict
 from django.template import TemplateSyntaxError
 from django_service_specs import (
     DEFAULT_PAGE_SIZE,
@@ -1052,3 +1052,125 @@ class TestQueries:
             )
 
         assert response.content.decode().split() == ["live:rename,-reopen"]
+
+
+class Remembered(SpecSelectorView):
+    """A list a bare visit opens where the last visit left it, as a host keeps it in the session."""
+
+    def get_query(self, request: HttpRequest) -> QueryDict:
+        if request.GET:
+            request.session["notes_query"] = request.GET.urlencode()
+            return request.GET
+        return QueryDict(request.session.get("notes_query", ""))
+
+
+def remembered(spec: Any, query: str, *, user: Any, saved: str, **initkwargs: Any) -> Any:
+    """``spec`` served by ``Remembered`` for ``query``, the session holding ``saved``, and the session after."""
+    request = signed_in(FACTORY.get(f"/notes/?{query}"), user)
+    request.session = {"notes_query": saved}
+    response = Remembered.as_view(spec=spec, **initkwargs)(request)
+    response.render()
+    return response, request.session
+
+
+class TestTheQueryHook:
+    def test_a_bare_visit_serves_the_query_the_hook_answers(
+        self, ada: Any, notes: list[Note]
+    ) -> None:
+        response, session = remembered(
+            listing(filter_set=TitleFilters),
+            "",
+            user=ada,
+            saved="title=note&page=2",
+            paginate_by=2,
+        )
+
+        assert response.status_code == 200
+        assert response.context_data["page"].page == 2
+        assert titles(response) == ["note 3", "note 4"]
+        # The links keep the remembered filter, and the form shows it.
+        assert response.context_data["previous_page_query"] == "title=note&page=1"
+        assert response.context_data["next_page_query"] == "title=note&page=3"
+        assert response.context_data["filter"].form["title"].value() == "note"
+        assert session == {"notes_query": "title=note&page=2"}
+
+    def test_the_hook_s_query_is_what_the_spec_reads(self, ada: Any, notes: list[Note]) -> None:
+        response, _ = remembered(
+            listing(filter_set=TitleFilters), "", user=ada, saved="title=4", paginate_by=2
+        )
+
+        assert titles(response) == ["note 4"]
+
+    def test_a_visit_carrying_a_key_wins_and_is_saved(self, ada: Any, notes: list[Note]) -> None:
+        response, session = remembered(
+            listing(filter_set=TitleFilters),
+            "title=5",
+            user=ada,
+            saved="title=note&page=2",
+            paginate_by=2,
+        )
+
+        assert titles(response) == ["note 5"]
+        assert response.context_data["page"].page == 1
+        assert session == {"notes_query": "title=5"}
+
+    def test_the_instance_page_reads_the_hook_s_query_too(
+        self, ada: Any, notes: list[Note]
+    ) -> None:
+        # Pinned to REJECT, so the key the hook answers is seen to reach dispatch.
+        view = Remembered.as_view(spec=one(), unknown_arguments=UnknownArguments.REJECT)
+        request = signed_in(FACTORY.get("/notes/"), ada)
+        request.session = {"notes_query": "colour=red"}
+
+        answered = view(request, pk=notes[0].pk)
+
+        assert answered.status_code == 400
+        assert answered.context_data["errors"] == ["colour: Unknown argument."]
+
+    def test_it_is_asked_once_a_request(self, ada: Any, notes: list[Note]) -> None:
+        asked: list[Any] = []
+
+        class Counted(SpecSelectorView):
+            def get_query(self, request: HttpRequest) -> QueryDict:
+                asked.append(request)
+                return QueryDict("title=note&page=2")
+
+        request = signed_in(FACTORY.get("/notes/"), ada)
+        Counted.as_view(spec=listing(filter_set=TitleFilters), paginate_by=2)(request)
+
+        assert asked == [request]
+
+    def test_the_default_is_the_request_s_query(self, ada: Any) -> None:
+        request = signed_in(FACTORY.get("/notes/?title=x"), ada)
+
+        assert SpecSelectorView().get_query(request) is request.GET
+
+    def test_an_answer_that_is_no_query_dict_is_refused_naming_the_hook(
+        self, ada: Any, notes: list[Note]
+    ) -> None:
+        class Plain(SpecSelectorView):
+            def get_query(self, request: HttpRequest) -> Any:
+                return {"page": "2"}
+
+        view = Plain.as_view(spec=listing())
+
+        with pytest.raises(TypeError) as refused:
+            view(signed_in(FACTORY.get("/notes/"), ada))
+
+        assert str(refused.value) == (
+            "Plain.get_query() must answer a QueryDict, such as request.GET or "
+            "QueryDict(saved); got dict."
+        )
+
+    def test_an_async_hook_is_refused(self) -> None:
+        class Awaited(SpecSelectorView):
+            async def get_query(self, request: HttpRequest) -> QueryDict:  # ty: ignore[invalid-method-override]
+                return request.GET
+
+        with pytest.raises(ImproperlyConfigured) as refused:
+            Awaited.as_view(spec=listing())
+
+        assert str(refused.value) == (
+            "Awaited.get_query is async, and the view calls it without awaiting it, so it "
+            "would answer a coroutine: define it with def."
+        )

@@ -91,6 +91,30 @@ query is all the spec's: there `?page=2` is an argument like any other.
 The links keep every other key, the filters and a client's page size among
 them, and replace the page.
 
+## A list that remembers its query
+
+The query the page reads is `get_query(request)`, which answers
+`request.GET` unless a subclass answers another `QueryDict`. The page asks it
+once a request and reads every key from its answer: the paging keys, the
+filter form, the spec's arguments and the links. A list that opens where the
+last visit left it keeps the query in the session:
+
+```python
+--8<--
+docs/examples/spec_selector.py:remembered
+--8<--
+```
+
+A bare visit to `/books/remembered/` serves the filters, the sort and the page
+of the visit before it, and its links keep them; a visit that sends any key is
+the query, and is saved in its place. The project needs Django's sessions
+installed, as the session is the host's and not the page's.
+
+The hook is a plain `def`, as every request hook is, and `as_view()` refuses
+an `async def` one, since the page does not await it. An answer that is not
+a `QueryDict` raises `TypeError` naming the hook: the paging keys are popped
+off a copy of it as lists.
+
 ## Filters
 
 A spec's `filter_set` is the page's filter form, as `filter`: bound to the

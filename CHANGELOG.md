@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`SpecSelectorView.get_query(request)`, the query string a page reads.**
+  It answers `request.GET` unless a subclass answers another `QueryDict`, and
+  the page asks it once a request: the paging keys, the filter form, the
+  spec's arguments and the previous and next links all read its answer, on a
+  list page and an instance page alike. A list that opens where the last
+  visit left it answers a query kept in the session on a bare visit; the
+  selector guide shows one. Like every request hook it is a plain `def`, and
+  `as_view()` refuses an `async def` one; an answer that is not a
+  `QueryDict` raises `TypeError` naming the hook.
+
 ## [0.6.0] — 2026-10-29
 
 ### Added
