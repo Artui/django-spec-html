@@ -137,6 +137,9 @@ so a selector's own rows are left as they were. A row that cannot carry an
 attribute, such as a tuple from `values_list()`, is served without answers,
 and the filter raises for it.
 
+A row's action refused or gone is the host's to answer, for htmx too, by the
+handlers in [a denial under htmx](pages.md#denials).
+
 ## A django-tables2 table
 
 `table_class` names a [django-tables2](https://django-tables2.readthedocs.io/)

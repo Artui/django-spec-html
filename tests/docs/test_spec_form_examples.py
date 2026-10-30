@@ -1,7 +1,7 @@
 """The page example, posted to as a browser posts, and as htmx posts.
 
 ``docs/pages.md`` includes its spec and URLconf from ``docs/examples/spec_form.py``
-and its template from the suite's own, and its htmx template and 403 handler
+and its template from the suite's own, and its htmx template and 403 and 404 handlers
 from ``tests/templates/spec_form_htmx.html`` and ``docs/examples/htmx.py``. Each test resolves a path against that
 URLconf, as Django's handler would, and posts what the rendered page sends -
 the CSRF token and the named submit button included - so the page cannot
@@ -559,13 +559,22 @@ class TestHandler403:
             return response_for_exception(request, refused)
         raise AssertionError("the spec admitted the request")
 
-    def test_a_browser_gets_the_hosts_403_page(self, ada: Any) -> None:
+    def test_a_signed_in_browser_gets_the_hosts_403_page(self, ada: Any) -> None:
         response = self.refused(FACTORY.post("/books/new/"), ada)
         assert response.status_code == 403
         assert not [name for name in response.headers if name.lower().startswith("hx-")]
         assert response["Vary"] == "HX-Request"
 
-    def test_anonymous_htmx_is_sent_to_sign_in_and_back(self) -> None:
+    def test_an_anonymous_browser_is_sent_to_sign_in_and_back(self) -> None:
+        # The full path, query string included, is what comes back after
+        # signing in; not the 403 page an anonymous visitor cannot act on.
+        response = self.refused(FACTORY.get("/books/new/?isbn=1"), None)
+        assert response.status_code == 302
+        assert response["Location"] == "/accounts/login/?next=/books/new/%3Fisbn%3D1"
+        assert not [name for name in response.headers if name.lower().startswith("hx-")]
+        assert response["Vary"] == "HX-Request"
+
+    def test_an_anonymous_htmx_request_is_sent_to_sign_in_and_back(self) -> None:
         here = "http://testserver/books/new/"
         request = FACTORY.post("/books/new/", HTTP_HX_CURRENT_URL=here, **HTMX)
         response = self.refused(request, None)
@@ -601,6 +610,40 @@ class TestHandler403:
         response = view(reload)
         assert response.status_code == 200
         assert not response.context_data["form"].is_bound
+
+
+class TestHandler404:
+    """The host's 404 handler from the page, reached as Django's handler reaches it."""
+
+    @pytest.fixture(autouse=True)
+    def urlconf(self, settings: Any) -> None:
+        settings.ROOT_URLCONF = HTMX_URLCONF
+
+    @staticmethod
+    def missing(request: Any, user: Any) -> Any:
+        request.user = AnonymousUser() if user is None else user
+        return response_for_exception(request, Http404("No such book."))
+
+    @pytest.mark.parametrize("signed_in", [True, False], ids=["signed_in", "anonymous"])
+    def test_a_browser_gets_django_s_404_page(self, ada: Any, signed_in: bool) -> None:
+        response = self.missing(FACTORY.post("/books/9/"), ada if signed_in else None)
+        assert response.status_code == 404
+        assert b"<title>Not Found</title>" in response.content
+        assert not [name for name in response.headers if name.lower().startswith("hx-")]
+        assert response["Vary"] == "HX-Request"
+
+    @pytest.mark.parametrize("signed_in", [True, False], ids=["signed_in", "anonymous"])
+    def test_an_htmx_request_refreshes_the_page_it_came_from(
+        self, ada: Any, signed_in: bool
+    ) -> None:
+        # A stale row's action: htmx swaps no 4xx body, so the refresh is what
+        # shows the visitor the row is gone. A missing row says nothing about
+        # who asked, so an anonymous visitor is not sent to sign in.
+        response = self.missing(FACTORY.post("/books/9/", **HTMX), ada if signed_in else None)
+        assert response.status_code == 404
+        assert response["HX-Refresh"] == "true"
+        assert "HX-Redirect" not in response
+        assert response["Vary"] == "HX-Request"
 
 
 class NeverPermitted(PermissionCheck):
