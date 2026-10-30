@@ -14,7 +14,9 @@ import re
 from typing import Any
 
 import pytest
-from django.test import Client
+from asgiref.sync import iscoroutinefunction, sync_to_async
+from django.test import AsyncClient, Client
+from django.urls import resolve
 
 from docs.examples import spec_selector
 from docs.examples.spec_selector import seed
@@ -174,3 +176,24 @@ def test_seed_makes_every_third_book_a_draft() -> None:
         Status.DRAFT,
     ] * 2
     assert Book.objects.count() == 6
+
+
+def test_the_page_is_a_sync_view() -> None:
+    # ``docs/pages.md`` says the pages are sync views, so Django runs one on a
+    # thread under ASGI and a template's lazy read never meets the event loop.
+    assert not iscoroutinefunction(resolve("/books/").func)
+
+
+# A transaction of the test's own: the thread the sync view runs on holds a
+# connection of its own, which cannot see rows written inside the ordinary
+# test transaction.
+@pytest.mark.django_db(transaction=True)
+async def test_a_sync_page_answers_200_when_requested_through_the_async_client() -> None:
+    # ``AsyncClient`` builds an ASGI request and runs it through Django's async
+    # handler, which adapts a sync view to a thread as ``ASGIHandler`` does. The
+    # page's template reads the database while it renders, so a read on the
+    # event loop would raise ``SynchronousOnlyOperation`` here.
+    await sync_to_async(seed)()
+    response = await AsyncClient().get("/books/")
+    assert response.status_code == 200
+    assert "Page 1 of 3" in response.content.decode()

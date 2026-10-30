@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The htmx handler example answers an anonymous visitor with the login page
+  whether or not htmx asked, and gains a `handler404`.** Without htmx, a
+  visitor who is not signed in is redirected to the login page and back to the
+  page they asked for, where the 403 page used to be shown; a signed-in
+  visitor still gets Django's 403 page. The new `handler404` answers an htmx
+  request with `HX-Refresh`, since htmx swaps no 4xx body and a stale row's
+  action would otherwise do nothing visible, and a browser with Django's 404
+  page. The pages state that the same handlers answer a list row's and a
+  confirmation's denial, and that the sync pages serve under ASGI, with the
+  reason there is no async page.
+
 ## [0.6.0] — 2026-10-29
 
 ### Added

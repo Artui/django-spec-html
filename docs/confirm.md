@@ -164,6 +164,9 @@ page that works, and says why.
   target is shown again.
 - A denial is raised for the host's 403 or 404 page.
 
+A confirmation's denial is the host's to answer, for htmx too, by the
+handlers in [a denial under htmx](pages.md#denials).
+
 ## A success
 
 A success redirects to `get_success_url(result)`, or under htmx answers
