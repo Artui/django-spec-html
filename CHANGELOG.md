@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   renamed, is answered 200 with the rows the rest of the query selects, where
   it was a 400 with `utm_source: Unknown argument.` A declared key's value is
   read and refused as before, a route kwarg the spec does not declare is
-  still the host's misconfiguration, and the form, formset and confirmation
-  pages and the JSON views keep `REJECT`. Set
+  still the host's misconfiguration, and the JSON views still refuse an
+  undeclared key. The form, formset and confirmation pages keep `REJECT` for
+  what they dispatch, their form's fields and the route. Set
   `unknown_arguments = UnknownArguments.REJECT` on a list whose query only
   code builds to keep the refusal. A list page and a JSON list now read each
   value of one query string the same way, rather than answering it the same.

@@ -190,7 +190,8 @@ class SpecSelectorView(SpecRequestBase):
             page a person reads is written by links the page does not
             control - a tracking parameter, a bookmark from before a filter
             was renamed. ``UnknownArguments.REJECT`` refuses it at 400, as
-            every other page and the JSON views do. A route kwarg the spec
+            the JSON views do; the form and confirmation pages never send
+            dispatch a query key at all. A route kwarg the spec
             does not declare raises ``ImproperlyConfigured`` under either
             (test_a_route_capture_the_spec_does_not_declare_is_refused).
         page_kwarg: The query key naming the page, ``"page"``, as Django's

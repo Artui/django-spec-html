@@ -255,9 +255,12 @@ class TestAsView:
         with pytest.raises(ImproperlyConfigured) as refused:
             SpecSelectorView.as_view(spec=listing(), table_class=object, table_order_by_field="o")
 
-        assert str(refused.value).startswith(
+        assert str(refused.value) == (
             "SpecSelectorView.table_order_by_field is 'o', so every header link sends 'o', "
-            "which the spec does not declare"
+            "which the spec does not declare: dispatch would ignore it, or refuse it under "
+            "REJECT, and no header would sort the rows. Name the spec's own ordering "
+            "parameter, such as its filter set's OrderingFilter, less any prefix the table's "
+            "Meta sets."
         )
 
     def test_a_prefixed_table_s_order_field_is_read_with_its_prefix(self) -> None:
@@ -378,8 +381,13 @@ class TestTheListPage:
 
         assert response.context_data["page"].items is response.context_data["rows"]
 
-    def test_the_page_key_never_reaches_the_spec(self, ada: Any, notes: list[Note]) -> None:
-        response = shown(listing(), "page=2", user=ada, paginate_by=2)
+    # Under REJECT a page key that reached the spec would be refused; under
+    # IGNORE it would be dropped and the page would be page 1.
+    @pytest.mark.parametrize("policy", [UnknownArguments.IGNORE, UnknownArguments.REJECT])
+    def test_the_page_key_never_reaches_the_spec(
+        self, ada: Any, notes: list[Note], policy: UnknownArguments
+    ) -> None:
+        response = shown(listing(), "page=2", user=ada, paginate_by=2, unknown_arguments=policy)
 
         assert response.status_code == 200
         assert titles(response) == ["note 3", "note 4"]
@@ -456,8 +464,9 @@ class TestAClientPageSize:
         [("1", 1), ("50", 3), ("x", 2), ("", 2)],
         ids=["chosen", "over-the-ceiling", "not-a-number", "blank"],
     )
+    @pytest.mark.parametrize("policy", [UnknownArguments.IGNORE, UnknownArguments.REJECT])
     def test_it_is_read_and_bounded(
-        self, ada: Any, notes: list[Note], asked: str, limit: int
+        self, ada: Any, notes: list[Note], asked: str, limit: int, policy: UnknownArguments
     ) -> None:
         response = shown(
             listing(),
@@ -466,6 +475,7 @@ class TestAClientPageSize:
             page_size_kwarg="per",
             paginate_by=2,
             max_page_size=3,
+            unknown_arguments=policy,
         )
 
         assert response.status_code == 200
@@ -770,6 +780,19 @@ class TestTheFragment:
         assert DOCUMENT not in body
         assert "<li>note 1</li>" in body
         assert response["Vary"] == "HX-Request, HX-Boosted, HX-History-Restore-Request"
+
+    def test_an_undeclared_key_is_ignored_by_the_fragment_too(
+        self, ada: Any, notes: list[Note]
+    ) -> None:
+        response = served(listing(), "utm_source=x", user=ada, headers=HTMX)
+        response.render()
+
+        body = response.content.decode()
+        assert response.status_code == 200
+        assert response.template_name == ["django_spec_html/spec_selector_fragment.html"]
+        assert DOCUMENT not in body
+        assert titles(response) == [note.title for note in notes]
+        assert "Unknown argument." not in body
 
     def test_the_page_carries_the_fragment_inside_its_results(
         self, ada: Any, notes: list[Note]

@@ -102,6 +102,19 @@ def test_the_strict_list_refuses_a_key_the_spec_does_not_declare() -> None:
     assert "utm_source: Unknown argument." in refused.content.decode()
 
 
+def test_the_strict_list_still_reads_its_paging_keys() -> None:
+    seed()
+    request = RequestFactory().get("/books/?page=2")
+    request.user = AnonymousUser()
+
+    response = spec_selector.strict_book_list(request)
+    response.render()
+
+    assert response.status_code == 200
+    assert response.context_data["page"].page == 2
+    assert "<li>Book 11</li>" in response.content.decode()
+
+
 def test_the_table_offers_withdraw_on_each_published_row_alone() -> None:
     books = seed(6)
 

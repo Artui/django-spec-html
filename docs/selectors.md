@@ -113,17 +113,18 @@ under htmx shows them too.
 **Is ignored.** `SpecSelectorView.unknown_arguments` is
 `UnknownArguments.IGNORE`, so `?utm_source=newsletter` on a list page serves
 the rows as if it were not there, and beside a filter the filter is read as
-usual. The page links keep it, as they keep every key. The query string of a page a person reads is written by links the page
-does not control: a tracking parameter, a bookmark from before a filter was
-renamed. Refusing what the spec does not declare would answer that visitor a
+usual. The page links keep it, as they keep every key. The query string of a
+page a person reads is written by links the page does not control: a
+tracking parameter, a bookmark from before a filter was renamed. Refusing what the spec does not declare would answer that visitor a
 400 for the link. It holds on an instance page too.
 
 A key the spec does declare is still read by its declaration, so
 `?author=999` is refused at 400 whatever else the query carries, and a
 route kwarg the spec does not declare is the host's misconfiguration under
-either policy. Every other page, and the [JSON views](http.md), refuse an
-undeclared key by default: their keys are chosen by code, a form's fields or
-a client's, rather than by whoever wrote a link.
+either policy. The form and confirmation pages send dispatch only their
+form's fields and the route, so a query key they do not declare never reaches
+it; the [JSON views](http.md) refuse an undeclared key by default, since a
+client's code chose it rather than whoever wrote a link.
 
 A list whose query is built by code alone opts back into the refusal:
 
