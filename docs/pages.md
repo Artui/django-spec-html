@@ -754,7 +754,7 @@ follows:
 
 | | Without htmx | With htmx |
 | --- | --- | --- |
-| `handler403`, anonymous | a redirect to the login page, back to the page asked for | `HX-Redirect` to the login page, back to the page the form is on |
+| `handler403`, anonymous | a redirect to the login page, back to the page asked for | `HX-Redirect` to the login page, back to the page the request came from |
 | `handler403`, signed in | Django's 403 page | `HX-Refresh` |
 | `handler404` | Django's 404 page | `HX-Refresh` |
 
@@ -763,19 +763,27 @@ GET**: the spec's class-level check, or the object-level check on the row the
 route names. A denial only the operation raises, from inside the service, does
 not recur on GET, so the reload shows the form again, empty, and what was typed
 is gone; a host whose services refuse that way answers those in the form
-instead, by raising a `ServiceError`. A 404 under htmx is usually a row that
-went away since the page was drawn, and the reload shows the page without it.
-The view's `Vary` never reaches a denial, which is raised rather than
+instead, by raising a `ServiceError`. An htmx action on a list row that went
+away since the page was drawn is a 404, and the reload shows the list without
+it; a page whose own route names the vanished row reloads to the 404 page.
+`HX-Refresh` on a request fired by a `load` or a polling `every` trigger that
+keeps failing reloads the page over and over, so such a request should target a
+URL that does not answer 403 or 404. The view's `Vary` never reaches a denial, which is raised rather than
 answered, so each handler sets its own on `HX-Request`, since it answers the
 two kinds of request differently.
 
+## Under ASGI
+
 **The pages are sync views and serve under ASGI.** Django runs a sync view on a
 thread there, so a project on an ASGI server needs nothing of the page. There
-is no async page: its template renders synchronously, and a lazy row or a
-relation read there would raise `SynchronousOnlyOperation` on the event loop,
-so an async page would hop to a thread for the render anyway, which is the hop
-Django already makes. `AsyncSpecView` differs because it answers JSON presented
-inside `adispatch`, with no template.
+is no async page: Django renders a template response on a thread already, but
+the page's own database work before it renders, which is admission and the
+spec's checks, dispatch, the target's lookup and the list's `COUNT`, would
+raise `SynchronousOnlyOperation` on the event loop. An async page would have to
+wrap every one of those in a thread hop, which is the hop Django already makes
+for a sync view. `AsyncSpecView` differs because it answers JSON presented
+inside `adispatch`, with no template to render and nothing else of the page to
+carry.
 
 ## A post that does not commit
 

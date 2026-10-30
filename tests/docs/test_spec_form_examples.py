@@ -585,6 +585,7 @@ class TestHandler404:
     def test_a_browser_gets_django_s_404_page(self, ada: Any, signed_in: bool) -> None:
         response = self.missing(FACTORY.post("/books/9/"), ada if signed_in else None)
         assert response.status_code == 404
+        assert b"<title>Not Found</title>" in response.content
         assert not [name for name in response.headers if name.lower().startswith("hx-")]
         assert response["Vary"] == "HX-Request"
 

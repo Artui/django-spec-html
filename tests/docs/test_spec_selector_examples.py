@@ -18,6 +18,7 @@ from asgiref.sync import iscoroutinefunction, sync_to_async
 from django.test import AsyncClient, Client
 from django.urls import resolve
 
+from django_spec_html import SpecConfirmView, SpecFormSetView, SpecFormView, SpecSelectorView
 from docs.examples import spec_selector
 from docs.examples.spec_selector import seed
 from tests.adapter_app.models import Book, Status
@@ -178,21 +179,27 @@ def test_seed_makes_every_third_book_a_draft() -> None:
     assert Book.objects.count() == 6
 
 
+@pytest.mark.parametrize("view", [SpecFormView, SpecFormSetView, SpecConfirmView, SpecSelectorView])
+def test_every_page_view_is_sync(view: Any) -> None:
+    # ``docs/pages.md`` says the four pages are sync views, which Django runs
+    # on a thread under ASGI.
+    assert view.view_is_async is False
+
+
 def test_the_page_is_a_sync_view() -> None:
-    # ``docs/pages.md`` says the pages are sync views, so Django runs one on a
-    # thread under ASGI and a template's lazy read never meets the event loop.
+    # The route the next test requests resolves to a sync callable.
     assert not iscoroutinefunction(resolve("/books/").func)
 
 
-# A transaction of the test's own: the thread the sync view runs on holds a
-# connection of its own, which cannot see rows written inside the ordinary
-# test transaction.
+# ``transaction=True`` for isolation: the seed below commits on a worker
+# thread, outside the ordinary test transaction, and this flushes it after.
 @pytest.mark.django_db(transaction=True)
 async def test_a_sync_page_answers_200_when_requested_through_the_async_client() -> None:
     # ``AsyncClient`` builds an ASGI request and runs it through Django's async
-    # handler, which adapts a sync view to a thread as ``ASGIHandler`` does. The
-    # page's template reads the database while it renders, so a read on the
-    # event loop would raise ``SynchronousOnlyOperation`` here.
+    # handler, which adapts a sync view to a thread as ``ASGIHandler`` does.
+    # Django renders the template response on a thread itself; what would
+    # raise ``SynchronousOnlyOperation`` on the loop is the page's own queries
+    # before it renders, the target's lookup and the list's COUNT among them.
     await sync_to_async(seed)()
     response = await AsyncClient().get("/books/")
     assert response.status_code == 200
