@@ -14,7 +14,7 @@ and a denial raised in both modes.
 `SpecSelectorView` serves a selector spec as a page to read: a list, filtered
 through the spec's `filter_set` and paged by the kernel's `paginate_output`,
 or one row; dispatch answers each row's affordances in bulk and the
-`available` template filter reads them. A django-tables2 `Table` is composed,
+`available` and `unavailable` template filters read them. A django-tables2 `Table` is composed,
 never imported: the package depends on no table library.
 Beside the pages, `http/` serves a spec as plain-Django JSON (`SpecView`,
 `AsyncSpecView`, `dispatch_request`, `error_response`, `request_arguments`), for
@@ -86,7 +86,7 @@ Non-negotiable. They keep the package navigable, and they are the kernel's.
 | Subpackage | Holds |
 | --- | --- |
 | `views/` | `SpecFormView`, a spec served as the page its form is, with what only that page needs (the fields it holds back, the question it asks); `SpecFormSetView`, a `many` spec served as a formset of its form; `SpecConfirmView`, a spec with no Validator served as a target and a button; `SpecSelectorView`, a selector spec served as a list page or an instance page; `utils.py` for `SpecRequestBase`, what every page reads off a request (the seeds, the server binding, the fragment, the Vary header), with `SpecPageBase`, the private base every page view subclasses (admission, the target and its display, dispatch, the refusal, the success and its message, the fragment wrapper, the commit rule), whose hooks a subclass supplies and `as_view()` refuses a class missing, and the form readers both form pages share (`form_values`, `without_errors`), and the row answers the selector page attaches and the filter reads (`answered_rows`, `row_answers`) |
-| `templatetags/` | `django_spec_html.py`, the `{% load django_spec_html %}` library: the `available` filter, which reads the answers `SpecSelectorView` attached to each row. Named for the library rather than its symbol (rule 7), and mirrored by `tests/templatetags/test_django_spec_html.py` |
+| `templatetags/` | `django_spec_html.py`, the `{% load django_spec_html %}` library: the `available` filter, whether a row's action is available, and the `unavailable` filter, its code and reason when it is not, both reading the answers `SpecSelectorView` attached to each row through one lookup. Named for the library rather than its symbol (rule 7), and mirrored by `tests/templatetags/test_django_spec_html.py` |
 | `templates/django_spec_html/` | the pages' default templates: `base.html`, which the four pages extend; `spec_form.html`, `spec_form_set.html`, `spec_confirm.html` and `spec_selector.html`, each including its form from a `*_fragment.html` of its own, which an htmx request is answered with on every Django; `target.html`, the target pane two of them share. Held by `tests/views/test_default_templates.py`, which mirrors no Python file |
 | `model_admin/` | `SpecActionsMixin`, a `ModelAdmin` serving a spec's page as an object action (an instance target, linked from the change form) or a changelist action (a collection target, the ticked rows as its set), each at an admin URL of its own within the admin's permission and `get_queryset`, through the `views/` pages; its templates are `templates/django_spec_html/admin/` |
 | `types/` | `Outcome`, the ways a page's post ends; `SpecAction`, one entry of a `ModelAdmin`'s `spec_actions`; it imports nothing else in the package (rule 8) |

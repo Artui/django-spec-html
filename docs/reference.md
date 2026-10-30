@@ -86,6 +86,7 @@ This package defines none. The argument reader reads one of the kernel's:
 package, so a template reads which package it loads.
 
 ::: django_spec_html.templatetags.django_spec_html.available
+::: django_spec_html.templatetags.django_spec_html.unavailable
 
 ## The admin
 
