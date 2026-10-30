@@ -51,6 +51,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   page. The pages state that the same handlers answer a list row's and a
   confirmation's denial, and that the sync pages serve under ASGI, with the
   reason there is no async page.
+- **The `unavailable` template filter: why a row's action is unavailable.**
+  `{% with why=row|unavailable:"withdraw" %}{% if why %}{{ why.reason }}{% endif %}{% endwith %}`
+  returns the row's answer, with the `code` and `reason` of the first
+  condition the row does not meet, when the action is unavailable, and
+  `None` when it is available. It reads the answers `available` reads, so it
+  costs no query, and raises the same `TemplateSyntaxError` for a name the
+  spec does not declare or a row the page did not serve. A condition on the
+  row asked of a row that no longer exists answers with no code and no
+  reason, so `{% if why %}` holds and `{{ why.reason }}` renders empty. The
+  answer is a fresh `dict` per read, so `json_script` takes it, whose `clear`
+  and `popitem` are marked `alters_data`, so no template can empty it. The
+  example's table shows the reason where a row has no Withdraw button.
+  - **The docs read a negated or combined condition through `{% with %}`**,
+    for both filters, where they said to use `available` only as a bare
+    `{% if %}` condition: Django's `{% if %}` reads an error inside `not`,
+    `and`, `or` or a comparison as the condition being false, so a misspelt
+    name there draws nothing and raises nothing, and
+    `{% with ok=row|available:"withdraw" %}{% if not ok %}` resolves the filter
+    outside `{% if %}`, where a misspelt name raises.
 
 ## [0.6.0] — 2026-10-29
 

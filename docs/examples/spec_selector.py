@@ -133,10 +133,13 @@ class BookTable(tables.Table):
     # sort: dispatch would refuse ``o=author``, and the link would answer 400.
     author = tables.Column(accessor="author__name", verbose_name="Author", orderable=False)
     price = tables.Column()
+    # The button where the row may be withdrawn, and otherwise why not: the
+    # reason of the first condition the row does not meet.
     withdraw = tables.TemplateColumn(
-        '{% load django_spec_html %}{% if record|available:"withdraw" %}'
-        '<a href="{% url "withdraw-book" record.pk %}">Withdraw</a>'
-        "{% else %}<span>Not available</span>{% endif %}",
+        '{% load django_spec_html %}{% with why=record|unavailable:"withdraw" %}'
+        "{% if why %}<span>{{ why.reason }}</span>"
+        '{% else %}<a href="{% url "withdraw-book" record.pk %}">Withdraw</a>{% endif %}'
+        "{% endwith %}",
         orderable=False,
         verbose_name="",
     )

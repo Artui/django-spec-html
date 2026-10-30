@@ -14,7 +14,8 @@ and the admin face the pages are served from too:
 - **[Serving a read](selectors.md).**
   [`SpecSelectorView`][django_spec_html.views.spec_selector_view.SpecSelectorView]
   serves a selector spec as a list page, filtered and paged, or as one row's
-  page, and the `available` filter asks each row what its operations allow.
+  page, and the `available` and `unavailable` filters ask each row what its
+  operations allow and why not.
 - **[JSON views](http.md).**
   [`SpecView`][django_spec_html.http.spec_view.SpecView],
   [`AsyncSpecView`][django_spec_html.http.async_spec_view.AsyncSpecView] and

@@ -126,16 +126,49 @@ row it serves, and the `available` filter reads them:
 So the button follows the rule the operation's own dispatch enforces, and
 asking costs no query. **A name the spec does not declare raises**
 `TemplateSyntaxError`, naming those it does, rather than reading as
-unavailable for good. Use the filter as an `{% if %}` condition on its own,
-with the unavailable branch as the `{% else %}`: Django reads an error
-raised inside `not`, `and`, `or` or a comparison as the whole condition
-false, so `{% if not row|available:"withdarw" %}` draws nothing and raises
-nothing.
+unavailable for good.
+
+**Read a negated or combined condition through `{% with %}`.** Django's
+`{% if %}` reads an error raised inside `not`, `and`, `or` or a comparison
+as the whole condition false, so `{% if not row|available:"withdarw" %}`
+draws nothing and raises nothing. `{% with %}` resolves the filter outside
+`{% if %}`, so the same misspelt name raises there:
+
+```django
+{% with ok=row|available:"withdraw" %}
+  {% if not ok %}<span>Not available</span>{% endif %}
+{% endwith %}
+```
+
+A filter on its own, `{% if row|available:"withdraw" %}`, raises as it is.
+The same holds for `unavailable`, below.
 
 A row that is a mapping, such as one from `values()`, is answered on a copy,
 so a selector's own rows are left as they were. A row that cannot carry an
 attribute, such as a tuple from `values_list()`, is served without answers,
-and the filter raises for it.
+and either filter raises for it.
+
+### Why a row's action is unavailable
+
+The `unavailable` filter reads the same answers and says why: the row's
+answer, with the `code` and `reason` of the first condition the row does
+not meet, when the action is unavailable, and `None` when it is available.
+It costs no query either, and raises for the same names and rows.
+
+```django
+{% with why=row|unavailable:"withdraw" %}
+  {% if why %}<span title="{{ why.code }}">{{ why.reason }}</span>
+  {% else %}<a href="{% url "withdraw-book" row.pk %}">Withdraw</a>{% endif %}
+{% endwith %}
+```
+
+A condition on the row asked of a row that no longer exists answers with no
+code and no reason, since none of the conditions' sentences is true of it:
+`why` is still the answer, so `{% if why %}` holds, and `{{ why.reason }}`
+renders as any missing variable does. The answer is a `dict`, so
+`{{ why|json_script:"why" }}` hands it to a script, and a fresh copy per read
+whose `clear` and `popitem` no template can call, so a template cannot empty
+it.
 
 A row's action refused or gone is the host's to answer, for htmx too, by the
 handlers in [a denial under htmx](pages.md#denials).
@@ -155,7 +188,7 @@ docs/examples/spec_selector.py:table
 ```
 
 A `TemplateColumn` asks each `record` what it offers, as a template asks a
-row. **The table never pages or orders the rows**: they are the spec's page,
+row: the example's shows the button, or the reason it is not there. **The table never pages or orders the rows**: they are the spec's page,
 in the spec's order. It is built with no `request`, since django-tables2 then
 runs its `RequestConfig`, which would page and order the data from the query
 string, and with `order_by=()`, so a `Meta.order_by` is never applied.
