@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refusal is placed on the form by `add_argument_errors`, at 200 with the page
   or the fragment, and `refreshed` in the context as before.
   - **`HX-Trigger-Name` decides which errors.** Where it names one of the
-    form's fields, matched against its `html_name` so a form `prefix` holds,
+    form's fields, matched against its `html_name`, the name it posts under,
     only that field's errors are placed and no non-field error; every other
     refresh places the whole refusal.
   - **No provider runs**, as `bind_arguments` runs none: a field the spec's
@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `makemessages` never extracted. It is now marked, so it is in the catalog,
     and is still looked up in the active language each time the refusal is built
     with no message of its own.
+
+### Changed
+- **Requires `django-service-specs>=0.21.0`**, for `bind_arguments` taking
+  the call's `pool_seeds`, which validating a refresh binds with.
 
 ## [0.7.0] — 2026-10-30
 

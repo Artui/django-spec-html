@@ -238,7 +238,7 @@ class SpecFormView(SpecPageBase):
     dispatched, no ``success_message`` sent. Its refusal is placed on the
     form as a refused commit's is, at 200 still, with ``refreshed`` in the
     context. Where ``HX-Trigger-Name`` names one of the form's fields, as
-    its ``html_name``, so a ``prefix`` holds, only that field's errors are
+    its ``html_name``, the name it posts under, only that field's errors are
     placed and no non-field error; on every other refresh, the whole
     refusal. **It runs no provider**, as ``bind_arguments`` runs neither
     ``input_data`` nor ``kwargs``: a field the spec's ``input_data`` fills
@@ -680,7 +680,7 @@ def _triggered(
 
     ``trigger`` is ``HX-Trigger-Name``, the element an htmx request was
     issued from, matched against each field's ``html_name``, the name it
-    posts under, so a form's ``prefix`` holds. A field's own request, an
+    posts under. A field's own request, an
     ``hx-trigger="change"`` on its input, shows that field's errors and
     neither another field's nor the form's: a person has not reached the
     rest yet. Any other refresh - no header, the form's own name, a refresh

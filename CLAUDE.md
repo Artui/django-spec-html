@@ -42,6 +42,8 @@ last shipped in kernel 0.5.1. Two positions follow from the move:
 | `make lint` | `ruff check` plus `ty check` |
 | `make format-check` | `ruff format --check --diff` (CI runs this; `make lint` does not) |
 | `make docs-build` | `mkdocs build --strict` |
+| `make messages` | Regenerate the source catalog `locale/en/LC_MESSAGES/django.po` (needs GNU gettext) |
+| `make messages-check` | Fail if the committed source catalog is not what `make messages` writes (CI runs this) |
 | `make release-bump VERSION=X.Y.Z` | Rewrite the version and promote the changelog section |
 
 ## Structural rules
@@ -63,8 +65,9 @@ Non-negotiable. They keep the package navigable, and they are the kernel's.
    public surface in `__all__`. Internal modules import from leaf paths, never
    from the package's `__init__`.
 7. **The package root is a table of contents, not a drawer.** It holds
-   `__init__.py` and `version.py`, and `templates/`, which Django's
-   app-directories loader finds only there. Everything else lives in a subpackage named
+   `__init__.py` and `version.py`, `templates/`, which Django's
+   app-directories loader finds only there, and `locale/`, the one place
+   Django looks for an app's catalog. Everything else lives in a subpackage named
    for a **concern**: `http/` (a spec as plain-Django JSON, and the request
    readers both halves use), `views/` (a spec as a page), `model_admin/`
    (those pages as a `ModelAdmin`'s actions; not `admin/`, which
@@ -191,7 +194,7 @@ configured and enforced. isort order is stdlib, third party, first party.
 | --- | --- | --- |
 | Python | 3.10 | 3.10 through 3.14 |
 | Django | 4.2 | 4.2, 5.0, 5.1, 5.2, 6.0, 6.1 |
-| django-service-specs | 0.20.0 | the newest release, and the floor in the `floor` job |
+| django-service-specs | 0.21.0 | the newest release, and the floor in the `floor` job |
 
 The Python and Django floors are the kernel's, and cannot sit below them.
 

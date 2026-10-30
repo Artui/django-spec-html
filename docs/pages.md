@@ -851,7 +851,8 @@ the form bound to the post:
   keyword, or by a value posted - is narrowed again.
 - Nothing is dispatched and nothing validated: the form shows the values
   posted and no error, and a required field left blank is not called
-  required. `asked_fields` are held back, as on GET.
+  required. `asked_fields` are held back, as on GET, unless the refusal
+  names one, under `validate_on_refresh` below.
 - The context carries `refreshed`, `True`, for a template that needs to tell;
   it is absent from every other render.
 - The page answers 200, and an htmx request the form's fragment at 200.
@@ -893,10 +894,13 @@ books" shows every error the form has.
 - **The refusal is placed on the form as a refused commit's is**, by
   `add_argument_errors`.
 - **`HX-Trigger-Name` decides which errors.** Where it names one of the
-  form's fields, as the field posts it - its `html_name`, so a form `prefix`
-  holds - only that field's errors are placed, and no non-field error: a
-  person has not reached the rest of the form yet. Every other refresh - no
-  header, the form's own name, a refresh button - shows the whole refusal.
+  form's fields, as the field posts it - its `html_name` - only that
+  field's errors are placed, and no non-field error: a person has not reached
+  the rest of the form yet. Every other refresh - no header, the form's own
+  name, a refresh button, one part of a multi-widget field such as `when_0` -
+  shows the whole refusal. The kernel's `FormValidator` does not yet bind a
+  form whose class sets a `prefix`, so such a form's refusal names its filled
+  fields required, on a refresh as on a commit.
 - **No provider runs.** `bind_arguments` runs neither the spec's
   `input_data` nor a `kwargs` provider, and that is the one difference in how
   the post is bound. A field `input_data` fills is judged as posted: a
