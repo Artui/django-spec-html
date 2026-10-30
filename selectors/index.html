@@ -454,10 +454,32 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#a-list-that-remembers-its-query" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A list that remembers its query
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#filters" class="md-nav__link">
     <span class="md-ellipsis">
       
         Filters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-key-the-spec-does-not-declare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A key the spec does not declare
       
     </span>
   </a>
@@ -472,6 +494,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="What a row offers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-a-rows-action-is-unavailable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why a row's action is unavailable
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -657,10 +696,32 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#a-list-that-remembers-its-query" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A list that remembers its query
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#filters" class="md-nav__link">
     <span class="md-ellipsis">
       
         Filters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-key-the-spec-does-not-declare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A key the spec does not declare
       
     </span>
   </a>
@@ -675,6 +736,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="What a row offers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-a-rows-action-is-unavailable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why a row's action is unavailable
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -985,14 +1063,62 @@ where their labels say.</p>
 </tbody>
 </table>
 <p><strong>The paging keys never reach the spec.</strong> They are taken off the query before
-the spec reads it, so <code>?page=2</code> is not refused as an argument the spec does
-not declare, and <code>as_view()</code> refuses a list spec declaring a parameter under
-a paging key, since that parameter could never be sent. Rename the key with
-<code>page_kwarg</code> instead. A page that is not a whole number is page one, and a
+the spec reads it, so <code>?page=2</code> is the page's under either
+<a href="#a-key-the-spec-does-not-declare"><code>unknown_arguments</code> policy</a>, and
+<code>as_view()</code> refuses a list spec declaring a parameter under a paging key,
+since that parameter could never be sent. Rename the key with <code>page_kwarg</code>
+instead. A page that is not a whole number is page one, and a
 size that is not one is <code>paginate_by</code>. An instance page is not paged, so its
 query is all the spec's: there <code>?page=2</code> is an argument like any other.</p>
 <p>The links keep every other key, the filters and a client's page size among
 them, and replace the page.</p>
+<h2 id="a-list-that-remembers-its-query">A list that remembers its query<a class="headerlink" href="#a-list-that-remembers-its-query" title="Permanent link">&para;</a></h2>
+<p>The query the page reads is <code>get_query(request)</code>, which answers
+<code>request.GET</code> unless a subclass answers another <code>QueryDict</code>. The page asks it
+once a request and reads every key from its answer: the paging keys, the
+filter form, the spec's arguments and the links. A list that opens where the
+last visit left it keeps the query in the session:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">RememberedBooks</span><span class="p">(</span><span class="n">SpecSelectorView</span><span class="p">):</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="sd">"""The book list, opened where this session's last visit left it."""</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">get_query</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryDict</span><span class="p">:</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>        <span class="c1"># ?reset=1 forgets the saved query: the way out of one the spec</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>        <span class="c1"># refuses, since it is saved before dispatch judges it.</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>        <span class="k">if</span> <span class="s2">"reset"</span> <span class="ow">in</span> <span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="p">:</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>            <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"books_query"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>            <span class="k">return</span> <span class="n">QueryDict</span><span class="p">()</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>        <span class="c1"># A visit that sends anything is the query, and is remembered...</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>        <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="p">:</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>            <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="p">[</span><span class="s2">"books_query"</span><span class="p">]</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="o">.</span><span class="n">urlencode</span><span class="p">()</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>            <span class="k">return</span> <span class="n">request</span><span class="o">.</span><span class="n">GET</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>        <span class="c1"># ...and a bare visit reads the last one: its filters, sort and page.</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>        <span class="k">return</span> <span class="n">QueryDict</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"books_query"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>
+</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>
+</span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="n">urlpatterns</span> <span class="o">+=</span> <span class="p">[</span>
+</span><span id="__span-3-19"><a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>    <span class="n">path</span><span class="p">(</span>
+</span><span id="__span-3-20"><a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>        <span class="s2">"books/remembered/"</span><span class="p">,</span>
+</span><span id="__span-3-21"><a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>        <span class="n">RememberedBooks</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="n">book_list_spec</span><span class="p">,</span> <span class="n">paginate_by</span><span class="o">=</span><span class="mi">10</span><span class="p">),</span>
+</span><span id="__span-3-22"><a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>        <span class="n">name</span><span class="o">=</span><span class="s2">"remembered-books"</span><span class="p">,</span>
+</span><span id="__span-3-23"><a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>    <span class="p">),</span>
+</span><span id="__span-3-24"><a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a><span class="p">]</span>
+</span></code></pre></div>
+<p>A bare visit to <code>/books/remembered/</code> serves the filters, the sort and the page
+of the visit before it, and its links keep them; a visit that sends any key is
+the query, and is saved in its place. The template is handed a <code>request</code>
+whose <code>GET</code> is the query the page read, so a tag building a link from
+<code>request.GET</code> keeps it too: a django-tables2 table's header sort links carry
+the remembered filters. The project needs Django's sessions installed, as the
+session is the host's and not the page's.</p>
+<p>The hook saves the query before dispatch judges it. A saved query the spec
+refuses - a key it no longer declares under <code>REJECT</code>, or a filter value that
+is no longer valid, such as an author since deleted - is refused again on
+every bare visit. So the example forgets it on <code>?reset=1</code>, which answers the
+list with no query at all; a page's "clear filters" link is that URL.</p>
+<p>The hook is a plain <code>def</code>, as every request hook is, and <code>as_view()</code> refuses
+an <code>async def</code> one, since the page does not await it. An answer that is not
+a <code>QueryDict</code> raises <code>TypeError</code> naming the hook: the paging keys are popped
+off a copy of it as lists.</p>
 <h2 id="filters">Filters<a class="headerlink" href="#filters" title="Permanent link">&para;</a></h2>
 <p>A spec's <code>filter_set</code> is the page's filter form, as <code>filter</code>: bound to the
 query string for display, with the paging keys taken off. <strong>The page never
@@ -1006,52 +1132,105 @@ messages in <code>errors</code> and no rows.</p>
 <p>The shipped page draws the form's fields with no errors beside them, and
 every message of a refusal in the results, so a page that swaps its results
 under htmx shows them too.</p>
+<h2 id="a-key-the-spec-does-not-declare">A key the spec does not declare<a class="headerlink" href="#a-key-the-spec-does-not-declare" title="Permanent link">&para;</a></h2>
+<p><strong>Is ignored.</strong> <code>SpecSelectorView.unknown_arguments</code> is
+<code>UnknownArguments.IGNORE</code>, so <code>?utm_source=newsletter</code> on a list page serves
+the rows as if it were not there, and beside a filter the filter is read as
+usual. The page links keep it, as they keep every key. The query string of a
+page a person reads is written by links the page does not control: a
+tracking parameter, a bookmark from before a filter was renamed. Refusing what the spec does not declare would answer that visitor a
+400 for the link. It holds on an instance page too.</p>
+<p>A key the spec does declare is still read by its declaration, so
+<code>?author=999</code> is refused at 400 whatever else the query carries, and a
+route kwarg the spec does not declare is the host's misconfiguration under
+either policy. The form and confirmation pages send dispatch only their
+form's fields and the route, so a query key they do not declare never reaches
+it; the <a href="../http/">JSON views</a> refuse an undeclared key by default, since a
+client's code chose it rather than whoever wrote a link.</p>
+<p>A list whose query is built by code alone opts back into the refusal:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># A list whose query only code builds, refusing a key the spec does not</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1"># declare where the default would ignore it.</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">strict_book_list</span> <span class="o">=</span> <span class="n">SpecSelectorView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">spec</span><span class="o">=</span><span class="n">book_list_spec</span><span class="p">,</span> <span class="n">paginate_by</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">unknown_arguments</span><span class="o">=</span><span class="n">UnknownArguments</span><span class="o">.</span><span class="n">REJECT</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="p">)</span>
+</span></code></pre></div>
+<p>which answers <code>?utm_source=newsletter</code> with a 400 and <code>utm_source: Unknown
+argument.</code> on the page, placed on the filter form's non-field errors.</p>
 <h2 id="what-a-row-offers">What a row offers<a class="headerlink" href="#what-a-row-offers" title="Permanent link">&para;</a></h2>
 <p>A selector spec's <code>affordances</code> name the operations a row offers, and dispatch
 answers every condition for every row in the page's one query: a <code>Q</code> as an
 annotation on it, a callable once. The page attaches those answers to each
 row it serves, and the <code>available</code> filter reads them:</p>
-<div class="language-django highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="cp">{%</span> <span class="k">load</span> <span class="nv">django_spec_html</span> <span class="cp">%}</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="cp">{%</span> <span class="k">for</span> <span class="nv">row</span> <span class="k">in</span> <span class="nv">rows</span> <span class="cp">%}</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="x">  </span><span class="cp">{{</span> <span class="nv">row.title</span> <span class="cp">}}</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="x">  </span><span class="cp">{%</span> <span class="k">if</span> <span class="nv">row</span><span class="o">|</span><span class="nf">available</span><span class="s2">:"withdraw"</span> <span class="cp">%}</span><span class="x">&lt;a href="</span><span class="cp">{%</span> <span class="k">url</span> <span class="s2">"withdraw-book"</span> <span class="nv">row.pk</span> <span class="cp">%}</span><span class="x">"&gt;Withdraw&lt;/a&gt;</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="x">  </span><span class="cp">{%</span> <span class="k">else</span> <span class="cp">%}</span><span class="x">&lt;span&gt;Not available&lt;/span&gt;</span><span class="cp">{%</span> <span class="k">endif</span> <span class="cp">%}</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="cp">{%</span> <span class="k">endfor</span> <span class="cp">%}</span>
+<div class="language-django highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="cp">{%</span> <span class="k">load</span> <span class="nv">django_spec_html</span> <span class="cp">%}</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="cp">{%</span> <span class="k">for</span> <span class="nv">row</span> <span class="k">in</span> <span class="nv">rows</span> <span class="cp">%}</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="x">  </span><span class="cp">{{</span> <span class="nv">row.title</span> <span class="cp">}}</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="x">  </span><span class="cp">{%</span> <span class="k">if</span> <span class="nv">row</span><span class="o">|</span><span class="nf">available</span><span class="s2">:"withdraw"</span> <span class="cp">%}</span><span class="x">&lt;a href="</span><span class="cp">{%</span> <span class="k">url</span> <span class="s2">"withdraw-book"</span> <span class="nv">row.pk</span> <span class="cp">%}</span><span class="x">"&gt;Withdraw&lt;/a&gt;</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="x">  </span><span class="cp">{%</span> <span class="k">else</span> <span class="cp">%}</span><span class="x">&lt;span&gt;Not available&lt;/span&gt;</span><span class="cp">{%</span> <span class="k">endif</span> <span class="cp">%}</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="cp">{%</span> <span class="k">endfor</span> <span class="cp">%}</span>
 </span></code></pre></div>
 <p>So the button follows the rule the operation's own dispatch enforces, and
 asking costs no query. <strong>A name the spec does not declare raises</strong>
 <code>TemplateSyntaxError</code>, naming those it does, rather than reading as
-unavailable for good. Use the filter as an <code>{% if %}</code> condition on its own,
-with the unavailable branch as the <code>{% else %}</code>: Django reads an error
-raised inside <code>not</code>, <code>and</code>, <code>or</code> or a comparison as the whole condition
-false, so <code>{% if not row|available:"withdarw" %}</code> draws nothing and raises
-nothing.</p>
+unavailable for good.</p>
+<p><strong>Read a negated or combined condition through <code>{% with %}</code>.</strong> Django's
+<code>{% if %}</code> reads an error raised inside <code>not</code>, <code>and</code>, <code>or</code> or a comparison
+as the whole condition false, so <code>{% if not row|available:"withdarw" %}</code>
+draws nothing and raises nothing. <code>{% with %}</code> resolves the filter outside
+<code>{% if %}</code>, so the same misspelt name raises there:</p>
+<div class="language-django highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="cp">{%</span> <span class="k">with</span> <span class="nv">ok</span><span class="o">=</span><span class="nv">row</span><span class="o">|</span><span class="nf">available</span><span class="s2">:"withdraw"</span> <span class="cp">%}</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="x">  </span><span class="cp">{%</span> <span class="k">if</span> <span class="k">not</span> <span class="nv">ok</span> <span class="cp">%}</span><span class="x">&lt;span&gt;Not available&lt;/span&gt;</span><span class="cp">{%</span> <span class="k">endif</span> <span class="cp">%}</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="cp">{%</span> <span class="k">endwith</span> <span class="cp">%}</span>
+</span></code></pre></div>
+<p>A filter on its own, <code>{% if row|available:"withdraw" %}</code>, raises as it is.
+The same holds for <code>unavailable</code>, below.</p>
 <p>A row that is a mapping, such as one from <code>values()</code>, is answered on a copy,
 so a selector's own rows are left as they were. A row that cannot carry an
 attribute, such as a tuple from <code>values_list()</code>, is served without answers,
-and the filter raises for it.</p>
+and either filter raises for it.</p>
+<h3 id="why-a-rows-action-is-unavailable">Why a row's action is unavailable<a class="headerlink" href="#why-a-rows-action-is-unavailable" title="Permanent link">&para;</a></h3>
+<p>The <code>unavailable</code> filter reads the same answers and says why: the row's
+answer, with the <code>code</code> and <code>reason</code> of the first condition the row does
+not meet, when the action is unavailable, and <code>None</code> when it is available.
+It costs no query either, and raises for the same names and rows.</p>
+<div class="language-django highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="cp">{%</span> <span class="k">with</span> <span class="nv">why</span><span class="o">=</span><span class="nv">row</span><span class="o">|</span><span class="nf">unavailable</span><span class="s2">:"withdraw"</span> <span class="cp">%}</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="x">  </span><span class="cp">{%</span> <span class="k">if</span> <span class="nv">why</span> <span class="cp">%}</span><span class="x">&lt;span title="</span><span class="cp">{{</span> <span class="nv">why.code</span> <span class="cp">}}</span><span class="x">"&gt;</span><span class="cp">{{</span> <span class="nv">why.reason</span> <span class="cp">}}</span><span class="x">&lt;/span&gt;</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="x">  </span><span class="cp">{%</span> <span class="k">else</span> <span class="cp">%}</span><span class="x">&lt;a href="</span><span class="cp">{%</span> <span class="k">url</span> <span class="s2">"withdraw-book"</span> <span class="nv">row.pk</span> <span class="cp">%}</span><span class="x">"&gt;Withdraw&lt;/a&gt;</span><span class="cp">{%</span> <span class="k">endif</span> <span class="cp">%}</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="cp">{%</span> <span class="k">endwith</span> <span class="cp">%}</span>
+</span></code></pre></div>
+<p>A condition on the row asked of a row that no longer exists answers with no
+code and no reason, since none of the conditions' sentences is true of it:
+<code>why</code> is still the answer, so <code>{% if why %}</code> holds, and <code>{{ why.reason }}</code>
+renders as any missing variable does. The answer is a <code>dict</code>, so
+<code>{{ why|json_script:"why" }}</code> hands it to a script, and a fresh copy per read
+whose <code>clear</code> and <code>popitem</code> no template can call, so a template cannot empty
+it.</p>
+<p>A row's action refused or gone is the host's to answer, for htmx too, by the
+handlers in <a href="../pages/#denials">a denial under htmx</a>.</p>
 <h2 id="a-django-tables2-table">A django-tables2 table<a class="headerlink" href="#a-django-tables2-table" title="Permanent link">&para;</a></h2>
 <p><code>table_class</code> names a <a href="https://django-tables2.readthedocs.io/">django-tables2</a>
 <code>Table</code>. The page builds it over the rows it served, as <code>table</code>, and the
 shipped template includes the table's own template. <strong>The package does not
 depend on django-tables2</strong>: install it and list <code>django_tables2</code> in
 <code>INSTALLED_APPS</code> in a project that sets <code>table_class</code>.</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">BookTable</span><span class="p">(</span><span class="n">tables</span><span class="o">.</span><span class="n">Table</span><span class="p">):</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">title</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">()</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="c1"># Not among the OrderingFilter's fields, so its header must not link a</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="c1"># sort: dispatch would refuse ``o=author``, and the link would answer 400.</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">author</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">(</span><span class="n">accessor</span><span class="o">=</span><span class="s2">"author__name"</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">"Author"</span><span class="p">,</span> <span class="n">orderable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">price</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">()</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">withdraw</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">TemplateColumn</span><span class="p">(</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>        <span class="s1">'{</span><span class="si">% lo</span><span class="s1">ad django_spec_html %}{</span><span class="si">% i</span><span class="s1">f record|available:"withdraw" %}'</span>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>        <span class="s1">'&lt;a href="{</span><span class="si">% u</span><span class="s1">rl "withdraw-book" record.pk %}"&gt;Withdraw&lt;/a&gt;'</span>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>        <span class="s2">"{</span><span class="si">% e</span><span class="s2">lse %}&lt;span&gt;Not available&lt;/span&gt;{</span><span class="si">% e</span><span class="s2">ndif %}"</span><span class="p">,</span>
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>        <span class="n">orderable</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>        <span class="n">verbose_name</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
-</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>    <span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">BookTable</span><span class="p">(</span><span class="n">tables</span><span class="o">.</span><span class="n">Table</span><span class="p">):</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">title</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">()</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="c1"># Not among the OrderingFilter's fields, so its header must not link a</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="c1"># sort: dispatch would refuse ``o=author``, and the link would answer 400.</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">author</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">(</span><span class="n">accessor</span><span class="o">=</span><span class="s2">"author__name"</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">"Author"</span><span class="p">,</span> <span class="n">orderable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">price</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">()</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="c1"># The button where the row may be withdrawn, and otherwise why not: the</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>    <span class="c1"># reason of the first condition the row does not meet.</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">withdraw</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">TemplateColumn</span><span class="p">(</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>        <span class="s1">'{</span><span class="si">% lo</span><span class="s1">ad django_spec_html %}{% with why=record|unavailable:"withdraw" %}'</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>        <span class="s2">"{</span><span class="si">% i</span><span class="s2">f why %}&lt;span&gt;{{ why.reason }}&lt;/span&gt;"</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>        <span class="s1">'{</span><span class="si">% e</span><span class="s1">lse %}&lt;a href="{</span><span class="si">% u</span><span class="s1">rl "withdraw-book" record.pk %}"&gt;Withdraw&lt;/a&gt;{</span><span class="si">% e</span><span class="s1">ndif %}'</span>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>        <span class="s2">"{</span><span class="si">% e</span><span class="s2">ndwith %}"</span><span class="p">,</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>        <span class="n">orderable</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>        <span class="n">verbose_name</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
+</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a>    <span class="p">)</span>
 </span></code></pre></div>
 <p>A <code>TemplateColumn</code> asks each <code>record</code> what it offers, as a template asks a
-row. <strong>The table never pages or orders the rows</strong>: they are the spec's page,
+row: the example's shows the button, or the reason it is not there. <strong>The table never pages or orders the rows</strong>: they are the spec's page,
 in the spec's order. It is built with no <code>request</code>, since django-tables2 then
 runs its <code>RequestConfig</code>, which would page and order the data from the query
 string, and with <code>order_by=()</code>, so a <code>Meta.order_by</code> is never applied.</p>
@@ -1082,9 +1261,9 @@ the fragment at 200, since htmx swaps no 4xx by default, and every response
 carries <code>Vary: HX-Request</code>. The shipped page wraps its results in
 <code>&lt;div id="spec-results"&gt;</code> and adds no <code>hx-</code> attribute of its own; a live
 search is the project's:</p>
-<div class="language-django highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="x">&lt;form method="get" hx-get="" hx-target="#spec-results" hx-trigger="input changed delay:300ms"&gt;</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="x">  </span><span class="cp">{{</span> <span class="nv">filter.form</span> <span class="cp">}}</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="x">&lt;/form&gt;</span>
+<div class="language-django highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="x">&lt;form method="get" hx-get="" hx-target="#spec-results" hx-trigger="input changed delay:300ms"&gt;</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="x">  </span><span class="cp">{{</span> <span class="nv">filter.form</span> <span class="cp">}}</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="x">&lt;/form&gt;</span>
 </span></code></pre></div>
 <h2 id="how-many-queries-a-page-costs">How many queries a page costs<a class="headerlink" href="#how-many-queries-a-page-costs" title="Permanent link">&para;</a></h2>
 <p>A list page costs the same number of queries whatever its size: the

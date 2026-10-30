@@ -450,6 +450,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#a-refusal-sent-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A refusal sent back
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#a-success" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -723,6 +734,17 @@
     <span class="md-ellipsis">
       
         A refused post
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-refusal-sent-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A refusal sent back
       
     </span>
   </a>
@@ -1021,9 +1043,69 @@ page that works, and says why.</p>
   target is shown again.</li>
 <li>A denial is raised for the host's 403 or 404 page.</li>
 </ul>
+<p>A confirmation's denial is the host's to answer, for htmx too, by the
+handlers in <a href="../pages/#denials">a denial under htmx</a>.</p>
+<h2 id="a-refusal-sent-back">A refusal sent back<a class="headerlink" href="#a-refusal-sent-back" title="Permanent link">&para;</a></h2>
+<p>A button in a list's row is posted from the list, and the page a refusal is
+rendered on is one the person never opened. <strong><code>refusal_redirect=True</code> sends
+the refusal back instead</strong>, to the page it came from. The URLconf routes the
+example as <code>books/&lt;int:pk&gt;/withdraw/from-the-list/</code>, with
+<code>redirect_field_name="next"</code> beside it, and a row's form posts to it with
+<code>?next=</code> naming the page of the list it sits on:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">urlpatterns</span> <span class="o">+=</span> <span class="p">[</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">path</span><span class="p">(</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>        <span class="s2">"books/&lt;int:pk&gt;/withdraw/from-the-list/"</span><span class="p">,</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>        <span class="n">SpecConfirmView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>            <span class="n">spec</span><span class="o">=</span><span class="n">withdraw_book_spec</span><span class="p">,</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>            <span class="n">template_name</span><span class="o">=</span><span class="s2">"spec_confirm_view.html"</span><span class="p">,</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>            <span class="n">success_url</span><span class="o">=</span><span class="n">reverse_lazy</span><span class="p">(</span><span class="s2">"books"</span><span class="p">),</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>            <span class="n">route_kwargs</span><span class="o">=</span><span class="p">(</span><span class="s2">"pk"</span><span class="p">,),</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>            <span class="n">commit_button</span><span class="o">=</span><span class="s2">"withdraw"</span><span class="p">,</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>            <span class="c1"># A row's button posts here with ?next=, the page of the list it</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>            <span class="c1"># sits on, and both outcomes go back there: a success, and a</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>            <span class="c1"># refusal, its reason sent as a message.</span>
+</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>            <span class="n">redirect_field_name</span><span class="o">=</span><span class="s2">"next"</span><span class="p">,</span>
+</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>            <span class="n">refusal_redirect</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>        <span class="p">),</span>
+</span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>    <span class="p">),</span>
+</span><span id="__span-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="p">]</span>
+</span></code></pre></div>
+<ul>
+<li><strong>An invalid, a failed or a needs-input refusal is sent back.</strong> Each
+  message the page would have shown in <code>errors</code> is sent through
+  <code>messages.error</code>, and the refusal's <code>code</code>, where it has one, is the
+  message's <code>extra_tags</code>, so the list can style or match an unavailable
+  action: a book withdrawn already is sent back with "Only a published book
+  can be withdrawn." tagged <code>not_published</code>.</li>
+<li><strong>The post redirects to <code>get_refusal_url(refused)</code></strong>: the safe URL
+  <code>redirect_field_name</code> reads, checked as
+  <a href="../pages/#returning-where-the-page-was-opened-from">a form page checks it</a>,
+  and otherwise <code>success_url</code>. Override it to read the refusal, such as to
+  send one <code>code</code> to a page of its own. Under htmx it answers <code>HX-Redirect</code>
+  to the same URL, since an XHR would follow a 302 and swap the list into the
+  row.</li>
+<li><strong>A denial is raised as ever</strong>, for the host's 403 or 404 page.</li>
+<li><strong>Without the messages middleware the page is rendered as above.</strong> Django
+  raises <code>MessageFailure</code> with nowhere to keep a message, before any is
+  stored, so the page renders the refusal itself rather than lose it in a
+  redirect. A refusal with no message to send - an empty detail, or an empty
+  message, which Django's storage drops - is the page again too.</li>
+<li><strong>A refusal sent back reads nothing for the page.</strong> The redirect is decided
+  before the target is shown again, so a set is not counted and no presenter
+  is asked.</li>
+</ul>
+<p><code>as_view()</code> refuses <code>refusal_redirect</code> on a page with no <code>success_url</code> that
+does not override <code>get_refusal_url</code>, since a refused post naming no safe URL
+would have nowhere to go. A form page has no such switch: a refused form
+redirected away would lose what the person typed.</p>
 <h2 id="a-success">A success<a class="headerlink" href="#a-success" title="Permanent link">&para;</a></h2>
 <p>A success redirects to <code>get_success_url(result)</code>, or under htmx answers
-<code>HX-Redirect</code> or the <code>spec-result</code> fragment, as on a form page.</p>
+<code>HX-Redirect</code> or the <code>spec-result</code> fragment, as on a form page. Where the view
+names <code>redirect_field_name</code>, a safe URL the post or its query carries under
+that key is where the success goes instead, as on
+<a href="../pages/#returning-where-the-page-was-opened-from">a form page</a>: the example
+above returns to <code>/books/?page=3</code>. Nothing the post carries is an argument, so
+the key never reaches dispatch.</p>
 <p><strong><code>success_message</code> is formatted with the target</strong>, <code>%</code> with a mapping whose
 one key is <code>target</code>, <code>result.instance</code>: <code>"%(target)s was archived."</code> names
 the row by its <code>str()</code>. A form page formats with the cleaned data, which with

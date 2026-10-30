@@ -894,7 +894,9 @@ other post that does not commit is the page again with the forms it posted,
 validated by nothing, as on <a href="../pages/#a-post-that-does-not-commit">the single page</a>.</p>
 <h2 id="a-success">A success<a class="headerlink" href="#a-success" title="Permanent link">&para;</a></h2>
 <p>A success redirects to <code>success_url</code>, or answers <code>HX-Redirect</code> or the result
-fragment to htmx, as on the single page. <strong><code>success_message</code> is formatted
+fragment to htmx, as on the single page, and a view naming
+<code>redirect_field_name</code> returns to the URL it reads,
+<a href="../pages/#returning-where-the-page-was-opened-from">as the single page does</a>. <strong><code>success_message</code> is formatted
 with the rows' <code>count</code></strong>, <code>%</code> with <code>{"count": n}</code>, so <code>"%(count)d books were
 added."</code> above says how many: the single page formats with the cleaned data,
 and a <code>many</code> call's is a list, which <code>%</code> with a name cannot read. Override
@@ -904,7 +906,8 @@ the operation returned, under <code>result.value</code>.</p>
 <p>When the URLconf is imported: a spec whose Validator is not a <code>FormValidator</code>;
 a spec that is not <code>many</code>; a view displaying its target; an <code>extra</code> that is
 not a non-negative int; an <code>add_button</code> that is not a button's name, is set
-without a <code>commit_button</code>, or is the <code>commit_button</code>; and either button named
+without a <code>commit_button</code>, or is the <code>commit_button</code>; a <code>redirect_field_name</code>
+that is either button; and either button or the <code>redirect_field_name</code> named
 under the formset's <code>form-</code> prefix, which every post carries. Then every check
 the single page makes of the request's hooks. The view is <strong>sync only</strong> in this
 release.</p>
