@@ -40,6 +40,13 @@ dependencies = [
     # kernel's specs, so this package cannot support a Django the kernel does
     # not.
     "django>=4.2",
+    # Validating a refresh needs 0.21.0: ``bind_arguments`` takes the call's
+    # ``pool_seeds`` and binds as dispatch binds with them, so a form whose
+    # constructor keywords name a seed is built with it rather than raising
+    # ``TypeError``; and a refusal's ``default_message`` is translated where it
+    # is read, which this package's own refusal follows. 0.21.1 binds a form
+    # whose class sets a ``prefix`` under it, without which such a form's
+    # filled fields read as missing, on a commit and on a refresh alike.
     # The flat reader needs 0.20.0: ``flat_arguments`` is the kernel's reading
     # of a query string or form (the comma split, blank as absent, the array
     # cap), which ``request_arguments`` and the admin's selection read through,
@@ -63,7 +70,7 @@ dependencies = [
     # the kernel's root also exported its own copy of the ten JSON names, so
     # one process held two ``SpecView`` classes. Every other name the moved
     # code reads at the kernel's root is public from 0.10.0.
-    "django-service-specs>=0.20.0",
+    "django-service-specs>=0.21.1",
 ]
 
 [project.urls]

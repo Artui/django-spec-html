@@ -328,6 +328,38 @@ add_edition_spec = ServiceSpec(
 # --8<-- [end:refresh]
 
 
+# --8<-- [start:validate]
+class CheckedEditionForm(AddEditionForm):
+    # Leaving the number posts the form as choosing an author does, so a
+    # number the book already has is refused as it is typed, not on "Add".
+    number = forms.IntegerField(
+        min_value=1,
+        widget=forms.NumberInput(
+            attrs={
+                "hx-post": "",
+                "hx-trigger": "change",
+                "hx-target": "closest form",
+                "hx-swap": "outerHTML",
+            }
+        ),
+    )
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        book, number = cleaned.get("book"), cleaned.get("number")
+        if book and number and Edition.objects.filter(book=book, number=number).exists():
+            self.add_error("number", f"{book.title} already has edition {number}.")
+        return cleaned
+
+
+check_edition_spec = ServiceSpec(
+    service=add_edition,
+    permissions=[IsSignedIn()],
+    validator=FormValidator(CheckedEditionForm),
+)
+# --8<-- [end:validate]
+
+
 def books(request: HttpRequest) -> HttpResponse:
     return HttpResponse("The books.")
 
@@ -429,6 +461,19 @@ urlpatterns = [
             # and "Show their books" post the form to re-render it.
             commit_button="add",
             success_message="Edition %(number)s added.",
+        ),
+    ),
+    path(
+        "editions/new/checked/",
+        SpecFormView.as_view(
+            spec=check_edition_spec,
+            template_name="spec_edition.html",
+            fragment_template_name="spec_edition_form.html",
+            success_url=reverse_lazy("books"),
+            commit_button="add",
+            # Every post that does not commit shows what "Add" would refuse,
+            # a field's own request that field's errors alone.
+            validate_on_refresh=True,
         ),
     ),
     path("branches/<branch>/books/new/", StockBook.as_view()),

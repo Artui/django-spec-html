@@ -144,7 +144,8 @@ _TRIGGER_NAME: Final = "HX-Trigger-Name"
 
 A header htmx 2 sends, and not every client that posts the form does, which
 is why ``commits`` reads it only to stop a commit the post's data would
-otherwise make."""
+otherwise make, and a refresh ``SpecFormView`` validates only to narrow the
+errors it shows to one field's."""
 
 
 _TYPED: Final = (forms.IntegerField, forms.DateField, forms.DateTimeField)
@@ -379,8 +380,10 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         narrowed again (test_a_dependent_choice_is_narrowed_by_the_posted_value);
         its error state is set to none, as ``_render_refused`` sets a refused
         form's, so nothing is validated and no field is called required
-        (test_a_post_without_the_button_neither_dispatches_nor_validates). The
-        context says so as ``refreshed``, absent from every other render.
+        (test_a_post_without_the_button_neither_dispatches_nor_validates),
+        unless the page's ``_refreshed`` judges it, as ``SpecFormView`` does
+        under ``validate_on_refresh``. The context says so as ``refreshed``,
+        absent from every other render.
         """
         spec = self.served_spec()
         served = self._served(request)
@@ -402,6 +405,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         form = self._form(spec, principal, target, served, **bound)
         if bound:
             context["refreshed"] = True
+            self._refreshed(request, form, spec, principal, target, served, url_kwargs)
         context.update(self._target_context(spec, principal, target, served, pool))
         return self._render_page(form, bool(bound), **context)
 
@@ -660,7 +664,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         button = self.commit_button
         if button is None:
             return True
-        trigger = _trigger_name(request)
+        trigger = trigger_name(request)
         another = trigger != button and trigger in request.POST
         return button in request.POST and not another
 
@@ -802,6 +806,28 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         """
         return None
 
+    def _refreshed(
+        self,
+        request: HttpRequest,
+        form: Any,
+        spec: ServiceSpec,
+        principal: Any,
+        target: Any,
+        served: Served,
+        url_kwargs: Mapping[str, Any],
+        /,
+    ) -> None:
+        """Set the error state of the form a post that does not commit renders.
+
+        Asked once the form is built from the post and before
+        ``_render_page``, with what admitting the post and finding its
+        target answered, so a page that judges a refresh binds it as the
+        commit would, on the same row and with the same seeds. Nothing by
+        default: the confirmation and formset pages leave it to
+        ``_render_page``. ``SpecFormView`` answers its
+        ``validate_on_refresh`` here.
+        """
+
     def served_spec(self) -> ServiceSpec:
         """``spec``, which ``as_view`` refused to build a view without."""
         return cast("ServiceSpec", self.spec)
@@ -856,7 +882,9 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         """The page GET renders at 200, ``form`` in it beside ``context``.
 
         ``refreshed`` for a post that does not commit, whose form is bound to
-        the post and was never validated.
+        the post and was never validated by the page's own render;
+        ``_refreshed`` has set its error state already where the page sets
+        one there.
         """
 
     @abstractmethod
@@ -1067,7 +1095,7 @@ class ClientRedirect(HttpResponseRedirectBase):
         return self["HX-Redirect"]
 
 
-def _trigger_name(request: HttpRequest) -> str | None:
+def trigger_name(request: HttpRequest) -> str | None:
     """``HX-Trigger-Name``, decoded where htmx encoded it, or ``None`` where it was not sent.
 
     htmx 2 sends a value the browser refuses as a header URI-encoded, and

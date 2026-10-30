@@ -31,6 +31,18 @@ jobs:
         run: uv run ruff format --check --diff .
       - name: ty
         run: uv run ty check django_spec_html
+      # makemessages drives GNU gettext's xgettext, msguniq and msgmerge, which
+      # the runner image is not promised to carry, so they are installed here
+      # rather than assumed.
+      - name: Install GNU gettext
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gettext
+      # Regenerates the source catalog and fails if that changed anything, so a
+      # msgid added, reworded or removed cannot ship without the catalog that
+      # lists it. The target writes no locations and no clock, so a line moving
+      # elsewhere does not redden it. A Django or gettext upgrade that writes the
+      # same catalog differently would, and `make messages` is the fix.
+      - name: source catalog is current
+        run: make messages-check
 
   docs:
     name: docs build

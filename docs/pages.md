@@ -737,7 +737,9 @@ route's kwargs, and dispatch is called the same way in both modes. So a spec
 cannot branch on the mode, and its outcome on the page and in a fragment is one
 outcome. One header is read before dispatch, `HX-Trigger-Name`, and only to
 stop a post committing on a page that names its
-[commit button](#a-post-that-does-not-commit).
+[commit button](#a-post-that-does-not-commit) and, on a post that does not
+commit, to say which errors a
+[validated refresh](#validating-a-post-that-does-not-commit) shows.
 
 <a id="denials"></a>
 **A denial is the host's to answer, for htmx too.** The view raises
@@ -849,7 +851,8 @@ the form bound to the post:
   keyword, or by a value posted - is narrowed again.
 - Nothing is dispatched and nothing validated: the form shows the values
   posted and no error, and a required field left blank is not called
-  required. `asked_fields` are held back, as on GET.
+  required. `asked_fields` are held back, as on GET, unless the refusal
+  names one, under `validate_on_refresh` below.
 - The context carries `refreshed`, `True`, for a template that needs to tell;
   it is absent from every other render.
 - The page answers 200, and an htmx request the form's fragment at 200.
@@ -857,6 +860,55 @@ the form bound to the post:
 `commit_button` is checked at `as_view()`: `None`, or a non-empty string that
 names no field of the form, since a field is posted by every submit and could
 not say which one commits.
+
+### Validating a post that does not commit
+
+A field checked as a person leaves it, rather than when the form is sent:
+**`validate_on_refresh`** shows, on a post that does not commit, what its
+commit would refuse. It is `False` by default, and the form then shows no
+error, as above. It has no effect without a `commit_button`, since every post
+then commits.
+
+```python
+--8<--
+docs/examples/spec_form.py:validate
+--8<--
+```
+
+The URLconf routes it as `editions/new/checked/`, with `commit_button="add"`
+and `validate_on_refresh=True`, on the same templates as `editions/new/`.
+Leaving the number posts the form, and a number the book already has is
+refused there; choosing an author calls nothing else required; "Show their
+books" shows every error the form has.
+
+- **The post is bound as its commit would bind it**, through the kernel's
+  [`bind_arguments`][django_service_specs.dispatch.bind_arguments.bind_arguments]:
+  the form's values and the route's kwargs read as a commit reads them, the
+  server's binding laid over them, under the page's `unknown_arguments`, with
+  the principal admitted, the target the page found, the request's seeds and
+  its call context. So a `form_kwargs` naming a seed is handed it, and an
+  update's own unique value is not taken by its own row.
+- **Nothing is dispatched** and no `success_message` is sent. The page
+  answers 200, and an htmx request the form's fragment at 200, with
+  `refreshed` in the context as on any post that does not commit.
+- **The refusal is placed on the form as a refused commit's is**, by
+  `add_argument_errors`.
+- **`HX-Trigger-Name` decides which errors.** Where it names one of the
+  form's fields, as the field posts it - its `html_name` - only that
+  field's errors are placed, and no non-field error: a person has not reached
+  the rest of the form yet. Every other refresh - no header, the form's own
+  name, a refresh button, one part of a multi-widget field such as `when_0` -
+  shows the whole refusal.
+- **No provider runs.** `bind_arguments` runs neither the spec's
+  `input_data` nor a `kwargs` provider, and that is the one difference in how
+  the post is bound. A field `input_data` fills is judged as posted: a
+  required one left blank is refused by the refresh, and accepted by the
+  commit, which the provider fills. What the service, an unmet affordance or a
+  conflict refuses is the commit's alone, since nothing is dispatched.
+- **The shape check answers before the form.** While any field fails it - a
+  required field blank, a number that does not parse - the form's own checks
+  have not run, so a field's request shows its own shape error, or none, and
+  its `clean_<field>()` waits until the rest of the form is well formed.
 
 ## Returning where the page was opened from
 

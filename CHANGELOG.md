@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`validate_on_refresh` on `SpecFormView`: a post that does not commit
+  shows what its commit would refuse.** `False` by default, which shows no
+  error, as before. Set, such a post is read as a commit reads it, the
+  server's binding laid over it, and bound through the kernel's
+  `bind_arguments` with the principal admitted, the target the page found,
+  the request's seeds and its call context, so a `form_kwargs` naming a seed
+  is handed it. Nothing is dispatched and no `success_message` is sent; the
+  refusal is placed on the form by `add_argument_errors`, at 200 with the page
+  or the fragment, and `refreshed` in the context as before.
+  - **`HX-Trigger-Name` decides which errors.** Where it names one of the
+    form's fields, matched against its `html_name`, the name it posts under,
+    only that field's errors are placed and no non-field error; every other
+    refresh places the whole refusal.
+  - **No provider runs**, as `bind_arguments` runs none: a field the spec's
+    `input_data` fills is judged as posted, so a required one left blank is
+    refused by the refresh and accepted by the commit.
+  - The confirmation and formset pages are unchanged.
+- **The package ships its source catalog.**
+  `django_spec_html/locale/en/LC_MESSAGES/django.po` lists every msgid the
+  package marks, untranslated: the Python `gettext` calls and the templates'
+  `{% translate %}` and `{% blocktranslate %}` text. It is what a contributed
+  language starts from, and it loads for a project that lists `django_spec_html`
+  in `INSTALLED_APPS`, as the shipped templates require. No translated language
+  ships. `make messages` regenerates it (it needs GNU gettext) and `make
+  messages-check`, which CI runs, fails when it is stale. The new
+  [translations page](https://artui.github.io/django-spec-html/translations/)
+  covers loading it, the kernel's catalog beside it, and merging both into a
+  project's own.
+  - `UnsupportedMediaType`'s default message was a bare string that
+    `makemessages` never extracted. It is now marked, so it is in the catalog,
+    and is still looked up in the active language each time the refusal is built
+    with no message of its own.
+
+### Changed
+- **Requires `django-service-specs>=0.21.1`**, for `bind_arguments` taking
+  the call's `pool_seeds`, which validating a refresh binds with, and for a
+  form whose class sets a `prefix` being bound under it, so its filled fields
+  are read on a commit as on a refresh.
+
 ## [0.7.0] — 2026-10-30
 
 ### Added
