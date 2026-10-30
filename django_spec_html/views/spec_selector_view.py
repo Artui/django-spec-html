@@ -19,6 +19,7 @@ from django_service_specs import (
     SelectorSpec,
     ServiceError,
     SpecSource,
+    UnknownArguments,
     dispatch,
     kernel_spec,
     paginate_output,
@@ -75,9 +76,11 @@ class SpecSelectorView(SpecRequestBase):
        [`request_arguments`][django_spec_html.http.request_arguments.request_arguments]'
        query-string branch - the URL kwargs under ``route_kwargs``, the names
        ``server_arguments`` answers for dropped and then bound - as the JSON
-       views read it, so a list page and a JSON list answer one query string
-       the same way. On a list, the paging keys are taken off first, so
-       ``?page=2`` never reaches the spec's closed argument set;
+       views read it, so a list page and a JSON list read each value the
+       same way. A key the spec does not declare is ignored here, where the
+       JSON views refuse it (see ``unknown_arguments``). On a list, the
+       paging keys are taken off first, so ``?page=2`` never reaches the
+       spec;
     3. **dispatched** by the kernel's ``dispatch``, with the grant the
        admission made, so the class-level check is asked once;
     4. **rendered** with the raw rows dispatch answered, and no
@@ -171,8 +174,8 @@ class SpecSelectorView(SpecRequestBase):
     every page refuses them; paging attributes of the wrong type, a client
     page size with no ceiling, and a list spec declaring a parameter under a
     paging key, whose value could never reach it; a
-    ``table_order_by_field`` the spec does not declare, since every header
-    link would then be a 400; and ``display_rows`` on a spec whose Output
+    ``table_order_by_field`` the spec does not declare, since no header
+    link would then sort the rows; and ``display_rows`` on a spec whose Output
     cannot display a row.
 
     Attributes:
@@ -190,7 +193,14 @@ class SpecSelectorView(SpecRequestBase):
         server_arguments: The kernel's ``ServerArguments`` the server answers
             for, checked at ``as_view()``.
         unknown_arguments: What dispatch does with a query key the spec does
-            not declare: refused by default, as on the JSON views.
+            not declare: ignored by default, since the query string of a
+            page a person reads is written by links the page does not
+            control - a tracking parameter, a bookmark from before a filter
+            was renamed. ``UnknownArguments.REJECT`` refuses it at 400, as
+            the JSON views do; the form and confirmation pages never send
+            dispatch a query key at all. A route kwarg the spec
+            does not declare raises ``ImproperlyConfigured`` under either
+            (test_a_route_capture_the_spec_does_not_declare_is_refused).
         page_kwarg: The query key naming the page, ``"page"``, as Django's
             ``ListView`` names it.
         paginate_by: Rows to a page; ``None`` is the kernel's
@@ -219,6 +229,10 @@ class SpecSelectorView(SpecRequestBase):
     table_class: Any = None
     table_order_by_field: str | None = None
     display_rows: bool = True
+    # The one page that differs from the base's REJECT: every other page's
+    # arguments are its form's and its route's, so only here does a key a
+    # stranger wrote reach dispatch (test_an_undeclared_key_is_ignored_by_default).
+    unknown_arguments: UnknownArguments = UnknownArguments.IGNORE
 
     @classonlymethod
     def as_view(cls, **initkwargs: Any) -> Callable[..., HttpResponseBase]:
@@ -546,8 +560,9 @@ def _check_table(label: str, spec: SelectorSpec, table_class: Any, order_by_fiel
         return
     raise ImproperlyConfigured(
         f"{label}.table_order_by_field is {order_by_field!r}, so every header link sends "
-        f"{key!r}, which the spec does not declare: dispatch would refuse it. Name the spec's "
-        "own ordering parameter, such as its filter set's OrderingFilter, less any prefix "
+        f"{key!r}, which the spec does not declare: dispatch would ignore it, or refuse it "
+        "under REJECT, and no header would sort the rows. Name the spec's own ordering "
+        "parameter, such as its filter set's OrderingFilter, less any prefix "
         "the table's Meta sets."
     )
 

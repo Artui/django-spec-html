@@ -30,6 +30,7 @@ from django_service_specs import (
     SelectorKind,
     SelectorSpec,
     ServiceSpec,
+    UnknownArguments,
     Unrestricted,
 )
 
@@ -147,6 +148,15 @@ class BookTable(tables.Table):
 
 
 # --8<-- [end:table]
+
+
+# --8<-- [start:strict]
+# A list whose query only code builds, refusing a key the spec does not
+# declare where the default would ignore it.
+strict_book_list = SpecSelectorView.as_view(
+    spec=book_list_spec, paginate_by=10, unknown_arguments=UnknownArguments.REJECT
+)
+# --8<-- [end:strict]
 
 
 # --8<-- [start:urls]

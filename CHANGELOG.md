@@ -40,17 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to send is the page again too. A refusal sent back counts and presents no
   target. `as_view()` refuses it on a
   page with no `success_url` that does not override `get_refusal_url`.
-### Changed
-- **The htmx handler example answers an anonymous visitor with the login page
-  whether or not htmx asked, and gains a `handler404`.** Without htmx, a
-  visitor who is not signed in is redirected to the login page and back to the
-  page they asked for, where the 403 page used to be shown; a signed-in
-  visitor still gets Django's 403 page. The new `handler404` answers an htmx
-  request with `HX-Refresh`, since htmx swaps no 4xx body and a stale row's
-  action would otherwise do nothing visible, and a browser with Django's 404
-  page. The pages state that the same handlers answer a list row's and a
-  confirmation's denial, and that the sync pages serve under ASGI, with the
-  reason there is no async page.
 - **The `unavailable` template filter: why a row's action is unavailable.**
   `{% with why=row|unavailable:"withdraw" %}{% if why %}{{ why.reason }}{% endif %}{% endwith %}`
   returns the row's answer, with the `code` and `reason` of the first
@@ -82,6 +71,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the spec refuses. Like every request hook it is a plain `def`, and
   `as_view()` refuses an `async def` one; an answer that is not a `QueryDict`
   raises `TypeError` naming the hook.
+
+### Changed
+- **The htmx handler example answers an anonymous visitor with the login page
+  whether or not htmx asked, and gains a `handler404`.** Without htmx, a
+  visitor who is not signed in is redirected to the login page and back to the
+  page they asked for, where the 403 page used to be shown; a signed-in
+  visitor still gets Django's 403 page. The new `handler404` answers an htmx
+  request with `HX-Refresh`, since htmx swaps no 4xx body and a stale row's
+  action would otherwise do nothing visible, and a browser with Django's 404
+  page. The pages state that the same handlers answer a list row's and a
+  confirmation's denial, and that the sync pages serve under ASGI, with the
+  reason there is no async page.
+- **`SpecSelectorView` ignores a query key its spec does not declare.**
+  `unknown_arguments` defaults to `UnknownArguments.IGNORE` on the list and
+  instance pages, so `?utm_source=x`, or a bookmark from before a filter was
+  renamed, is answered 200 with the rows the rest of the query selects, where
+  it was a 400 with `utm_source: Unknown argument.` A declared key's value is
+  read and refused as before, a route kwarg the spec does not declare is
+  still the host's misconfiguration, and the JSON views still refuse an
+  undeclared key. The form, formset and confirmation pages keep `REJECT` for
+  what they dispatch, their form's fields and the route. Set
+  `unknown_arguments = UnknownArguments.REJECT` on a list whose query only
+  code builds to keep the refusal. A list page and a JSON list now read each
+  value of one query string the same way, rather than answering it the same.
 
 ## [0.6.0] — 2026-10-29
 

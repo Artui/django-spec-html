@@ -81,10 +81,11 @@ where their labels say.
 | `page_size_kwarg` | `None` | a query key a client chooses the page size with, up to `max_page_size`, which it then needs |
 
 **The paging keys never reach the spec.** They are taken off the query before
-the spec reads it, so `?page=2` is not refused as an argument the spec does
-not declare, and `as_view()` refuses a list spec declaring a parameter under
-a paging key, since that parameter could never be sent. Rename the key with
-`page_kwarg` instead. A page that is not a whole number is page one, and a
+the spec reads it, so `?page=2` is the page's under either
+[`unknown_arguments` policy](#a-key-the-spec-does-not-declare), and
+`as_view()` refuses a list spec declaring a parameter under a paging key,
+since that parameter could never be sent. Rename the key with `page_kwarg`
+instead. A page that is not a whole number is page one, and a
 size that is not one is `paginate_by`. An instance page is not paged, so its
 query is all the spec's: there `?page=2` is an argument like any other.
 
@@ -139,6 +140,35 @@ messages in `errors` and no rows.
 The shipped page draws the form's fields with no errors beside them, and
 every message of a refusal in the results, so a page that swaps its results
 under htmx shows them too.
+
+## A key the spec does not declare
+
+**Is ignored.** `SpecSelectorView.unknown_arguments` is
+`UnknownArguments.IGNORE`, so `?utm_source=newsletter` on a list page serves
+the rows as if it were not there, and beside a filter the filter is read as
+usual. The page links keep it, as they keep every key. The query string of a
+page a person reads is written by links the page does not control: a
+tracking parameter, a bookmark from before a filter was renamed. Refusing what the spec does not declare would answer that visitor a
+400 for the link. It holds on an instance page too.
+
+A key the spec does declare is still read by its declaration, so
+`?author=999` is refused at 400 whatever else the query carries, and a
+route kwarg the spec does not declare is the host's misconfiguration under
+either policy. The form and confirmation pages send dispatch only their
+form's fields and the route, so a query key they do not declare never reaches
+it; the [JSON views](http.md) refuse an undeclared key by default, since a
+client's code chose it rather than whoever wrote a link.
+
+A list whose query is built by code alone opts back into the refusal:
+
+```python
+--8<--
+docs/examples/spec_selector.py:strict
+--8<--
+```
+
+which answers `?utm_source=newsletter` with a 400 and `utm_source: Unknown
+argument.` on the page, placed on the filter form's non-field errors.
 
 ## What a row offers
 
