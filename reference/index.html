@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://artui.github.io/django-spec-html/reference/">
       
       
-        <link rel="prev" href="../http/">
+        <link rel="prev" href="../translations/">
       
       
       
@@ -432,6 +432,33 @@
     
   
     JSON views
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../translations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Translations
   
 
     
@@ -2877,7 +2904,9 @@ outcome is answered as a fragment, at the same URL:</p>
 htmx header reaches dispatch: the arguments are the form's fields and the
 route's kwargs whichever wrapper answers, so a spec cannot tell the two
 apart. One header is read before dispatch, <code>HX-Trigger-Name</code>, and only
-to stop a post committing, below.</p>
+to stop a post committing and, on a post that does not commit, to say
+which errors a refresh validated under <code>validate_on_refresh</code> shows,
+both below.</p>
 <p><strong>A post that does not commit.</strong> A form that refreshes a dependent
 choice, adds a row or searches posts without meaning to run the
 operation. <code>commit_button</code> names the submit button whose post commits;
@@ -2891,6 +2920,22 @@ constructor narrows by a posted value is narrowed again. Nothing is
 dispatched and nothing validated: the form shows no error, and the
 context carries <code>refreshed</code>, absent from every other render. It
 answers 200 on the page, and the form's fragment at 200 under htmx.</p>
+<p><strong>Validating a post that does not commit.</strong> <code>validate_on_refresh</code>
+shows on such a post what its commit would refuse, so a field is checked
+as a person leaves it. The post is read as a commit reads it, the binding
+laid over it, and bound through the kernel's
+<a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.dispatch.bind_arguments.bind_arguments"><code>bind_arguments</code></a>
+with the principal, the target the page found, the request's seeds and
+its call context: the shape check and the Validator, and nothing
+dispatched, no <code>success_message</code> sent. Its refusal is placed on the
+form as a refused commit's is, at 200 still, with <code>refreshed</code> in the
+context. Where <code>HX-Trigger-Name</code> names one of the form's fields, as
+its <code>html_name</code>, the name it posts under, only that field's errors are
+placed and no non-field error; on every other refresh, the whole
+refusal. <strong>It runs no provider</strong>, as <code>bind_arguments</code> runs neither
+<code>input_data</code> nor <code>kwargs</code>: a field the spec's <code>input_data</code> fills
+is judged as posted, so a required one left blank is refused by the
+refresh and accepted by the commit, which the provider fills.</p>
 <p><strong>A success message.</strong> <code>success_message</code>, where it is set, is sent
 through <code>django.contrib.messages</code> on every success - the redirect, the
 <code>HX-Redirect</code> and the result fragment alike - formatted by
@@ -3176,6 +3221,21 @@ success returns to under, read by <code>get_redirect_url</code>:
 the form declares and the <code>commit_button</code> is not, checked at
 <code>as_view()</code>. The page's context carries it, with the URL as
 <code>next</code>, for a refused post to send again.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="django_spec_html.views.spec_form_view.SpecFormView.validate_on_refresh">validate_on_refresh</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Whether a post that does not commit shows what
+its commit would refuse, bound through the kernel's
+<code>bind_arguments</code> and never dispatched. <code>False</code> by default,
+which shows no error. A page with no <code>commit_button</code> commits
+every post, so it has nothing to refresh.</p>
               </div>
             </td>
           </tr>
@@ -7384,6 +7444,9 @@ either. The form must be bound, as Django's <code>add_error</code> requires.</p>
 parameters are all optional would run with nothing and answer success,
 which tells its client the change was made. A request with no body is not
 refused, whatever it is labelled, since there is nothing in it to misread.</p>
+<p><code>default_message</code> is a msgid in the package's catalog, looked up in the
+active language each time a refusal is built with no message of its own. A
+<code>message</code> the caller passes is used as given.</p>
 <p>A refusal of the call rather than the operation's verdict, so a
 <code>DispatchError</code>, answered 415 as djangorestframework-services answers it.</p>
 

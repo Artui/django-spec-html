@@ -514,6 +514,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="A post that does not commit">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#validating-a-post-that-does-not-commit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validating a post that does not commit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -669,6 +686,33 @@
     
   
     JSON views
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../translations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Translations
   
 
     
@@ -898,6 +942,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="A post that does not commit">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#validating-a-post-that-does-not-commit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validating a post that does not commit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1093,10 +1154,23 @@ the spec's Validator:</p>
 </span><span id="__span-3-92"><a id="__codelineno-3-92" name="__codelineno-3-92" href="#__codelineno-3-92"></a>            <span class="n">success_message</span><span class="o">=</span><span class="s2">"Edition </span><span class="si">%(number)s</span><span class="s2"> added."</span><span class="p">,</span>
 </span><span id="__span-3-93"><a id="__codelineno-3-93" name="__codelineno-3-93" href="#__codelineno-3-93"></a>        <span class="p">),</span>
 </span><span id="__span-3-94"><a id="__codelineno-3-94" name="__codelineno-3-94" href="#__codelineno-3-94"></a>    <span class="p">),</span>
-</span><span id="__span-3-95"><a id="__codelineno-3-95" name="__codelineno-3-95" href="#__codelineno-3-95"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"branches/&lt;branch&gt;/books/new/"</span><span class="p">,</span> <span class="n">StockBook</span><span class="o">.</span><span class="n">as_view</span><span class="p">()),</span>
-</span><span id="__span-3-96"><a id="__codelineno-3-96" name="__codelineno-3-96" href="#__codelineno-3-96"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"books/"</span><span class="p">,</span> <span class="n">books</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"books"</span><span class="p">),</span>
-</span><span id="__span-3-97"><a id="__codelineno-3-97" name="__codelineno-3-97" href="#__codelineno-3-97"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"books/&lt;int:pk&gt;/"</span><span class="p">,</span> <span class="n">book</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"book"</span><span class="p">),</span>
-</span><span id="__span-3-98"><a id="__codelineno-3-98" name="__codelineno-3-98" href="#__codelineno-3-98"></a><span class="p">]</span>
+</span><span id="__span-3-95"><a id="__codelineno-3-95" name="__codelineno-3-95" href="#__codelineno-3-95"></a>    <span class="n">path</span><span class="p">(</span>
+</span><span id="__span-3-96"><a id="__codelineno-3-96" name="__codelineno-3-96" href="#__codelineno-3-96"></a>        <span class="s2">"editions/new/checked/"</span><span class="p">,</span>
+</span><span id="__span-3-97"><a id="__codelineno-3-97" name="__codelineno-3-97" href="#__codelineno-3-97"></a>        <span class="n">SpecFormView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span>
+</span><span id="__span-3-98"><a id="__codelineno-3-98" name="__codelineno-3-98" href="#__codelineno-3-98"></a>            <span class="n">spec</span><span class="o">=</span><span class="n">check_edition_spec</span><span class="p">,</span>
+</span><span id="__span-3-99"><a id="__codelineno-3-99" name="__codelineno-3-99" href="#__codelineno-3-99"></a>            <span class="n">template_name</span><span class="o">=</span><span class="s2">"spec_edition.html"</span><span class="p">,</span>
+</span><span id="__span-3-100"><a id="__codelineno-3-100" name="__codelineno-3-100" href="#__codelineno-3-100"></a>            <span class="n">fragment_template_name</span><span class="o">=</span><span class="s2">"spec_edition_form.html"</span><span class="p">,</span>
+</span><span id="__span-3-101"><a id="__codelineno-3-101" name="__codelineno-3-101" href="#__codelineno-3-101"></a>            <span class="n">success_url</span><span class="o">=</span><span class="n">reverse_lazy</span><span class="p">(</span><span class="s2">"books"</span><span class="p">),</span>
+</span><span id="__span-3-102"><a id="__codelineno-3-102" name="__codelineno-3-102" href="#__codelineno-3-102"></a>            <span class="n">commit_button</span><span class="o">=</span><span class="s2">"add"</span><span class="p">,</span>
+</span><span id="__span-3-103"><a id="__codelineno-3-103" name="__codelineno-3-103" href="#__codelineno-3-103"></a>            <span class="c1"># Every post that does not commit shows what "Add" would refuse,</span>
+</span><span id="__span-3-104"><a id="__codelineno-3-104" name="__codelineno-3-104" href="#__codelineno-3-104"></a>            <span class="c1"># a field's own request that field's errors alone.</span>
+</span><span id="__span-3-105"><a id="__codelineno-3-105" name="__codelineno-3-105" href="#__codelineno-3-105"></a>            <span class="n">validate_on_refresh</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-3-106"><a id="__codelineno-3-106" name="__codelineno-3-106" href="#__codelineno-3-106"></a>        <span class="p">),</span>
+</span><span id="__span-3-107"><a id="__codelineno-3-107" name="__codelineno-3-107" href="#__codelineno-3-107"></a>    <span class="p">),</span>
+</span><span id="__span-3-108"><a id="__codelineno-3-108" name="__codelineno-3-108" href="#__codelineno-3-108"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"branches/&lt;branch&gt;/books/new/"</span><span class="p">,</span> <span class="n">StockBook</span><span class="o">.</span><span class="n">as_view</span><span class="p">()),</span>
+</span><span id="__span-3-109"><a id="__codelineno-3-109" name="__codelineno-3-109" href="#__codelineno-3-109"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"books/"</span><span class="p">,</span> <span class="n">books</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"books"</span><span class="p">),</span>
+</span><span id="__span-3-110"><a id="__codelineno-3-110" name="__codelineno-3-110" href="#__codelineno-3-110"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"books/&lt;int:pk&gt;/"</span><span class="p">,</span> <span class="n">book</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"book"</span><span class="p">),</span>
+</span><span id="__span-3-111"><a id="__codelineno-3-111" name="__codelineno-3-111" href="#__codelineno-3-111"></a><span class="p">]</span>
 </span></code></pre></div>
 <h3 id="the-pages-template">The page's template<a class="headerlink" href="#the-pages-template" title="Permanent link">&para;</a></h3>
 <p><strong>A template is optional.</strong> The first route above names none, so it renders
@@ -2032,7 +2106,9 @@ route's kwargs, and dispatch is called the same way in both modes. So a spec
 cannot branch on the mode, and its outcome on the page and in a fragment is one
 outcome. One header is read before dispatch, <code>HX-Trigger-Name</code>, and only to
 stop a post committing on a page that names its
-<a href="#a-post-that-does-not-commit">commit button</a>.</p>
+<a href="#a-post-that-does-not-commit">commit button</a> and, on a post that does not
+commit, to say which errors a
+<a href="#validating-a-post-that-does-not-commit">validated refresh</a> shows.</p>
 <p><a id="denials"></a>
 <strong>A denial is the host's to answer, for htmx too.</strong> The view raises
 <code>PermissionDenied</code> and <code>Http404</code> in both modes, on every page, and a list
@@ -2218,7 +2294,8 @@ the form bound to the post:</p>
   keyword, or by a value posted - is narrowed again.</li>
 <li>Nothing is dispatched and nothing validated: the form shows the values
   posted and no error, and a required field left blank is not called
-  required. <code>asked_fields</code> are held back, as on GET.</li>
+  required. <code>asked_fields</code> are held back, as on GET, unless the refusal
+  names one, under <code>validate_on_refresh</code> below.</li>
 <li>The context carries <code>refreshed</code>, <code>True</code>, for a template that needs to tell;
   it is absent from every other render.</li>
 <li>The page answers 200, and an htmx request the form's fragment at 200.</li>
@@ -2226,16 +2303,86 @@ the form bound to the post:</p>
 <p><code>commit_button</code> is checked at <code>as_view()</code>: <code>None</code>, or a non-empty string that
 names no field of the form, since a field is posted by every submit and could
 not say which one commits.</p>
+<h3 id="validating-a-post-that-does-not-commit">Validating a post that does not commit<a class="headerlink" href="#validating-a-post-that-does-not-commit" title="Permanent link">&para;</a></h3>
+<p>A field checked as a person leaves it, rather than when the form is sent:
+<strong><code>validate_on_refresh</code></strong> shows, on a post that does not commit, what its
+commit would refuse. It is <code>False</code> by default, and the form then shows no
+error, as above. It has no effect without a <code>commit_button</code>, since every post
+then commits.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">CheckedEditionForm</span><span class="p">(</span><span class="n">AddEditionForm</span><span class="p">):</span>
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>    <span class="c1"># Leaving the number posts the form as choosing an author does, so a</span>
+</span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>    <span class="c1"># number the book already has is refused as it is typed, not on "Add".</span>
+</span><span id="__span-22-4"><a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a>    <span class="n">number</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">IntegerField</span><span class="p">(</span>
+</span><span id="__span-22-5"><a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>        <span class="n">min_value</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+</span><span id="__span-22-6"><a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a>        <span class="n">widget</span><span class="o">=</span><span class="n">forms</span><span class="o">.</span><span class="n">NumberInput</span><span class="p">(</span>
+</span><span id="__span-22-7"><a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a>            <span class="n">attrs</span><span class="o">=</span><span class="p">{</span>
+</span><span id="__span-22-8"><a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a>                <span class="s2">"hx-post"</span><span class="p">:</span> <span class="s2">""</span><span class="p">,</span>
+</span><span id="__span-22-9"><a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a>                <span class="s2">"hx-trigger"</span><span class="p">:</span> <span class="s2">"change"</span><span class="p">,</span>
+</span><span id="__span-22-10"><a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a>                <span class="s2">"hx-target"</span><span class="p">:</span> <span class="s2">"closest form"</span><span class="p">,</span>
+</span><span id="__span-22-11"><a id="__codelineno-22-11" name="__codelineno-22-11" href="#__codelineno-22-11"></a>                <span class="s2">"hx-swap"</span><span class="p">:</span> <span class="s2">"outerHTML"</span><span class="p">,</span>
+</span><span id="__span-22-12"><a id="__codelineno-22-12" name="__codelineno-22-12" href="#__codelineno-22-12"></a>            <span class="p">}</span>
+</span><span id="__span-22-13"><a id="__codelineno-22-13" name="__codelineno-22-13" href="#__codelineno-22-13"></a>        <span class="p">),</span>
+</span><span id="__span-22-14"><a id="__codelineno-22-14" name="__codelineno-22-14" href="#__codelineno-22-14"></a>    <span class="p">)</span>
+</span><span id="__span-22-15"><a id="__codelineno-22-15" name="__codelineno-22-15" href="#__codelineno-22-15"></a>
+</span><span id="__span-22-16"><a id="__codelineno-22-16" name="__codelineno-22-16" href="#__codelineno-22-16"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">clean</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+</span><span id="__span-22-17"><a id="__codelineno-22-17" name="__codelineno-22-17" href="#__codelineno-22-17"></a>        <span class="n">cleaned</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">clean</span><span class="p">()</span> <span class="ow">or</span> <span class="p">{}</span>
+</span><span id="__span-22-18"><a id="__codelineno-22-18" name="__codelineno-22-18" href="#__codelineno-22-18"></a>        <span class="n">book</span><span class="p">,</span> <span class="n">number</span> <span class="o">=</span> <span class="n">cleaned</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"book"</span><span class="p">),</span> <span class="n">cleaned</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"number"</span><span class="p">)</span>
+</span><span id="__span-22-19"><a id="__codelineno-22-19" name="__codelineno-22-19" href="#__codelineno-22-19"></a>        <span class="k">if</span> <span class="n">book</span> <span class="ow">and</span> <span class="n">number</span> <span class="ow">and</span> <span class="n">Edition</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">book</span><span class="o">=</span><span class="n">book</span><span class="p">,</span> <span class="n">number</span><span class="o">=</span><span class="n">number</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+</span><span id="__span-22-20"><a id="__codelineno-22-20" name="__codelineno-22-20" href="#__codelineno-22-20"></a>            <span class="bp">self</span><span class="o">.</span><span class="n">add_error</span><span class="p">(</span><span class="s2">"number"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">book</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2"> already has edition </span><span class="si">{</span><span class="n">number</span><span class="si">}</span><span class="s2">."</span><span class="p">)</span>
+</span><span id="__span-22-21"><a id="__codelineno-22-21" name="__codelineno-22-21" href="#__codelineno-22-21"></a>        <span class="k">return</span> <span class="n">cleaned</span>
+</span><span id="__span-22-22"><a id="__codelineno-22-22" name="__codelineno-22-22" href="#__codelineno-22-22"></a>
+</span><span id="__span-22-23"><a id="__codelineno-22-23" name="__codelineno-22-23" href="#__codelineno-22-23"></a>
+</span><span id="__span-22-24"><a id="__codelineno-22-24" name="__codelineno-22-24" href="#__codelineno-22-24"></a><span class="n">check_edition_spec</span> <span class="o">=</span> <span class="n">ServiceSpec</span><span class="p">(</span>
+</span><span id="__span-22-25"><a id="__codelineno-22-25" name="__codelineno-22-25" href="#__codelineno-22-25"></a>    <span class="n">service</span><span class="o">=</span><span class="n">add_edition</span><span class="p">,</span>
+</span><span id="__span-22-26"><a id="__codelineno-22-26" name="__codelineno-22-26" href="#__codelineno-22-26"></a>    <span class="n">permissions</span><span class="o">=</span><span class="p">[</span><span class="n">IsSignedIn</span><span class="p">()],</span>
+</span><span id="__span-22-27"><a id="__codelineno-22-27" name="__codelineno-22-27" href="#__codelineno-22-27"></a>    <span class="n">validator</span><span class="o">=</span><span class="n">FormValidator</span><span class="p">(</span><span class="n">CheckedEditionForm</span><span class="p">),</span>
+</span><span id="__span-22-28"><a id="__codelineno-22-28" name="__codelineno-22-28" href="#__codelineno-22-28"></a><span class="p">)</span>
+</span></code></pre></div>
+<p>The URLconf routes it as <code>editions/new/checked/</code>, with <code>commit_button="add"</code>
+and <code>validate_on_refresh=True</code>, on the same templates as <code>editions/new/</code>.
+Leaving the number posts the form, and a number the book already has is
+refused there; choosing an author calls nothing else required; "Show their
+books" shows every error the form has.</p>
+<ul>
+<li><strong>The post is bound as its commit would bind it</strong>, through the kernel's
+  <a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.dispatch.bind_arguments.bind_arguments"><code>bind_arguments</code></a>:
+  the form's values and the route's kwargs read as a commit reads them, the
+  server's binding laid over them, under the page's <code>unknown_arguments</code>, with
+  the principal admitted, the target the page found, the request's seeds and
+  its call context. So a <code>form_kwargs</code> naming a seed is handed it, and an
+  update's own unique value is not taken by its own row.</li>
+<li><strong>Nothing is dispatched</strong> and no <code>success_message</code> is sent. The page
+  answers 200, and an htmx request the form's fragment at 200, with
+  <code>refreshed</code> in the context as on any post that does not commit.</li>
+<li><strong>The refusal is placed on the form as a refused commit's is</strong>, by
+  <code>add_argument_errors</code>.</li>
+<li><strong><code>HX-Trigger-Name</code> decides which errors.</strong> Where it names one of the
+  form's fields, as the field posts it - its <code>html_name</code> - only that
+  field's errors are placed, and no non-field error: a person has not reached
+  the rest of the form yet. Every other refresh - no header, the form's own
+  name, a refresh button, one part of a multi-widget field such as <code>when_0</code> -
+  shows the whole refusal.</li>
+<li><strong>No provider runs.</strong> <code>bind_arguments</code> runs neither the spec's
+  <code>input_data</code> nor a <code>kwargs</code> provider, and that is the one difference in how
+  the post is bound. A field <code>input_data</code> fills is judged as posted: a
+  required one left blank is refused by the refresh, and accepted by the
+  commit, which the provider fills. What the service, an unmet affordance or a
+  conflict refuses is the commit's alone, since nothing is dispatched.</li>
+<li><strong>The shape check answers before the form.</strong> While any field fails it - a
+  required field blank, a number that does not parse - the form's own checks
+  have not run, so a field's request shows its own shape error, or none, and
+  its <code>clean_&lt;field&gt;()</code> waits until the rest of the form is well formed.</li>
+</ul>
 <h2 id="returning-where-the-page-was-opened-from">Returning where the page was opened from<a class="headerlink" href="#returning-where-the-page-was-opened-from" title="Permanent link">&para;</a></h2>
 <p>A page linked to from the third page of a list should save and go back to the
 third page, not to the first one, which is where <code>success_url</code> points.
 <strong><code>redirect_field_name</code> names the key that carries that URL</strong>, as Django's
 <code>LoginView</code> names <code>next</code>. The edit page in the URLconf above sets it:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="n">SpecFormView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span>
-</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>    <span class="n">spec</span><span class="o">=</span><span class="n">edit_book_spec</span><span class="p">,</span>
-</span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>    <span class="n">success_url</span><span class="o">=</span><span class="n">reverse_lazy</span><span class="p">(</span><span class="s2">"books"</span><span class="p">),</span>
-</span><span id="__span-22-4"><a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a>    <span class="n">redirect_field_name</span><span class="o">=</span><span class="s2">"next"</span><span class="p">,</span>
-</span><span id="__span-22-5"><a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="n">SpecFormView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span>
+</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>    <span class="n">spec</span><span class="o">=</span><span class="n">edit_book_spec</span><span class="p">,</span>
+</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>    <span class="n">success_url</span><span class="o">=</span><span class="n">reverse_lazy</span><span class="p">(</span><span class="s2">"books"</span><span class="p">),</span>
+</span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>    <span class="n">redirect_field_name</span><span class="o">=</span><span class="s2">"next"</span><span class="p">,</span>
+</span><span id="__span-23-5"><a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="p">)</span>
 </span></code></pre></div>
 <p>The list links to the page as <code>/books/7/edit/?next=/books/%3Fpage%3D3</code>, and a
 save redirects to <code>/books/?page=3</code>.</p>
@@ -2267,7 +2414,7 @@ save redirects to <code>/books/?page=3</code>.</p>
   input, and post to the page's own URL, so a <code>next</code> in the query is kept
   too. A template of the project's own adds the input itself:</li>
 </ul>
-<div class="language-html highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>{% if next %}<span class="p">&lt;</span><span class="nt">input</span> <span class="na">type</span><span class="o">=</span><span class="s">"hidden"</span> <span class="na">name</span><span class="o">=</span><span class="s">"{{ redirect_field_name }}"</span> <span class="na">value</span><span class="o">=</span><span class="s">"{{ next }}"</span><span class="p">&gt;</span>{% endif %}
+<div class="language-html highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>{% if next %}<span class="p">&lt;</span><span class="nt">input</span> <span class="na">type</span><span class="o">=</span><span class="s">"hidden"</span> <span class="na">name</span><span class="o">=</span><span class="s">"{{ redirect_field_name }}"</span> <span class="na">value</span><span class="o">=</span><span class="s">"{{ next }}"</span><span class="p">&gt;</span>{% endif %}
 </span></code></pre></div>
 <p>Neither key is in the context where there is no safe URL, so an unsafe value
 is never written back into the page. <code>get_redirect_url()</code> answers the safe
@@ -2289,9 +2436,9 @@ number posted, as the form cleaned it. The cleaned data is the result's
 <a href="#a-partial-page">partial page</a> a field left blank is not in it.</p>
 <p><code>get_success_message(result)</code> answers it, to override for a message that reads
 what the operation returned:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">AddBookThenSayWhich</span><span class="p">(</span><span class="n">SpecFormView</span><span class="p">):</span>
-</span><span id="__span-24-2"><a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">get_success_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">result</span><span class="p">:</span> <span class="n">DispatchResult</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-</span><span id="__span-24-3"><a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>        <span class="k">return</span> <span class="sa">f</span><span class="s2">"Book </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">pk</span><span class="si">}</span><span class="s2"> added."</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">AddBookThenSayWhich</span><span class="p">(</span><span class="n">SpecFormView</span><span class="p">):</span>
+</span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">get_success_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">result</span><span class="p">:</span> <span class="n">DispatchResult</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+</span><span id="__span-25-3"><a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>        <span class="k">return</span> <span class="sa">f</span><span class="s2">"Book </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">pk</span><span class="si">}</span><span class="s2"> added."</span>
 </span></code></pre></div>
 <ul>
 <li><strong>Without the messages middleware it is skipped</strong>, and never raises
