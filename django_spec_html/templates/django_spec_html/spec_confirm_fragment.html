@@ -1,13 +1,14 @@
 {% load i18n %}{% comment %}
 The confirmation page's target and button, and what an htmx request for it
 is answered with. There is no form to fill in, so the post carries the token
-and the button alone. A question is shown by its message, which is the one
-entry of ``errors`` it brings: the page builds no control from a schema.
+and the button alone, and the URL to return to where the view reads one. A
+question is shown by its message, which is the one entry of ``errors`` it
+brings: the page builds no control from a schema.
 {% endcomment %}{% include "django_spec_html/target.html" %}
 {% if unavailable %}<p data-code="{{ unavailable.code }}">{{ unavailable.reason }}</p>{% endif %}
 {% if requested_input %}<p>{{ requested_input.message }}</p>
 {% elif errors %}<ul class="errorlist">{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
 {% endif %}<form method="post"{% if code %} data-code="{{ code }}"{% endif %}>
-{% csrf_token %}
+{% csrf_token %}{% if next %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ next }}">{% endif %}
 <button type="submit"{% if view.commit_button %} name="{{ view.commit_button }}"{% endif %}{% if unavailable %} disabled{% endif %}>{% translate "Confirm" %}</button>
 </form>

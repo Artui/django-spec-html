@@ -19,10 +19,13 @@ import pytest
 from django import forms
 from django.contrib import messages
 from django.contrib.messages import get_messages
+from django.contrib.messages.storage.cookie import CookieStorage
 from django.core.exceptions import BadRequest, ImproperlyConfigured, PermissionDenied
+from django.db import connection
 from django.db.models import QuerySet
 from django.http import Http404, HttpResponse
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import path
 from django_service_specs import (
     UNSET,
@@ -641,3 +644,271 @@ def test_every_stage_is_handed_the_request_and_the_page(ada: Any, note: Note) ->
     page = handed.one_view(request)
     assert isinstance(page, SpecConfirmView)
     assert page.request is request
+
+
+class ReturnsToTheList(SpecConfirmView):
+    """A confirmation posted from a list's row, sent back to it: set as a host's subclass sets it."""
+
+    template_name = PAGE
+    success_url = "/done/"
+    route_kwargs = ("pk",)
+    redirect_field_name = "next"
+    refusal_redirect = True
+
+
+# The list a row's button was posted from, as its own query names it.
+FROM_THE_LIST = "?next=/list/%3Fpage%3D3"
+PAUSED = Affordance(code="paused", reason="Archiving is paused.", when=lambda: False)
+
+
+def from_a_row(
+    view: Any, user: Any, pk: Any, query: str = FROM_THE_LIST, **extra: Any
+) -> tuple[Any, Any]:
+    """Post the row's button with a messages store, as the middleware leaves the request."""
+    request = signed_in(FACTORY.post(f"/notes/{pk}/archive/{query}", data=PRESSED, **extra), user)
+    request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+    return view(request, pk=pk), request
+
+
+def stored(request: Any) -> list[tuple[int, str, str]]:
+    return [(each.level, each.message, each.extra_tags) for each in get_messages(request)]
+
+
+class TestASuccessReturnsToNext:
+    def test_it_redirects_to_next(self, ada: Any, note: Note) -> None:
+        response, _ = from_a_row(ReturnsToTheList.as_view(spec=archive_spec()), ada, note.pk)
+        assert (response.status_code, response.url) == (302, "/list/?page=3")
+
+    def test_htmx_is_sent_to_next(self, ada: Any, note: Note) -> None:
+        view = ReturnsToTheList.as_view(spec=archive_spec(), fragment_template_name=FRAGMENT)
+        response, _ = from_a_row(view, ada, note.pk, **HTMX)
+        assert (response.status_code, response["HX-Redirect"]) == (200, "/list/?page=3")
+
+    def test_an_unsafe_next_is_the_success_url(self, ada: Any, note: Note) -> None:
+        view = ReturnsToTheList.as_view(spec=archive_spec())
+        response, _ = from_a_row(view, ada, note.pk, "?next=//evil.example")
+        assert response.url == "/done/"
+
+    def test_nothing_posted_reaches_dispatch(self, ada: Any, note: Note) -> None:
+        spec = archive_spec()
+        response, _ = from_a_row(ReturnsToTheList.as_view(spec=spec), ada, note.pk)
+        assert response.status_code == 302
+        assert "next" not in calls(spec)[0]
+
+
+class TestARefusalRedirect:
+    """An unmet condition on a row's button sends the person back to the list, saying why."""
+
+    def test_an_unmet_affordance_returns_to_next_with_its_reason(
+        self, ada: Any, note: Note
+    ) -> None:
+        view = ReturnsToTheList.as_view(spec=archive_spec(affordances=[PAUSED]))
+        response, request = from_a_row(view, ada, note.pk)
+        assert (response.status_code, response.url) == (302, "/list/?page=3")
+        assert stored(request) == [(messages.ERROR, "Archiving is paused.", "paused")]
+
+    def test_htmx_is_sent_back_with_hx_redirect(self, ada: Any, note: Note) -> None:
+        view = ReturnsToTheList.as_view(
+            spec=archive_spec(affordances=[PAUSED]), fragment_template_name=FRAGMENT
+        )
+        response, request = from_a_row(view, ada, note.pk, **HTMX)
+        assert (response.status_code, response["HX-Redirect"]) == (200, "/list/?page=3")
+        assert not response.has_header("Location")
+        assert stored(request) == [(messages.ERROR, "Archiving is paused.", "paused")]
+
+    @pytest.mark.parametrize(
+        ("spec", "pk", "sent"),
+        [
+            (lambda: raising(ServiceConflict("Already archived.")), None, ["Already archived."]),
+            (
+                lambda: raising(ServiceValidationError({"where": {"city": ["Unknown."]}})),
+                None,
+                ["where.city: Unknown."],
+            ),
+            (lambda: archive_spec(), "seven", ["pk: Enter a whole number."]),
+            (lambda: TestAQuestion.asking(), None, ["Archive it for good?"]),
+        ],
+        ids=["failed", "invalid", "invalid-route", "needs-input"],
+    )
+    def test_each_outcome_the_page_renders_returns_with_each_message(
+        self, ada: Any, note: Note, spec: Any, pk: Any, sent: list[str]
+    ) -> None:
+        view = ReturnsToTheList.as_view(spec=spec())
+        response, request = from_a_row(view, ada, note.pk if pk is None else pk)
+        assert (response.status_code, response.url) == (302, "/list/?page=3")
+        assert stored(request) == [(messages.ERROR, each, "") for each in sent]
+
+    def test_every_message_of_a_tree_is_sent_in_order(self, ada: Any, note: Note) -> None:
+        detail = {"non_field_errors": ["Not now."], "where": {"city": ["Unknown."]}}
+        view = ReturnsToTheList.as_view(spec=raising(ServiceValidationError(detail)))
+        _, request = from_a_row(view, ada, note.pk)
+        assert [message for _, message, _ in stored(request)] == [
+            "Not now.",
+            "where.city: Unknown.",
+        ]
+
+    @pytest.mark.parametrize(
+        ("refused", "raised"),
+        [(NotPermitted("No."), PermissionDenied), (ServiceNotFound("Gone."), Http404)],
+        ids=["not-permitted", "not-found"],
+    )
+    def test_a_denial_is_still_raised(
+        self, ada: Any, note: Note, refused: Any, raised: Any
+    ) -> None:
+        with pytest.raises(raised):
+            from_a_row(ReturnsToTheList.as_view(spec=raising(refused)), ada, note.pk)
+
+    @pytest.mark.parametrize(
+        "query", ["", "?next=https://evil.example/"], ids=["no-next", "unsafe-next"]
+    )
+    def test_without_a_safe_next_it_returns_to_the_success_url(
+        self, ada: Any, note: Note, query: str
+    ) -> None:
+        view = ReturnsToTheList.as_view(spec=archive_spec(affordances=[PAUSED]))
+        response, request = from_a_row(view, ada, note.pk, query)
+        assert response.url == "/done/"
+        assert len(stored(request)) == 1
+
+    def test_a_page_naming_no_field_returns_to_the_success_url(self, ada: Any, note: Note) -> None:
+        view = ReturnsToTheList.as_view(
+            spec=archive_spec(affordances=[PAUSED]), redirect_field_name=None
+        )
+        response, _ = from_a_row(view, ada, note.pk)
+        assert response.url == "/done/"
+
+    def test_without_the_messages_middleware_it_is_the_page_again(
+        self, ada: Any, note: Note
+    ) -> None:
+        # No store on the request: Django raises MessageFailure, and the page
+        # renders the refusal itself rather than lose it in a redirect.
+        view = ReturnsToTheList.as_view(spec=archive_spec(affordances=[PAUSED]))
+        request = signed_in(
+            FACTORY.post(f"/notes/{note.pk}/archive/{FROM_THE_LIST}", data=PRESSED), ada
+        )
+        response = view(request, pk=note.pk)
+        assert response.status_code == 409
+        assert (response.context_data["errors"], response.context_data["code"]) == (
+            ["Archiving is paused."],
+            "paused",
+        )
+
+    @pytest.mark.parametrize(
+        ("refused", "status"),
+        [
+            (ServiceValidationError({}), 400),
+            (ServiceValidationError({"x": []}), 400),
+            (ServiceValidationError([]), 400),
+            (ServiceConflict(""), 409),
+        ],
+        ids=["empty-tree", "empty-list-at-a-key", "empty-list", "empty-message"],
+    )
+    @pytest.mark.parametrize("store", [True, False], ids=["with-a-store", "without-a-store"])
+    def test_a_refusal_with_nothing_to_say_is_the_page_again(
+        self, ada: Any, note: Note, refused: Any, status: int, store: bool
+    ) -> None:
+        # A redirect with no message would lose the refusal, store or none:
+        # nothing is sent to fail, and Django's storage drops an empty one.
+        view = ReturnsToTheList.as_view(spec=raising(refused))
+        request = signed_in(
+            FACTORY.post(f"/notes/{note.pk}/archive/{FROM_THE_LIST}", data=PRESSED), ada
+        )
+        if store:
+            request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+        response = view(request, pk=note.pk)
+        assert (response.status_code, response.has_header("Location")) == (status, False)
+        assert stored(request) == []
+
+    def test_a_refusal_sent_back_reads_no_target(self, ada: Any, note: Note) -> None:
+        # A set target, displayed: rendering the page again counts it and
+        # reads its rows for the presenter. Sent back, the page reads neither.
+        # The page rendered is the control, so the test cannot pass on a
+        # target that is never read.
+        spec = ServiceSpec(
+            service=raising(ServiceConflict("Not now.")).service,
+            permissions=OPEN,
+            collection_selector_spec=SelectorSpec(kind=SelectorKind.LIST, selector=drafts),
+            presenter=DataclassPresenter(NoteOut),
+        )
+        for redirects in (False, True):
+            view = ReturnsToTheList.as_view(
+                spec=spec, route_kwargs=None, display_target=True, refusal_redirect=redirects
+            )
+            request = signed_in(FACTORY.post(f"/notes/{FROM_THE_LIST}", data=PRESSED), ada)
+            request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+            with CaptureQueriesContext(connection) as queries:
+                response = view(request)
+            # Dispatch's own savepoint is the only statement left once sent back.
+            read = [each["sql"] for each in queries.captured_queries if "SELECT" in each["sql"]]
+            assert (response.status_code, bool(read)) == (
+                (302, False) if redirects else (409, True)
+            )
+
+    def test_off_by_default_the_refusal_is_the_page_again(self, ada: Any, note: Note) -> None:
+        view = ReturnsToTheList.as_view(
+            spec=archive_spec(affordances=[PAUSED]), refusal_redirect=False
+        )
+        response, request = from_a_row(view, ada, note.pk)
+        assert response.status_code == 409
+        assert stored(request) == []
+        # The page posts back to itself, and carries the way back to the list.
+        assert response.context_data["next"] == "/list/?page=3"
+
+    def test_get_refusal_url_may_be_overridden(self, ada: Any, note: Note) -> None:
+        class ToTheNote(ReturnsToTheList):
+            def get_refusal_url(self, refused: Any) -> str:
+                return f"/notes/{self.kwargs['pk']}/?refused={refused.code}"
+
+        view = ToTheNote.as_view(spec=archive_spec(affordances=[PAUSED]))
+        response, _ = from_a_row(view, ada, note.pk)
+        assert response.url == f"/notes/{note.pk}/?refused=paused"
+
+
+class TestARefusalRedirectNeedsSomewhereToGo:
+    MISSING = (
+        "Refusing.refusal_redirect needs a success_url, where a refused post returns without "
+        "a next, or a get_refusal_url that returns one."
+    )
+
+    @staticmethod
+    def refusing(**attributes: Any) -> Any:
+        # ``get_success_url`` overridden, so the base's own check of
+        # ``success_url`` passes and the one answering is the refusal's.
+        attributes = {
+            "template_name": PAGE,
+            "route_kwargs": ("pk",),
+            "refusal_redirect": True,
+            "get_success_url": lambda self, result: "/done/",
+            **attributes,
+        }
+        return type("Refusing", (SpecConfirmView,), attributes).as_view(spec=archive_spec())
+
+    def test_no_success_url_and_no_get_refusal_url_is_refused(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as raised:
+            self.refusing()
+        assert str(raised.value) == self.MISSING
+        assert "needs a success_url, where a successful post" not in str(raised.value)
+
+    def test_a_success_url_is_somewhere_to_go(self) -> None:
+        self.refusing(success_url="/done/")
+
+    def test_an_overridden_get_refusal_url_is_somewhere_to_go(self) -> None:
+        self.refusing(get_refusal_url=lambda self, refused: "/list/")
+
+    def test_get_refusal_url_may_be_passed_to_as_view(self) -> None:
+        view = type("Refusing", (SpecConfirmView,), {"template_name": PAGE})
+        view.as_view(
+            spec=archive_spec(),
+            route_kwargs=("pk",),
+            refusal_redirect=True,
+            get_success_url=lambda result: "/done/",
+            get_refusal_url=lambda refused: "/list/",
+        )
+
+    def test_a_page_not_redirecting_needs_none(self) -> None:
+        self.refusing(refusal_redirect=False)
+
+
+class TestTheRedirectFieldName:
+    def test_the_commit_button_s_name_is_refused(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match="redirect_field_name and commit_button"):
+            ReturnsToTheList.as_view(spec=archive_spec(), commit_button="next")

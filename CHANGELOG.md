@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`redirect_field_name` on `SpecFormView`, `SpecFormSetView` and
+  `SpecConfirmView`: a page returns where it was opened from.** `None` by
+  default, which reads nothing. Named - `"next"`, as Django's `LoginView`
+  names it - the URL the post or its query carries under that key is read as
+  `LoginView` reads it, the post's value first, and used only where
+  `url_has_allowed_host_and_scheme` allows it against the request's own host,
+  with `https` required on a secure request. A success redirects there in
+  place of `get_success_url(result)`, an override included, and under htmx
+  answers `HX-Redirect` to it; a `spec-result` fragment still answers in
+  place. An unsafe URL is ignored, and the success goes where it went before.
+  `get_redirect_url()` answers the safe URL, or `""`.
+  - **It survives a refused post.** The context carries
+    `redirect_field_name` and `next`, the safe URL, and the shipped
+    templates post them back as a hidden input; neither key is there without
+    a safe URL. The key is never an argument: a form page's arguments are its
+    fields and its route, and the confirmation page reads nothing posted.
+  - `as_view()` refuses a name that is not a non-empty string, one that is
+    the `commit_button`, on `SpecFormView` one the form declares as a field,
+    and on `SpecFormSetView` one that is the `add_button` or sits under the
+    formset's `form-` prefix.
+- **`refusal_redirect` on `SpecConfirmView`: a refusal sent back to the page
+  the button was posted from.** `False` by default. Set, an invalid, failed or
+  needs-input refusal sends each message the page would show in `errors`
+  through `messages.error`, with the refusal's `code` as `extra_tags` where it
+  has one, and redirects to `get_refusal_url(refused)`: the safe URL
+  `redirect_field_name` reads, else `success_url`. Under htmx it answers
+  `HX-Redirect`. A denial is raised as before. Without the messages middleware
+  Django raises `MessageFailure`, and the page is rendered as it is without
+  `refusal_redirect`, so the refusal is never lost; a refusal with no message
+  to send is the page again too. A refusal sent back counts and presents no
+  target. `as_view()` refuses it on a
+  page with no `success_url` that does not override `get_refusal_url`.
+
 ## [0.6.0] — 2026-10-29
 
 ### Added

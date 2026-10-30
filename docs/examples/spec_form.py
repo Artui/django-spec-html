@@ -356,6 +356,9 @@ urlpatterns = [
             spec=edit_book_spec,
             template_name="spec_form.html",
             success_url=reverse_lazy("books"),
+            # Linked from a page of the list as ?next=/books/?page=3, a save
+            # returns to that page rather than the first.
+            redirect_field_name="next",
         ),
     ),
     path(

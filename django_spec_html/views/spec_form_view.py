@@ -138,7 +138,11 @@ class SpecFormView(SpecPageBase):
 
     - **A success** redirects to ``get_success_url(result)``: ``success_url``
       through Django's ``resolve_url`` by default, so a ``reverse_lazy`` or a
-      URL name works, and a subclass overrides it to read the result.
+      URL name works, and a subclass overrides it to read the result. A
+      view naming ``redirect_field_name`` - ``"next"``, as Django's
+      ``LoginView`` names it - redirects instead to the URL the post or its
+      query carries under that key, where ``get_redirect_url()`` finds it
+      safe, so a page linked to from a list returns to the list.
     - **A refusal of the arguments** - ``InvalidArguments``, or a
       ``ServiceValidationError`` - re-renders the bound form at 400 with the
       refusal placed on it by
@@ -194,7 +198,8 @@ class SpecFormView(SpecPageBase):
       address is Django's ``TemplateDoesNotExist`` naming it, never the page,
       which swapped into a form's target would nest a second layout inside it.
     - **A success** is ``fragment_success(result)``: ``HX-Redirect`` to
-      ``get_success_url(result)``, or the ``spec-result`` fragment in place.
+      ``get_redirect_url()`` or ``get_success_url(result)``, or the
+      ``spec-result`` fragment in place.
     - **A denial** is raised in both modes alike, for the host's handlers.
 
     Both wrappers set ``Vary`` on the three headers the choice reads. No
@@ -326,9 +331,10 @@ class SpecFormView(SpecPageBase):
     ``as_view()`` refuses, when the URLconf is imported, a view with no
     ``ServiceSpec``, a spec whose Validator is not a ``FormValidator``, a
     ``many`` spec, whose list of rows no form posts, a view with no
-    ``success_url`` that does not override ``get_success_url``, and a
+    ``success_url`` that does not override ``get_success_url``, a
     ``commit_button`` that is not a button's name or is one of the form's
-    fields.
+    fields, and a ``redirect_field_name`` that is not a key's name, is one of
+    the form's fields or is the ``commit_button``.
 
     **Sync only**, in this release. **CSRF is the host's middleware**, as for
     any Django view, and the template renders ``{% csrf_token %}``.
@@ -369,6 +375,12 @@ class SpecFormView(SpecPageBase):
             read by ``commits``: ``None``, the default, commits every post;
             a non-empty string no field of the form declares, checked at
             ``as_view()``.
+        redirect_field_name: The key a post or its query carries the URL a
+            success returns to under, read by ``get_redirect_url``:
+            ``None``, the default, reads none; a non-empty string no field of
+            the form declares and the ``commit_button`` is not, checked at
+            ``as_view()``. The page's context carries it, with the URL as
+            ``next``, for a refused post to send again.
         success_message: The message a successful post sends through
             ``django.contrib.messages``, formatted by
             ``get_success_message`` with the form's cleaned data. Empty by
@@ -394,7 +406,7 @@ class SpecFormView(SpecPageBase):
 
     @classmethod
     def _check_page(cls, label: str, spec: ServiceSpec, initkwargs: Mapping[str, Any]) -> None:
-        """Refuse ``asked_fields`` and a ``commit_button`` read against the form's own fields."""
+        """Refuse ``asked_fields``, and a ``commit_button`` or ``redirect_field_name`` that is one of the form's fields."""
         _check_asked_fields(
             label,
             spec,
@@ -402,6 +414,9 @@ class SpecFormView(SpecPageBase):
             initkwargs.get("server_arguments", cls.server_arguments),
         )
         _check_commit_field(label, spec, initkwargs.get("commit_button", cls.commit_button))
+        _check_redirect_field(
+            label, spec, initkwargs.get("redirect_field_name", cls.redirect_field_name)
+        )
 
     def _form(
         self, spec: ServiceSpec, principal: Any, target: Any, served: Served, **bound: Any
@@ -516,13 +531,33 @@ def _check_commit_field(label: str, spec: ServiceSpec, button: Any) -> None:
     post that commits from one that does not.
     """
     form_class = _form_class(spec)
-    # ``base_fields`` is set by the metaclass, which the stubs do not declare.
-    fields: dict[str, forms.Field] = form_class.base_fields  # ty: ignore[unresolved-attribute]
-    if button in fields:
+    if button in _declared(form_class):
         raise ImproperlyConfigured(
             f"{label}.commit_button names {button!r}, a field {form_class.__name__} declares: a "
             "field is posted by every submit, so it cannot say which one commits."
         )
+
+
+def _check_redirect_field(label: str, spec: ServiceSpec, name: Any) -> None:
+    """Refuse a ``redirect_field_name`` that is the name of one of the form's fields.
+
+    Asked once the base has refused one that is not a key's name. A field's
+    name is refused (test_a_field_s_name_is_refused in
+    ``TestTheRedirectFieldName``), since the field's value, posted by every
+    submit, would be read as the URL a success returns to.
+    """
+    form_class = _form_class(spec)
+    if name in _declared(form_class):
+        raise ImproperlyConfigured(
+            f"{label}.redirect_field_name names {name!r}, a field {form_class.__name__} "
+            "declares: the field's value would be read as the URL to return to."
+        )
+
+
+def _declared(form_class: type[forms.BaseForm]) -> dict[str, forms.Field]:
+    """The fields ``form_class`` declares, by name."""
+    # ``base_fields`` is set by the metaclass, which the stubs do not declare.
+    return form_class.base_fields  # ty: ignore[unresolved-attribute]
 
 
 def _check_asked_fields(

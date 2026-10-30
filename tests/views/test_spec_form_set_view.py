@@ -849,6 +849,57 @@ class TestASuccess:
         assert sent(response) == ["One, Two"]
 
 
+def returning(spec: ServiceSpec, **attributes: Any) -> Any:
+    """A page that reads ``next``, set as a host's subclass sets it."""
+    attributes = {
+        "template_name": TEMPLATE,
+        "success_url": "/done/",
+        "redirect_field_name": "next",
+        **attributes,
+    }
+    return type("Returning", (SpecFormSetView,), attributes).as_view(spec=spec)
+
+
+class TestReturningToNext:
+    def test_a_success_redirects_to_next(self, ada: Any) -> None:
+        spec = many_spec()
+        request = FACTORY.post("/?next=/list/%3Fpage%3D3", data=posted({"title": "One"}))
+        response = returning(spec)(signed_in(request, ada))
+        assert (response.status_code, response.url) == (302, "/list/?page=3")
+        # Not a key under the formset's prefix, so no row and no argument reads it.
+        assert [row["title"] for row in rows(spec)] == ["One"]
+        assert "next" not in spec.service.calls[0]
+
+    def test_a_refused_post_carries_it(self, ada: Any) -> None:
+        data = posted({"title": "toolong"}, next="/list/")
+        response = post(returning(many_spec()), ada, data)
+        assert response.status_code == 400
+        assert response.context_data["next"] == "/list/"
+
+    @pytest.mark.parametrize(
+        ("attributes", "message"),
+        [
+            (
+                {"redirect_field_name": "form-0-title"},
+                "redirect_field_name names 'form-0-title', under the formset's 'form-' prefix",
+            ),
+            (
+                {"commit_button": "save", "add_button": "next"},
+                "redirect_field_name and add_button both name 'next'",
+            ),
+        ],
+        ids=["under-the-prefix", "the-add-button"],
+    )
+    def test_a_name_a_post_carries_otherwise_is_refused(
+        self, attributes: dict[str, str], message: str
+    ) -> None:
+        with pytest.raises(ImproperlyConfigured, match=message):
+            returning(many_spec(), **attributes)
+
+    def test_a_name_beside_both_buttons_builds(self) -> None:
+        returning(many_spec(), commit_button="save", add_button="add")
+
+
 class TestTheFragment:
     """An htmx request gets the form's fragment, the outcome decided as for the page."""
 

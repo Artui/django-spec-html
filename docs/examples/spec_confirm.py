@@ -104,3 +104,23 @@ urlpatterns = [
     path("books/", books, name="books"),
 ]
 # --8<-- [end:urls]
+
+# --8<-- [start:from-the-list]
+urlpatterns += [
+    path(
+        "books/<int:pk>/withdraw/from-the-list/",
+        SpecConfirmView.as_view(
+            spec=withdraw_book_spec,
+            template_name="spec_confirm_view.html",
+            success_url=reverse_lazy("books"),
+            route_kwargs=("pk",),
+            commit_button="withdraw",
+            # A row's button posts here with ?next=, the page of the list it
+            # sits on, and both outcomes go back there: a success, and a
+            # refusal, its reason sent as a message.
+            redirect_field_name="next",
+            refusal_redirect=True,
+        ),
+    ),
+]
+# --8<-- [end:from-the-list]

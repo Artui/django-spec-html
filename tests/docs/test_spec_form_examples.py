@@ -167,6 +167,49 @@ class TestAnUpdatePage:
         assert book.title == "The Word for World Is Forest"
 
 
+class TestReturningToTheList:
+    """The edit page names ``next``, so a save returns to the page of the list it was opened from."""
+
+    @pytest.fixture
+    def book(self, author: Author) -> Book:
+        return Book.objects.create(
+            title="The Lathe of Heaven", price=Decimal("9.99"), status=Status.DRAFT, author=author
+        )
+
+    def test_a_save_returns_to_the_page_named(self, ada: Any, author: Author, book: Book) -> None:
+        url = f"/books/{book.pk}/edit/?next=/books/%3Fpage%3D3"
+        response = serve(FACTORY.post(url, data=posted(author, title="Changed")), ada)
+        assert (response.status_code, response.url) == (302, "/books/?page=3")
+
+    @pytest.mark.parametrize(
+        "query",
+        ["", "?next=https://evil.example/", "?next=//evil.example"],
+        ids=["none", "another-host", "scheme-relative"],
+    )
+    def test_without_a_safe_one_it_is_the_success_url(
+        self, ada: Any, author: Author, book: Book, query: str
+    ) -> None:
+        url = f"/books/{book.pk}/edit/{query}"
+        response = serve(FACTORY.post(url, data=posted(author, title="Changed")), ada)
+        assert response.url == "/books/"
+
+    def test_an_http_one_on_a_secure_request_is_the_success_url(
+        self, ada: Any, author: Author, book: Book
+    ) -> None:
+        url = f"/books/{book.pk}/edit/?next=http://testserver/books/"
+        data = posted(author, title="Changed")
+        assert serve(FACTORY.post(url, data=data, secure=True), ada).url == "/books/"
+
+    def test_a_refused_post_keeps_it_for_the_next_one(
+        self, ada: Any, author: Author, book: Book
+    ) -> None:
+        data = {**posted(author, title=""), "next": "/books/?page=3"}
+        response = serve(FACTORY.post(f"/books/{book.pk}/edit/", data=data), ada)
+        assert response.status_code == 400
+        context = response.context_data
+        assert (context["redirect_field_name"], context["next"]) == ("next", "/books/?page=3")
+
+
 class TestPost:
     def test_a_book_is_created_and_the_post_redirected(self, ada: Any, author: Author) -> None:
         # The date is in the form's input format rather than ISO, and the
