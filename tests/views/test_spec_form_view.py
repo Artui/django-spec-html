@@ -16,7 +16,7 @@ import tempfile
 import types
 from collections.abc import Callable, Iterator, Mapping
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, TypedDict
 
 import django
 import pytest
@@ -4197,6 +4197,205 @@ class TestAPostThatDoesNotCommit:
         assert refused_.status_code == 400
         assert "refreshed" not in refused_.context_data
         assert "refreshed" not in get(view, ada).context_data
+
+
+TAKEN = "Pick another title."
+THIRTEEN = "Thirteen is taken."
+
+
+class ClosedForm(forms.Form):
+    """Refused by its own checks in three places at once: a title, a count, and the whole form.
+
+    Each passes the shape check, so the Validator is what answers, and a
+    trigger naming one field has two other places to leave out.
+    """
+
+    title = forms.CharField()
+    count = forms.IntegerField(required=False)
+
+    def clean_title(self) -> str:
+        title = self.cleaned_data["title"]
+        if title == "taken":
+            raise forms.ValidationError(TAKEN)
+        return title
+
+    def clean_count(self) -> int | None:
+        count = self.cleaned_data["count"]
+        if count == 13:
+            raise forms.ValidationError(THIRTEEN)
+        return count
+
+    def clean(self) -> dict[str, Any]:
+        raise forms.ValidationError(CLOSED)
+
+
+EVERY_ERROR = {"title": [TAKEN], "count": [THIRTEEN], "__all__": [CLOSED]}
+
+
+class PrefixedForm(forms.Form):
+    """A form whose fields post under ``entry-``, both required."""
+
+    prefix = "entry"
+    title = forms.CharField()
+    count = forms.IntegerField()
+
+
+class ServerTitle(TypedDict):
+    title: str
+
+
+def server_title() -> ServerTitle:
+    return {"title": "Srv"}
+
+
+def checking(spec: ServiceSpec, **attributes: Any) -> Any:
+    """``committing``, validating a post that does not commit, its fragment in a file of its own."""
+    attributes = {
+        "template_name": PAGE,
+        "fragment_template_name": FRAGMENT,
+        "validate_on_refresh": True,
+        **attributes,
+    }
+    return committing(spec, **attributes)
+
+
+def closed_spec() -> ServiceSpec:
+    return entry_spec(validator=Watched(ClosedForm))
+
+
+class TestValidatingARefresh:
+    """``validate_on_refresh``: a post that does not commit is bound as the commit would bind it."""
+
+    def test_a_field_s_own_request_shows_that_field_s_errors_alone(
+        self, ada: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # An htmx request a field issued, ``hx-trigger="change"`` say, names
+        # it: its errors are shown, and neither the other field's nor the form's.
+        calls = never_dispatched(monkeypatch)
+        spec = closed_spec()
+        data = {"title": "taken", "count": "13"}
+        response = hx_post(checking(spec), ada, data, triggered("title"))
+        assert response.status_code == 200
+        assert response.template_name == [FRAGMENT]
+        assert refused(response) == {"title": [TAKEN]}
+        assert response.context_data["refreshed"] is True
+        assert calls == []
+        assert spec.service.calls == []
+
+    @pytest.mark.parametrize(
+        "headers",
+        [{}, HTMX, triggered("entry"), triggered("refresh")],
+        ids=["no-htmx", "no-trigger", "the-form", "a-button"],
+    )
+    def test_a_refresh_no_field_issued_shows_every_error(
+        self, ada: Any, headers: dict[str, str]
+    ) -> None:
+        data = {"title": "taken", "count": "13", "refresh": "Refresh"}
+        request = signed_in(FACTORY.post("/", data=data, **headers), ada)
+        response = checking(closed_spec())(request)
+        assert (response.status_code, refused(response)) == (200, EVERY_ERROR)
+        assert response.context_data["refreshed"] is True
+
+    def test_a_field_with_nothing_wrong_shows_nothing(self, ada: Any) -> None:
+        # The count and the form are refused, and the title the request names is not.
+        data = {"title": "fine", "count": "13"}
+        response = hx_post(checking(closed_spec()), ada, data, triggered("title"))
+        assert (response.status_code, refused(response)) == (200, {})
+
+    def test_the_shape_check_s_refusal_follows_the_trigger_too(self, ada: Any) -> None:
+        # The title left out and the count no integer: the shape check
+        # refuses both, before the Validator runs.
+        spec = entry_spec()
+        response = hx_post(checking(spec), ada, {"count": "many"}, triggered("count"))
+        assert (response.status_code, refused(response)) == (200, {"count": [WHOLE]})
+        assert validated(spec) == 0
+
+    def test_a_field_s_own_check_waits_on_the_rest_of_the_shape(self, ada: Any) -> None:
+        # The count is no integer, so the shape check refuses the post and
+        # the form's ``clean_title`` is never asked: the title shows nothing.
+        spec = closed_spec()
+        data = {"title": "taken", "count": "many"}
+        response = hx_post(checking(spec), ada, data, triggered("title"))
+        assert (response.status_code, refused(response)) == (200, {})
+        assert validated(spec) == 0
+        response = hx_post(checking(spec), ada, data, triggered("count"))
+        assert refused(response) == {"count": [WHOLE]}
+
+    def test_a_prefixed_form_s_field_is_named_as_it_posts(self, ada: Any) -> None:
+        # Both left blank, so the shape check refuses both; the header names
+        # the title as the browser posts it, under the form's prefix.
+        spec = entry_spec(validator=Watched(PrefixedForm))
+        response = hx_post(checking(spec), ada, {}, triggered("entry-title"))
+        assert (response.status_code, refused(response)) == (200, {"title": [REQUIRED]})
+
+    def test_a_form_whose_keywords_name_a_seed_is_bound_with_it(self, ada: Any) -> None:
+        # The cap is the Validator's form's alone, and its ``form_kwargs``
+        # names the ``tenant`` seed, which the bind must resolve to build it.
+        keywords = Keywords(capped)
+        spec = keyed_entry_spec(keywords, row=False)
+        view = checking(spec, pool_seeds=TENANT_SEEDS)
+        response = post(view, ada, {"title": "Hi", "count": "4", "refresh": "Refresh"})
+        assert (response.status_code, refused(response)) == (
+            200,
+            {"count": ["Ensure this value is less than or equal to 3."]},
+        )
+        page, bound = keywords.calls
+        assert bound["tenant"] == "tenant-of-ada"
+        # The request's one call context, as every other stage is handed.
+        assert bound["context"] is page["context"]
+
+    def test_an_update_s_own_unique_value_is_not_taken(self, ada: Any) -> None:
+        # Bound on the row the page found, so her own username is hers.
+        spec = ServiceSpec(
+            service=Record(),
+            permissions=OPEN,
+            validator=Watched(SignInForm),
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=user_by_pk, reads=PK
+            ),
+        )
+        response = post(checking(spec), ada, {"username": "ada"}, pk=ada.pk)
+        assert (response.status_code, refused(response)) == (200, {})
+        assert validated(spec) == 1
+
+    def test_a_field_the_server_binds_is_bound_with_its_value(self, ada: Any) -> None:
+        # The title renders disabled and is never read off the post.
+        spec = entry_spec()
+        view = checking(spec, server_arguments=ServerArguments(values={"title": "Srv"}))
+        response = post(view, ada, {"refresh": "Refresh"})
+        assert (response.status_code, refused(response)) == (200, {})
+        assert spec.validator.calls[-1]["title"] == "Srv"
+
+    def test_the_page_s_unknown_arguments_policy_holds(self, ada: Any) -> None:
+        # A field the form adds in ``__init__`` is no declared parameter.
+        spec = entry_spec(validator=Watched(WithAnExtra))
+        data = {"title": "Hi", "extra": "x"}
+        ignoring = checking(spec, unknown_arguments=UnknownArguments.IGNORE)
+        assert refused(post(ignoring, ada, data)) == {}
+        assert refused(post(checking(spec), ada, data)) == {"extra": ["Unknown argument."]}
+
+    def test_a_field_a_provider_fills_is_judged_as_posted(self, ada: Any) -> None:
+        # No provider runs on a refresh, so the form is handed the title as
+        # posted, blank, where the commit is handed the provider's.
+        spec = entry_spec(input_data=server_title)
+        view = checking(spec)
+        response = post(view, ada, {"refresh": "Refresh"})
+        assert (response.status_code, refused(response)) == (200, {"title": [REQUIRED]})
+        response = post(view, ada, {"save": "Save"})
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert received(spec)["title"] == "Srv"
+
+    def test_a_page_with_no_commit_button_commits_every_post(self, ada: Any) -> None:
+        # Nothing is a refresh there, so the setting has nothing to validate.
+        spec = entry_spec()
+        response = post(form_view(spec, validate_on_refresh=True), ada, {"title": "Hi"})
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert received(spec)["title"] == "Hi"
+
+    def test_a_refresh_sends_no_success_message(self, ada: Any, stack: Any) -> None:
+        response = stack(checking(entry_spec(), success_message=ADDED), ada, {"title": "Hi"})
+        assert (response.status_code, sent(response)) == (200, [])
+        assert refused(response) == {}
 
 
 class TestTheCommitButtonIsChecked:

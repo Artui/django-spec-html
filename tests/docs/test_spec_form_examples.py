@@ -921,3 +921,63 @@ class TestAPostThatDoesNotCommit:
         assert response.status_code == 400
         assert list(response.context_data["form"].errors) == ["book"]
         assert not Edition.objects.exists()
+
+
+CHECKED = "/editions/new/checked/"
+
+
+def field_errors(response: Any) -> dict[str, list[str]]:
+    return {key: list(each) for key, each in response.context_data["form"].errors.items()}
+
+
+class TestValidatingARefresh:
+    """``editions/new/checked/``: a refresh shows what "Add" would refuse, and adds nothing."""
+
+    @pytest.fixture
+    def earthsea(self, author: Author) -> Book:
+        book = Book.objects.create(title="Earthsea", price=Decimal("9.99"), author=author)
+        Edition.objects.create(book=book, number=1)
+        return book
+
+    def test_the_number_s_own_request_shows_its_error_alone(
+        self, ada: Any, author: Author, earthsea: Book
+    ) -> None:
+        # What htmx sends as the number is left: the form, and the number's name.
+        data = editions(author=str(author.pk), book=str(earthsea.pk), number="1")
+        headers = {**HTMX, "HTTP_HX_TRIGGER_NAME": "number"}
+        response = serve(FACTORY.post(CHECKED, data=data, **headers), ada).render()
+        assert response.status_code == 200
+        assert response.content.startswith(b'<form method="post" hx-post=""')
+        assert field_errors(response) == {"number": ["Earthsea already has edition 1."]}
+        assert response.context_data["refreshed"] is True
+        assert Edition.objects.count() == 1
+
+    def test_the_picker_s_request_calls_nothing_else_required(
+        self, ada: Any, author: Author, earthsea: Book
+    ) -> None:
+        # The book and number left blank are the rest of the form, not yet reached.
+        headers = {**HTMX, "HTTP_HX_TRIGGER_NAME": "author"}
+        request = FACTORY.post(CHECKED, data=editions(author=str(author.pk)), **headers)
+        response = serve(request, ada).render()
+        assert (response.status_code, field_errors(response)) == (200, {})
+        assert b"errorlist" not in response.content
+
+    def test_show_their_books_shows_every_error(
+        self, ada: Any, author: Author, earthsea: Book
+    ) -> None:
+        data = editions(author=str(author.pk), refresh="Show their books")
+        response = serve(FACTORY.post(CHECKED, data=data), ada).render()
+        assert response.status_code == 200
+        assert field_errors(response) == {
+            "book": ["This field is required."],
+            "number": ["This field is required."],
+        }
+        assert list(response.context_data["form"].fields["book"].queryset) == [earthsea]
+
+    def test_add_commits_as_on_the_page_that_does_not_validate(
+        self, ada: Any, author: Author, earthsea: Book
+    ) -> None:
+        data = editions(author=str(author.pk), book=str(earthsea.pk), number="2", add="Add")
+        response = serve(FACTORY.post(CHECKED, data=data), ada)
+        assert (response.status_code, response.url) == (302, "/books/")
+        assert sorted(Edition.objects.values_list("number", flat=True)) == [1, 2]

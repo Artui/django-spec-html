@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`validate_on_refresh` on `SpecFormView`: a post that does not commit
+  shows what its commit would refuse.** `False` by default, which shows no
+  error, as before. Set, such a post is read as a commit reads it, the
+  server's binding laid over it, and bound through the kernel's
+  `bind_arguments` with the principal admitted, the target the page found,
+  the request's seeds and its call context, so a `form_kwargs` naming a seed
+  is handed it. Nothing is dispatched and no `success_message` is sent; the
+  refusal is placed on the form by `add_argument_errors`, at 200 with the page
+  or the fragment, and `refreshed` in the context as before.
+  - **`HX-Trigger-Name` decides which errors.** Where it names one of the
+    form's fields, matched against its `html_name` so a form `prefix` holds,
+    only that field's errors are placed and no non-field error; every other
+    refresh places the whole refusal.
+  - **No provider runs**, as `bind_arguments` runs none: a field the spec's
+    `input_data` fills is judged as posted, so a required one left blank is
+    refused by the refresh and accepted by the commit.
+  - The confirmation and formset pages are unchanged.
+
 ## [0.7.0] — 2026-10-30
 
 ### Added

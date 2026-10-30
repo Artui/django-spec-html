@@ -13,6 +13,7 @@ from django.core.exceptions import (
 from django.db import models
 from django.forms.models import model_to_dict
 from django.http import (
+    HttpRequest,
     HttpResponse,
 )
 from django_service_specs import (
@@ -24,6 +25,7 @@ from django_service_specs import (
     ServerArguments,
     ServiceError,
     ServiceSpec,
+    bind_arguments,
     clean_held_to_their_columns,
     coerce_flat,
     form_keywords,
@@ -39,6 +41,8 @@ from django_spec_html.views.utils import (
     SpecPageBase,
     form_values,
     refusal_tree,
+    trigger_name,
+    with_binding,
     without_errors,
 )
 
@@ -206,7 +210,9 @@ class SpecFormView(SpecPageBase):
     htmx header reaches dispatch: the arguments are the form's fields and the
     route's kwargs whichever wrapper answers, so a spec cannot tell the two
     apart. One header is read before dispatch, ``HX-Trigger-Name``, and only
-    to stop a post committing, below.
+    to stop a post committing and, on a post that does not commit, to say
+    which errors a refresh validated under ``validate_on_refresh`` shows,
+    both below.
 
     **A post that does not commit.** A form that refreshes a dependent
     choice, adds a row or searches posts without meaning to run the
@@ -221,6 +227,23 @@ class SpecFormView(SpecPageBase):
     dispatched and nothing validated: the form shows no error, and the
     context carries ``refreshed``, absent from every other render. It
     answers 200 on the page, and the form's fragment at 200 under htmx.
+
+    **Validating a post that does not commit.** ``validate_on_refresh``
+    shows on such a post what its commit would refuse, so a field is checked
+    as a person leaves it. The post is read as a commit reads it, the binding
+    laid over it, and bound through the kernel's
+    [`bind_arguments`][django_service_specs.dispatch.bind_arguments.bind_arguments]
+    with the principal, the target the page found, the request's seeds and
+    its call context: the shape check and the Validator, and nothing
+    dispatched, no ``success_message`` sent. Its refusal is placed on the
+    form as a refused commit's is, at 200 still, with ``refreshed`` in the
+    context. Where ``HX-Trigger-Name`` names one of the form's fields, as
+    its ``html_name``, so a ``prefix`` holds, only that field's errors are
+    placed and no non-field error; on every other refresh, the whole
+    refusal. **It runs no provider**, as ``bind_arguments`` runs neither
+    ``input_data`` nor ``kwargs``: a field the spec's ``input_data`` fills
+    is judged as posted, so a required one left blank is refused by the
+    refresh and accepted by the commit, which the provider fills.
 
     **A success message.** ``success_message``, where it is set, is sent
     through ``django.contrib.messages`` on every success - the redirect, the
@@ -381,6 +404,11 @@ class SpecFormView(SpecPageBase):
             the form declares and the ``commit_button`` is not, checked at
             ``as_view()``. The page's context carries it, with the URL as
             ``next``, for a refused post to send again.
+        validate_on_refresh: Whether a post that does not commit shows what
+            its commit would refuse, bound through the kernel's
+            ``bind_arguments`` and never dispatched. ``False`` by default,
+            which shows no error. A page with no ``commit_button`` commits
+            every post, so it has nothing to refresh.
         success_message: The message a successful post sends through
             ``django.contrib.messages``, formatted by
             ``get_success_message`` with the form's cleaned data. Empty by
@@ -389,6 +417,7 @@ class SpecFormView(SpecPageBase):
 
     template_name = "django_spec_html/spec_form.html"
     asked_fields: tuple[str, ...] = ()
+    validate_on_refresh: bool = False
 
     @classmethod
     def _check_spec(cls, label: str, spec: ServiceSpec) -> None:
@@ -437,14 +466,51 @@ class SpecFormView(SpecPageBase):
         route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
         return coerce_flat(parameters, {**form_values(form), **route})
 
+    def _refreshed(
+        self,
+        request: HttpRequest,
+        form: forms.BaseForm,
+        spec: ServiceSpec,
+        principal: Any,
+        target: Any,
+        served: Served,
+        url_kwargs: Mapping[str, Any],
+        /,
+    ) -> None:
+        """A refreshed form's error state: none, or what binding the post refuses under ``validate_on_refresh``.
+
+        Set before ``_render_page``, whose ``_hold_back`` reads the form's
+        errors and would otherwise validate it whole. Judged, the post is
+        read as a commit reads it, the binding laid over it, and bound through
+        the kernel's ``bind_arguments`` with the principal admitted, the
+        target found, the request's seeds - so a ``form_kwargs`` naming one is
+        handed it (test_a_form_whose_keywords_name_a_seed_is_bound_with_it) -
+        and its one call context. Nothing is dispatched. What it refuses is
+        placed as a refused commit's is, onto an empty error state, so the
+        form's own validation adds nothing the bind did not say, and only
+        what ``HX-Trigger-Name`` asks for, as ``_triggered`` reads it.
+        """
+        without_errors(form)
+        if not self.validate_on_refresh:
+            return
+        try:
+            read = self._arguments(form, spec, url_kwargs, served)
+            bind_arguments(
+                spec,
+                with_binding(spec, read, served.server),
+                principal=principal,
+                target=target,
+                unknown_arguments=self.unknown_arguments,
+                pool_seeds=served.seeds,
+                call_context=served.call_context,
+            )
+        except InvalidArguments as refused:
+            add_argument_errors(form, _triggered(form, trigger_name(request), refused.detail))
+
     def _render_page(
         self, form: forms.BaseForm, refreshed: bool, /, **context: Any
     ) -> HttpResponse:
-        """The page GET renders, ``asked_fields`` held back, a refreshed form's error state set to none."""
-        if refreshed:
-            # Before ``_hold_back``, which reads the form's errors and would
-            # otherwise validate it.
-            without_errors(form)
+        """The page GET renders, ``asked_fields`` held back; a refreshed form's errors are ``_refreshed``'s."""
         _hold_back(form, self.asked_fields, ())
         return self._rendered(self.get_context_data(form=form, **context), status=200)
 
@@ -605,6 +671,29 @@ def _check_asked_fields(
                 f"{label}.asked_fields names {name!r}, which the server answers for: nobody "
                 "posting the form could answer it."
             )
+
+
+def _triggered(
+    form: forms.BaseForm, trigger: str | None, detail: Mapping[Any, Any]
+) -> Mapping[Any, Any]:
+    """The part of a refresh's refusal to show: one field's, where ``trigger`` names it, or all of it.
+
+    ``trigger`` is ``HX-Trigger-Name``, the element an htmx request was
+    issued from, matched against each field's ``html_name``, the name it
+    posts under, so a form's ``prefix`` holds. A field's own request, an
+    ``hx-trigger="change"`` on its input, shows that field's errors and
+    neither another field's nor the form's: a person has not reached the
+    rest yet. Any other refresh - no header, the form's own name, a refresh
+    button - shows the whole refusal.
+    """
+    named = next((field.name for field in form if field.html_name == trigger), None)
+    # One branch arc inside the comprehension, so each condition is held by
+    # its own test: test_a_refresh_no_field_issued_shows_every_error (no
+    # field named, so every key), test_a_field_s_own_request_shows_that_field_s_errors_alone
+    # (a field named, so its key alone, and no non-field error), with
+    # test_a_prefixed_form_s_field_is_named_as_it_posts holding the match on
+    # ``html_name`` rather than ``name``.
+    return {key: value for key, value in detail.items() if named is None or key == named}
 
 
 def _hold_back(form: forms.BaseForm, held: tuple[str, ...], asked: Collection[str]) -> None:
