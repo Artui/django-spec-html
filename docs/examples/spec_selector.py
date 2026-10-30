@@ -190,6 +190,11 @@ class RememberedBooks(SpecSelectorView):
     """The book list, opened where this session's last visit left it."""
 
     def get_query(self, request: HttpRequest) -> QueryDict:
+        # ?reset=1 forgets the saved query: the way out of one the spec
+        # refuses, since it is saved before dispatch judges it.
+        if "reset" in request.GET:
+            request.session.pop("books_query", None)
+            return QueryDict()
         # A visit that sends anything is the query, and is remembered...
         if request.GET:
             request.session["books_query"] = request.GET.urlencode()

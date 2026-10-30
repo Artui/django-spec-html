@@ -107,8 +107,17 @@ docs/examples/spec_selector.py:remembered
 
 A bare visit to `/books/remembered/` serves the filters, the sort and the page
 of the visit before it, and its links keep them; a visit that sends any key is
-the query, and is saved in its place. The project needs Django's sessions
-installed, as the session is the host's and not the page's.
+the query, and is saved in its place. The template is handed a `request`
+whose `GET` is the query the page read, so a tag building a link from
+`request.GET` keeps it too: a django-tables2 table's header sort links carry
+the remembered filters. The project needs Django's sessions installed, as the
+session is the host's and not the page's.
+
+The hook saves the query before dispatch judges it. A saved query the spec
+refuses - a key it no longer declares under `REJECT`, or a filter value that
+is no longer valid, such as an author since deleted - is refused again on
+every bare visit. So the example forgets it on `?reset=1`, which answers the
+list with no query at all; a page's "clear filters" link is that URL.
 
 The hook is a plain `def`, as every request hook is, and `as_view()` refuses
 an `async def` one, since the page does not await it. An answer that is not

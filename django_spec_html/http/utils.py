@@ -409,9 +409,7 @@ def check_request_hooks(
     """Refuse, when the URLconf is imported, a view whose request hooks could not serve a request.
 
     The checks every view reading the request makes once its spec is known
-    to be one, in this order: every request hook the view has is plain
-    ``def`` - ``get_pool_seeds`` and ``get_server_arguments`` on every view,
-    and ``get_query`` on ``SpecSelectorView``; ``route_kwargs``
+    to be one, in this order: both hooks are plain ``def``; ``route_kwargs``
     names only parameters ``spec`` declares, and is no bare string;
     ``server_arguments`` passes the kernel's ``check_server_arguments``
     against the view's declared ``pool_seeds``; and ``route_kwargs`` fills
@@ -426,11 +424,8 @@ def check_request_hooks(
         TypeError: ``route_kwargs`` is a bare string.
     """
     label = view_class.__name__
-    for hook in ("get_pool_seeds", "get_server_arguments", "get_query"):
-        # ``_configured``'s read, with a default: only the list page has
-        # ``get_query``, and Django's ``as_view`` takes no keyword the class
-        # lacks, so on every other view it is nowhere and nothing to check.
-        if inspect.iscoroutinefunction(initkwargs.get(hook, getattr(view_class, hook, None))):
+    for hook in ("get_pool_seeds", "get_server_arguments"):
+        if inspect.iscoroutinefunction(_configured(view_class, initkwargs, hook)):
             raise ImproperlyConfigured(
                 f"{label}.{hook} is async, and the view calls it without awaiting it, so "
                 f"it would answer a coroutine: define it with def.{remedy}"

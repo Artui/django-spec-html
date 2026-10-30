@@ -371,6 +371,15 @@ class TestPoolSeeds:
         with pytest.raises(ImproperlyConfigured, match=f"SpecView.{hook} is async"):
             SpecView.as_view(spec=notes_spec(), **{hook: asynchronous})
 
+    def test_an_async_method_of_a_name_the_view_never_calls_is_not_a_hook(self, ada: Any) -> None:
+        # ``get_query`` is the list page's hook, not a JSON view's: a mixin
+        # carrying an async one of that name builds and serves here.
+        async def get_query(self: Any, request: Any) -> Any: ...
+
+        view = type("Mixed", (SpecView,), {"spec": notes_spec(), "get_query": get_query})
+
+        assert query(view.as_view(), ada, "/").status_code == 200
+
     def test_a_seed_from_the_request_reaches_the_permission_check(self, ada: Any) -> None:
         check = SeesTenant()
 

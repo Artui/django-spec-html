@@ -1176,6 +1176,25 @@ class TestTheQueryHook:
             "QueryDict(saved); got dict."
         )
 
+    @pytest.mark.usefixtures("with_tables2")
+    def test_a_table_s_header_links_keep_the_remembered_query(
+        self, ada: Any, notes: list[Note]
+    ) -> None:
+        # django-tables2 builds a header's link from the template's
+        # ``request.GET``, so the template must see the query the page read.
+        response, _ = remembered(
+            listing(filter_set=Ordered, affordances=OFFERED),
+            "",
+            user=ada,
+            saved="title=note&page=2",
+            table_class=NoteTable,
+            table_order_by_field="o",
+            paginate_by=2,
+        )
+
+        assert 'href="?title=note&amp;page=2&amp;o=title"' in response.content.decode()
+        assert response.context_data["request"].GET.urlencode() == "title=note&page=2"
+
     def test_an_async_hook_is_refused(self) -> None:
         class Awaited(SpecSelectorView):
             async def get_query(self, request: HttpRequest) -> QueryDict:  # ty: ignore[invalid-method-override]
@@ -1187,4 +1206,16 @@ class TestTheQueryHook:
         assert str(refused.value) == (
             "Awaited.get_query is async, and the view calls it without awaiting it, so it "
             "would answer a coroutine: define it with def."
+        )
+
+    def test_an_async_hook_passed_to_as_view_is_refused(self) -> None:
+        async def get_query(request: HttpRequest) -> QueryDict:
+            return request.GET
+
+        with pytest.raises(ImproperlyConfigured) as refused:
+            SpecSelectorView.as_view(spec=listing(), get_query=get_query)
+
+        assert str(refused.value) == (
+            "SpecSelectorView.get_query is async, and the view calls it without awaiting it, "
+            "so it would answer a coroutine: define it with def."
         )
