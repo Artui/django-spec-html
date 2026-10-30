@@ -4328,6 +4328,25 @@ class TestValidatingARefresh:
         response = hx_post(checking(spec), ada, {}, triggered("entry-title"))
         assert (response.status_code, refused(response)) == (200, {"title": [REQUIRED]})
 
+    def test_a_filled_prefixed_field_is_bound_under_its_prefix(self, ada: Any) -> None:
+        # Both filled, so the shape check passes and the form's own binding
+        # answers: read under its prefix, it finds nothing wrong, whether the
+        # title's own request or the whole form's.
+        spec = entry_spec(validator=Watched(PrefixedForm))
+        data = {"entry-title": "Hi", "entry-count": "3"}
+        for name in ("entry-title", "entry"):
+            response = hx_post(checking(spec), ada, data, triggered(name))
+            assert (response.status_code, refused(response)) == (200, {})
+        assert validated(spec) == 2
+
+    def test_a_filled_prefixed_form_commits(self, ada: Any) -> None:
+        # The commit binds the same prefixed form, so filled fields are read.
+        spec = entry_spec(validator=Watched(PrefixedForm))
+        data = {"entry-title": "Hi", "entry-count": "3", "save": "Save"}
+        response = post(committing(spec), ada, data)
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert received(spec) == {"title": "Hi", "count": 3}
+
     def test_a_form_whose_keywords_name_a_seed_is_bound_with_it(self, ada: Any) -> None:
         # The cap is the Validator's form's alone, and its ``form_kwargs``
         # names the ``tenant`` seed, which the bind must resolve to build it.

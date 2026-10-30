@@ -42,8 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     with no message of its own.
 
 ### Changed
-- **Requires `django-service-specs>=0.21.0`**, for `bind_arguments` taking
-  the call's `pool_seeds`, which validating a refresh binds with.
+- **Requires `django-service-specs>=0.21.1`**, for `bind_arguments` taking
+  the call's `pool_seeds`, which validating a refresh binds with, and for a
+  form whose class sets a `prefix` being bound under it, so its filled fields
+  are read on a commit as on a refresh.
 
 ## [0.7.0] — 2026-10-30
 

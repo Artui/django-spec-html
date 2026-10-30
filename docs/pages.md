@@ -898,9 +898,7 @@ books" shows every error the form has.
   field's errors are placed, and no non-field error: a person has not reached
   the rest of the form yet. Every other refresh - no header, the form's own
   name, a refresh button, one part of a multi-widget field such as `when_0` -
-  shows the whole refusal. The kernel's `FormValidator` does not yet bind a
-  form whose class sets a `prefix`, so such a form's refusal names its filled
-  fields required, on a refresh as on a commit.
+  shows the whole refusal.
 - **No provider runs.** `bind_arguments` runs neither the spec's
   `input_data` nor a `kwargs` provider, and that is the one difference in how
   the post is bound. A field `input_data` fills is judged as posted: a
