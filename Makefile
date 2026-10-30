@@ -1,9 +1,11 @@
-.PHONY: help init test lint lint-fix format format-check type-check deps-bump docs-serve docs-build release-bump release-publish release-publish-prepare release-publish-finalize
+.PHONY: help init test messages messages-check lint lint-fix format format-check type-check deps-bump docs-serve docs-build release-bump release-publish release-publish-prepare release-publish-finalize
 
 help:
 	@echo "Available targets:"
 	@echo "  init             Sync deps (all groups) and install pre-commit hooks"
 	@echo "  test             Run pytest with coverage (100% required)"
+	@echo "  messages         Regenerate the source catalog (needs GNU gettext)"
+	@echo "  messages-check   Fail if the committed source catalog is not what messages writes"
 	@echo "  lint             Run ruff check + ty check"
 	@echo "  lint-fix         Auto-fix lint issues with ruff"
 	@echo "  format           Format with ruff"
@@ -23,6 +25,28 @@ init:
 
 test:
 	uv run pytest
+
+# The source catalog, every msgid the package marks, with no translation: the
+# file a contributed language starts from. Generated, never edited by hand.
+# Written so that neither the clock nor a moved line changes it: no source
+# locations, so a line moving elsewhere is not a diff; no wrapping, which
+# differs between gettext releases; no obsolete entries, so a removed msgid
+# leaves; and a fixed creation date, which makemessages would otherwise stamp
+# with the clock and the machine's time zone. makemessages configures settings itself when none
+# are, so no settings module is named here.
+MESSAGES_DIR := django_spec_html/locale
+
+messages:
+	cd django_spec_html && uv run django-admin makemessages --locale en --no-location --no-wrap --no-obsolete
+	perl -pi -e 's/^"POT-Creation-Date: .*/"POT-Creation-Date: YEAR-MO-DA HO:MI+ZONE\\n"/' $(MESSAGES_DIR)/en/LC_MESSAGES/django.po
+
+# CI runs this: a msgid added, changed or removed without the catalog
+# regenerated beside it fails here rather than shipping unlisted.
+messages-check: messages
+	@if [ -n "$$(git status --porcelain -- $(MESSAGES_DIR))" ]; then \
+		git status --short -- $(MESSAGES_DIR); git diff -- $(MESSAGES_DIR); \
+		echo "The source catalog is stale: run 'make messages' and commit $(MESSAGES_DIR)."; exit 1; \
+	fi
 
 lint:
 	uv run ruff check .
