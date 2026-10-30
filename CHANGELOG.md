@@ -17,8 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spec does not declare or a row the page did not serve. A condition on the
   row asked of a row that no longer exists answers with no code and no
   reason, so `{% if why %}` holds and `{{ why.reason }}` renders empty. The
-  answer is read-only, so a template cannot change what a later read of the
-  row finds.
+  answer is a fresh `dict` per read, so `json_script` takes it, whose `clear`
+  and `popitem` are marked `alters_data`, so no template can empty it. The
+  example's table shows the reason where a row has no Withdraw button.
   - **The docs read a negated or combined condition through `{% with %}`**,
     for both filters, where they said to use `available` only as a bare
     `{% if %}` condition: Django's `{% if %}` reads an error inside `not`,

@@ -6,9 +6,8 @@ the library for the package, so a template reads which package it loads.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from types import MappingProxyType
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from django import template
 from django.template import TemplateSyntaxError
@@ -16,6 +15,8 @@ from django.template import TemplateSyntaxError
 from django_spec_html.views.utils import row_answers
 
 register = template.Library()
+
+_Method = TypeVar("_Method", bound=Callable[..., Any])
 
 
 @register.filter
@@ -58,7 +59,7 @@ def available(row: Any, name: str) -> bool:
 
 
 @register.filter
-def unavailable(row: Any, name: str) -> Mapping[str, Any] | None:
+def unavailable(row: Any, name: str) -> dict[str, Any] | None:
     """Why the affordance ``name`` is unavailable for ``row``, or ``None`` when it is available.
 
     ``{% with why=row|unavailable:"rename" %}{% if why %}{{ why.reason }}{% endif %}{% endwith %}``
@@ -85,13 +86,38 @@ def unavailable(row: Any, name: str) -> Mapping[str, Any] | None:
     answer = _answer(row, name, "unavailable")
     if answer["available"]:
         return None
-    # A read-only view of the attached answer rather than the answer itself:
-    # Django calls a zero-argument callable a template names, so a dict would
-    # be emptied by ``{{ why.clear }}``, for this template and every later
-    # read of the row on the page. A copy would leave the row's answer alone
-    # but still change ``why`` under the template's feet; the view has no
-    # method that writes (test_a_template_cannot_change_the_answers_the_row_carries).
-    return MappingProxyType(answer)
+    return _Answer(answer)
+
+
+def _alters_data(method: _Method) -> _Method:
+    """``method``, marked as Django marks a model's ``save``, so no template calls it."""
+    # Through the function's namespace, since a type checker sees no
+    # ``alters_data`` attribute on a function and refuses one set directly.
+    vars(method)["alters_data"] = True
+    return method
+
+
+class _Answer(dict):
+    """A copy of one row's answer that a template cannot empty.
+
+    Django calls a zero-argument callable a template names, so the row's own
+    answer would be emptied by ``{{ why.clear }}`` for every later read of the
+    row on the page, and a plain copy would still be emptied under the rest
+    of the template. Django refuses to call a method marked ``alters_data``,
+    so the two that take no argument are marked
+    (test_a_template_cannot_change_the_answers_the_row_carries). A ``dict``
+    rather than a read-only view, which ``json_script`` and ``json.dumps``
+    refuse (test_the_answer_renders_through_json_script). A fresh copy per
+    call, so nothing a caller in Python does to it reaches the row.
+    """
+
+    @_alters_data
+    def clear(self) -> None:
+        super().clear()
+
+    @_alters_data
+    def popitem(self) -> tuple[str, Any]:
+        return super().popitem()
 
 
 def _answer(row: Any, name: str, asked: str) -> dict[str, Any]:

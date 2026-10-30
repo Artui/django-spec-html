@@ -7,6 +7,7 @@ template against one row with no page around it.
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -148,11 +149,12 @@ def test_a_row_that_no_longer_exists_is_unavailable_with_no_reason() -> None:
 def test_a_template_cannot_change_the_answers_the_row_carries() -> None:
     # Django calls a zero-argument callable a template names, so the row's
     # own answer would be emptied by ``{{ why.clear }}`` for every later read,
-    # and a copy of it would still be emptied under the rest of the block.
+    # and a plain copy would still be emptied under the rest of the block;
+    # each method left unmarked renders here and fails the first assertion.
     row = answered(SPEC, dict(ARCHIVED))
 
     cleared = rendered(
-        '{% with why=row|unavailable:"rename" %}{{ why.clear }}{% if why %}held{% endif %}'
+        '{% with why=row|unavailable:"rename" %}{{ why.clear }}{{ why.popitem }}{% if why %}held{% endif %}'
         "{% endwith %}",
         row,
     )
@@ -161,6 +163,32 @@ def test_a_template_cannot_change_the_answers_the_row_carries() -> None:
 
     assert rendered(WHY, row) == "[note_archived|An archived note cannot be renamed.]"
     assert rendered('{% if row|available:"rename" %}x{% else %}-x{% endif %}', row) == "-x"
+
+
+def test_python_may_change_its_copy_and_the_row_keeps_its_answer() -> None:
+    # Only a template is refused the two methods; a caller in Python holds a
+    # fresh copy per call, so what it does stays with that copy.
+    unavailable = register.filters["unavailable"]
+    row = answered(SPEC, dict(ARCHIVED))
+    popped = unavailable(row, "rename")
+    cleared = unavailable(row, "rename")
+
+    assert popped.popitem() == ("reason", "An archived note cannot be renamed.")
+    cleared.clear()
+
+    assert cleared == {}
+    assert dict(unavailable(row, "rename")) == REFUSED_ARCHIVED
+
+
+def test_the_answer_renders_through_json_script() -> None:
+    # The answer is a ``dict``, so a template can hand it to a script as it
+    # would the row's own answer; a read-only view raises TypeError here.
+    row = answered(SPEC, dict(ARCHIVED))
+
+    script = rendered('{{ row|unavailable:"rename"|json_script:"why" }}', row)
+
+    assert script.startswith('<script id="why" type="application/json">')
+    assert json.loads(script.split(">", 1)[1].rsplit("<", 1)[0]) == REFUSED_ARCHIVED
 
 
 def test_unavailable_raises_for_a_name_the_spec_does_not_declare() -> None:

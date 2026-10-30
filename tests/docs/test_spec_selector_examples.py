@@ -83,17 +83,21 @@ def test_the_table_offers_withdraw_on_each_published_row_alone() -> None:
     published = [book for book in books if book.status == Status.PUBLISHED]
     for book in published:
         assert f'<a href="/books/{book.pk}/withdraw/">Withdraw</a>' in rendered
-    assert rendered.count("<span>Not available</span>") == len(books) - len(published)
+    drafts = len(books) - len(published)
+    assert rendered.count("<span>Only a published book can be withdrawn.</span>") == drafts
 
 
 def test_pausing_withdrawals_takes_every_row_s_button(monkeypatch: pytest.MonkeyPatch) -> None:
-    seed(6)
+    books = seed(6)
     monkeypatch.setattr(spec_selector, "WITHDRAWALS_PAUSED", True)
 
     rendered = page("/books/table/")
 
+    # A draft still says it is not published, the first condition it fails.
+    drafts = sum(book.status == Status.DRAFT for book in books)
     assert "Withdraw</a>" not in rendered
-    assert rendered.count("<span>Not available</span>") == 6
+    assert rendered.count("<span>Only a published book can be withdrawn.</span>") == drafts
+    assert rendered.count("<span>Withdrawals are paused.</span>") == len(books) - drafts
 
 
 def test_every_header_link_is_a_sort_the_spec_reads() -> None:
@@ -178,11 +182,17 @@ def test_seed_makes_every_third_book_a_draft() -> None:
     assert Book.objects.count() == 6
 
 
-def row_offers_snippets() -> list[str]:
-    """The template blocks of the page's "What a row offers" section, in order."""
+def selectors_snippet(containing: str) -> str:
+    """The one template block of ``docs/selectors.md`` that contains ``containing``.
+
+    Picked by what it says rather than where it stands, so a block another
+    section adds moves no test onto the wrong snippet.
+    """
     page = Path(__file__).parents[2].joinpath("docs", "selectors.md").read_text()
-    section = page.split("## What a row offers", 1)[1].split("\n## ", 1)[0]
-    return re.findall(r"```django\n(.*?)```", section, re.DOTALL)
+    (block,) = [
+        each for each in re.findall(r"```django\n(.*?)```", page, re.DOTALL) if containing in each
+    ]
+    return "{% load django_spec_html %}" + block
 
 
 def served_books(count: int) -> list[Any]:
@@ -192,36 +202,38 @@ def served_books(count: int) -> list[Any]:
     return list(response.context["rows"])
 
 
-def test_the_page_shows_three_ways_of_asking_a_row() -> None:
-    assert len(row_offers_snippets()) == 3
+def test_reading_available_through_with_draws_the_notice_on_each_draft(
+    django_assert_num_queries: Any,
+) -> None:
+    through_with = Template(selectors_snippet("{% with ok=row|available:"))
+    rows = served_books(6)
 
+    with django_assert_num_queries(0):
+        notices = ["Not available" in through_with.render(Context({"row": row})) for row in rows]
 
-def test_reading_available_through_with_draws_the_notice_on_each_draft() -> None:
-    (_, through_with, _) = row_offers_snippets()
-
-    for row in served_books(6):
-        rendered = Template("{% load django_spec_html %}" + through_with).render(
-            Context({"row": row})
-        )
-        assert ("Not available" in rendered) is (row.status == Status.DRAFT)
+    assert notices == [row.status == Status.DRAFT for row in rows]
 
 
 @pytest.mark.parametrize("paused", [False, True], ids=["open", "paused"])
 def test_unavailable_says_why_each_row_has_no_button(
-    paused: bool, monkeypatch: pytest.MonkeyPatch
+    paused: bool, monkeypatch: pytest.MonkeyPatch, django_assert_num_queries: Any
 ) -> None:
     # The first condition a row does not meet is its reason, in declaration
     # order: a draft says it is not published whether or not withdrawals are
     # paused, and a published book says withdrawals are paused only then.
+    # Asking costs no query: the answers were read with the page's rows.
     monkeypatch.setattr(spec_selector, "WITHDRAWALS_PAUSED", paused)
-    (_, _, why) = row_offers_snippets()
+    why = Template(selectors_snippet("{% with why=row|unavailable:"))
+    rows = served_books(6)
 
-    for row in served_books(6):
-        rendered = Template("{% load django_spec_html %}" + why).render(Context({"row": row}))
+    with django_assert_num_queries(0):
+        shown = [why.render(Context({"row": row})).strip() for row in rows]
+
+    for row, rendered in zip(rows, shown, strict=True):
         if row.status == Status.DRAFT:
             expected = '<span title="not_published">Only a published book can be withdrawn.</span>'
         elif paused:
             expected = '<span title="withdrawals_paused">Withdrawals are paused.</span>'
         else:
             expected = f'<a href="/books/{row.pk}/withdraw/">Withdraw</a>'
-        assert rendered.strip() == expected
+        assert rendered == expected

@@ -165,8 +165,10 @@ It costs no query either, and raises for the same names and rows.
 A condition on the row asked of a row that no longer exists answers with no
 code and no reason, since none of the conditions' sentences is true of it:
 `why` is still the answer, so `{% if why %}` holds, and `{{ why.reason }}`
-renders as any missing variable does. The answer is read-only, so a template
-cannot change what a later read of the row finds.
+renders as any missing variable does. The answer is a `dict`, so
+`{{ why|json_script:"why" }}` hands it to a script, and a fresh copy per read
+whose `clear` and `popitem` no template can call, so a template cannot empty
+it.
 
 ## A django-tables2 table
 
@@ -183,7 +185,7 @@ docs/examples/spec_selector.py:table
 ```
 
 A `TemplateColumn` asks each `record` what it offers, as a template asks a
-row. **The table never pages or orders the rows**: they are the spec's page,
+row: the example's shows the button, or the reason it is not there. **The table never pages or orders the rows**: they are the spec's page,
 in the spec's order. It is built with no `request`, since django-tables2 then
 runs its `RequestConfig`, which would page and order the data from the query
 string, and with `order_by=()`, so a `Meta.order_by` is never applied.
