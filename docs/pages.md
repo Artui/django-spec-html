@@ -715,7 +715,8 @@ bodies and a cache keyed on fewer would hand a fragment to a page load.
   `HX-Trigger: spec-succeeded` names an event for the rest of the page to
   listen for. Its context is `result`, `view`, `spec` and `extra_context`, and
   no `form`, since the post's form is done with. Otherwise it is `HX-Redirect`
-  to `get_success_url(result)`, at 200 and never a 302: an XHR follows a 302
+  to a safe `next` when the page reads one, else to `get_success_url(result)`,
+  at 200 and never a 302: an XHR follows a 302
   itself and would swap the next page into the form. The URL is encoded and
   checked as the page's redirect is, so a path outside ASCII arrives as the
   page's `Location` would, and an unsafe scheme such as `javascript:` raises
