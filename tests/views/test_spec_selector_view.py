@@ -474,7 +474,7 @@ class TestAClientPageSize:
     def test_without_a_key_a_client_s_size_is_an_argument_like_any_other(
         self, ada: Any, notes: list[Note]
     ) -> None:
-        response = shown(listing(), "per=1", user=ada)
+        response = shown(listing(), "per=1", user=ada, unknown_arguments=UnknownArguments.REJECT)
 
         assert response.status_code == 400
         assert response.context_data["errors"] == ["per: Unknown argument."]
@@ -514,7 +514,13 @@ class TestTheInstancePage:
     def test_its_query_is_not_paged_so_a_page_key_is_refused_as_any_other(
         self, ada: Any, notes: list[Note]
     ) -> None:
-        response = shown(one(), "page=2", user=ada, url_kwargs={"pk": notes[0].pk})
+        response = shown(
+            one(),
+            "page=2",
+            user=ada,
+            url_kwargs={"pk": notes[0].pk},
+            unknown_arguments=UnknownArguments.REJECT,
+        )
 
         assert response.status_code == 400
         assert response.context_data["errors"] == ["page: Unknown argument."]
@@ -650,7 +656,12 @@ class TestFilters:
     def test_an_undeclared_key_is_placed_on_the_form_s_non_field_errors(
         self, ada: Any, notes: list[Note]
     ) -> None:
-        response = shown(listing(filter_set=TitleFilters), "colour=red", user=ada)
+        response = shown(
+            listing(filter_set=TitleFilters),
+            "colour=red",
+            user=ada,
+            unknown_arguments=UnknownArguments.REJECT,
+        )
 
         assert response.status_code == 400
         assert response.context_data["filter"].form.non_field_errors() == [
@@ -693,13 +704,54 @@ class TestFilters:
         assert response.context_data["filter"].form.non_field_errors() == ["Narrow the search."]
         assert response.content.decode().count("Narrow the search.") == 1
 
-    def test_ignored_unknown_arguments_reach_no_one(self, ada: Any, notes: list[Note]) -> None:
-        response = shown(
-            listing(), "colour=red", user=ada, unknown_arguments=UnknownArguments.IGNORE
-        )
+    def test_an_undeclared_key_is_ignored_by_default(self, ada: Any, notes: list[Note]) -> None:
+        # A tracking parameter on a link the page does not control.
+        response = shown(listing(filter_set=TitleFilters), "utm_source=x", user=ada)
 
         assert response.status_code == 200
-        assert len(response.context_data["rows"]) == 5
+        assert titles(response) == [note.title for note in notes]
+        assert "errors" not in response.context_data
+        assert response.context_data["filter"].form.errors == {}
+
+    def test_an_undeclared_key_beside_a_filter_leaves_the_filter_read(
+        self, ada: Any, notes: list[Note]
+    ) -> None:
+        response = shown(listing(filter_set=TitleFilters), "title=3&utm_source=x", user=ada)
+
+        assert response.status_code == 200
+        assert titles(response) == ["note 3"]
+
+    def test_an_undeclared_key_on_an_instance_page_is_ignored_by_default(
+        self, ada: Any, notes: list[Note]
+    ) -> None:
+        response = shown(one(), "utm_source=x", user=ada, url_kwargs={"pk": notes[0].pk})
+
+        assert response.status_code == 200
+        assert response.context_data["row"] == notes[0]
+
+    def test_a_declared_key_s_bad_value_is_still_refused_by_default(
+        self, ada: Any, notes: list[Note]
+    ) -> None:
+        response = shown(listing(filter_set=TitleFilters), "archived=maybe&utm_source=x", user=ada)
+
+        assert response.status_code == 400
+        assert response.context_data["errors"] == ["archived: Enter true, false, 1 or 0."]
+        assert "rows" not in response.context_data
+
+    def test_reject_set_on_the_view_refuses_an_undeclared_key(
+        self, ada: Any, notes: list[Note]
+    ) -> None:
+        class Strict(SpecSelectorView):
+            unknown_arguments = UnknownArguments.REJECT
+
+        view = Strict.as_view(spec=listing())
+        response = view(signed_in(FACTORY.get("/notes/?utm_source=x"), ada))
+
+        assert response.status_code == 400
+        assert response.context_data["errors"] == ["utm_source: Unknown argument."]
+
+    def test_the_default_is_ignore(self) -> None:
+        assert SpecSelectorView.unknown_arguments is UnknownArguments.IGNORE
 
 
 class TestTheFragment:
@@ -725,7 +777,13 @@ class TestTheFragment:
         assert response["Vary"] == "HX-Request, HX-Boosted, HX-History-Restore-Request"
 
     def test_a_refusal_is_the_fragment_at_200(self, ada: Any, notes: list[Note]) -> None:
-        response = served(listing(), "colour=red", user=ada, headers=HTMX)
+        response = served(
+            listing(),
+            "colour=red",
+            user=ada,
+            headers=HTMX,
+            unknown_arguments=UnknownArguments.REJECT,
+        )
         response.render()
 
         assert response.status_code == 200

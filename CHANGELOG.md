@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`SpecSelectorView` ignores a query key its spec does not declare.**
+  `unknown_arguments` defaults to `UnknownArguments.IGNORE` on the list and
+  instance pages, so `?utm_source=x`, or a bookmark from before a filter was
+  renamed, is answered 200 with the rows the rest of the query selects, where
+  it was a 400 with `utm_source: Unknown argument.` A declared key's value is
+  read and refused as before, a route kwarg the spec does not declare is
+  still the host's misconfiguration, and the form, formset and confirmation
+  pages and the JSON views keep `REJECT`. Set
+  `unknown_arguments = UnknownArguments.REJECT` on a list whose query only
+  code builds to keep the refusal. A list page and a JSON list now read each
+  value of one query string the same way, rather than answering it the same.
+
 ## [0.6.0] — 2026-10-29
 
 ### Added

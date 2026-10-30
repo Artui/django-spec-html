@@ -14,7 +14,8 @@ import re
 from typing import Any
 
 import pytest
-from django.test import Client
+from django.contrib.auth.models import AnonymousUser
+from django.test import Client, RequestFactory
 
 from docs.examples import spec_selector
 from docs.examples.spec_selector import seed
@@ -71,6 +72,34 @@ def test_a_filter_narrows_and_a_refused_one_is_said_in_the_results() -> None:
     refused = Client().get("/books/?author=999")
     assert refused.status_code == 400
     assert "author: Select a valid choice." in refused.content.decode()
+
+
+def test_a_key_the_spec_does_not_declare_is_ignored_and_a_declared_one_still_read() -> None:
+    seed()
+
+    tracked = page("/books/?utm_source=newsletter")
+
+    assert tracked.replace("utm_source=newsletter&amp;", "") == page("/books/")
+    # Ignored by the spec, kept by the links, as they keep every key.
+    assert link(tracked, "next") == "?utm_source=newsletter&page=2"
+    assert page("/books/?title=Book+2&utm_source=newsletter").count("<li>Book ") == 6
+    refused = Client().get("/books/?author=999&utm_source=newsletter")
+    assert refused.status_code == 400
+    assert "author: Select a valid choice." in refused.content.decode()
+
+
+def test_the_strict_list_refuses_a_key_the_spec_does_not_declare() -> None:
+    request = RequestFactory().get("/books/?utm_source=newsletter")
+    request.user = AnonymousUser()
+
+    refused = spec_selector.strict_book_list(request)
+    refused.render()
+
+    assert refused.status_code == 400
+    assert refused.context_data["filter"].form.non_field_errors() == [
+        "utm_source: Unknown argument."
+    ]
+    assert "utm_source: Unknown argument." in refused.content.decode()
 
 
 def test_the_table_offers_withdraw_on_each_published_row_alone() -> None:
