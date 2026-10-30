@@ -203,7 +203,10 @@ Then [`dispatch`](https://artui.github.io/django-service-specs/dispatching/). **
 `get_success_url(result)`, which resolves `success_url` as Django's
 `redirect()` does, so a path, a `reverse_lazy` or a URL name all work. Override
 it to read the result, as `AddBookThenShowIt` does to reach the book it
-created. A refusal ends in one of four outcomes, read from the same map as
+created. A view that names `redirect_field_name` goes instead to the URL the
+request carries under that key, where it is safe: see
+[returning where the page was opened from](#returning-where-the-page-was-opened-from).
+A refusal ends in one of four outcomes, read from the same map as
 its status, and each is answered as the page or, for htmx, as
 [the fragment](#htmx):
 
@@ -827,6 +830,67 @@ the form bound to the post:
 `commit_button` is checked at `as_view()`: `None`, or a non-empty string that
 names no field of the form, since a field is posted by every submit and could
 not say which one commits.
+
+## Returning where the page was opened from
+
+A page linked to from the third page of a list should save and go back to the
+third page, not to the first one, which is where `success_url` points.
+**`redirect_field_name` names the key that carries that URL**, as Django's
+`LoginView` names `next`. The edit page in the URLconf above sets it:
+
+```python
+SpecFormView.as_view(
+    spec=edit_book_spec,
+    success_url=reverse_lazy("books"),
+    redirect_field_name="next",
+)
+```
+
+The list links to the page as `/books/7/edit/?next=/books/%3Fpage%3D3`, and a
+save redirects to `/books/?page=3`.
+
+- **`None`, the default, reads nothing**, as Django's own `FormView` reads
+  nothing. Every page follows the URL it was posted with only when its view
+  says so, so a page that never names the key never redirects anywhere a
+  client chose.
+- **Once named, the value is read as `LoginView` reads it**: from the post,
+  then from the query. A value posted empty therefore masks the query's.
+- **It is used only where it is safe**: Django's
+  `url_has_allowed_host_and_scheme` must allow it against the request's own
+  host, with `https` required on a secure request. Another host
+  (`https://evil.example/`), a scheme-relative URL (`//evil.example`) and an
+  `http://` URL posted over `https` are ignored, and the success goes to
+  `get_success_url(result)` as it would without the key. So the page is not
+  an open redirect.
+- **It wins over `get_success_url(result)`**, an override included. Under
+  htmx the `HX-Redirect` goes to the same URL, but a `spec-result` fragment
+  is still rendered in place: it answers where the form was and navigates
+  nowhere, and its context carries `next` for a link back.
+- **It never reaches dispatch.** The page's arguments are its form's fields
+  and its route, so a key the form does not declare is never read as one, and
+  the closed argument set has nothing to refuse.
+- **It survives a refused post.** The context carries `redirect_field_name`
+  and `next`, the safe URL, under those two fixed names rather than under the
+  key's own as `LoginView` puts it, so a key such as `errors` cannot overwrite
+  what the page renders. The shipped templates post them back as a hidden
+  input, and post to the page's own URL, so a `next` in the query is kept
+  too. A template of the project's own adds the input itself:
+
+```html
+{% if next %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ next }}">{% endif %}
+```
+
+Neither key is in the context where there is no safe URL, so an unsafe value
+is never written back into the page. `get_redirect_url()` answers the safe
+value, or `""`: a `fragment_success` of a host's own reads it as
+`self.get_redirect_url() or self.get_success_url(result)`.
+
+`as_view()` refuses a `redirect_field_name` that is not a non-empty string,
+that names a field of the form, whose value would be read as the URL, and one
+that is the `commit_button`, whose value would be read the same way.
+[The formset page](formsets.md) and [the confirmation page](confirm.md) read
+it as this page does, and the confirmation page can also
+[send a refusal back](confirm.md#a-refusal-sent-back).
 
 ## A success message
 

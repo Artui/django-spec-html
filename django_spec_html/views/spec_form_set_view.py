@@ -125,7 +125,9 @@ class SpecFormSetView(SpecPageBase):
     schema, so a once-for-the-call confirmation is not built on this page.
 
     **A post that does not commit**, **the fragment wrapper**, **the
-    request hooks** and **denials** are ``SpecFormView``'s, by the same code:
+    request hooks**, **the URL a success returns to** under
+    ``redirect_field_name`` and **denials** are ``SpecFormView``'s, by the
+    same code:
     see that page. With ``commit_button`` set, ``add_button`` names a second
     submit button whose post is the page again with one more form, bound to
     everything posted, never past ``many_max_length``, and nothing dispatched.
@@ -140,9 +142,11 @@ class SpecFormSetView(SpecPageBase):
     ``as_view()`` refuses, when the URLconf is imported, a spec whose
     Validator is not a ``FormValidator``, a spec that is not ``many``, a
     view displaying its target, an ``extra`` that is not a non-negative int,
-    and an ``add_button`` that is not a button's name, that is set without a
-    ``commit_button``, or that is the ``commit_button``; and either button
-    named under the formset's ``form-`` prefix, which every post carries.
+    an ``add_button`` that is not a button's name, that is set without a
+    ``commit_button``, or that is the ``commit_button``; a
+    ``redirect_field_name`` that is either button; and either button or the
+    ``redirect_field_name`` named under the formset's ``form-`` prefix, which
+    every post carries.
 
     **Sync only**, in this release. **CSRF is the host's middleware.**
 
@@ -162,6 +166,9 @@ class SpecFormSetView(SpecPageBase):
             not, checked at ``as_view()``.
         commit_button: The ``name`` of the submit button whose post commits,
             as on ``SpecFormView``.
+        redirect_field_name: The key a post or its query carries the URL a
+            success returns to under, as on ``SpecFormView``: ``None``, the
+            default, reads none.
         success_message: The message a successful post sends, formatted by
             ``get_success_message`` with the rows' ``count``.
     """
@@ -209,21 +216,45 @@ class SpecFormSetView(SpecPageBase):
         add = initkwargs.get("add_button", cls.add_button)
         if add is not None:
             _check_add_button(label, add, commit)
+        way_back = initkwargs.get("redirect_field_name", cls.redirect_field_name)
+        # The base refused one equal to the commit button; the add button is
+        # this page's, and its value would be read as the URL just the same
+        # (test_a_name_a_post_carries_otherwise_is_refused[the-add-button]).
+        # One branch to coverage, so each condition is held by its own test:
+        # test_renders_an_unbound_formset_of_extra_forms (a page naming
+        # neither, whose two ``None`` are equal) and
+        # test_a_name_beside_both_buttons_builds (a name the add button's is
+        # not).
+        if way_back is not None and way_back == add:
+            raise ImproperlyConfigured(
+                f"{label}.redirect_field_name and add_button both name {add!r}: the button's "
+                "value would be read as the URL to return to."
+            )
+        # Whether the field to return to is a form's field, which the single
+        # page asks, is the prefix check here: every field is posted under the
+        # formset's prefix, beside the management form's keys, so a name
+        # outside it clashes with none of them.
         prefix = f"{BaseFormSet.get_default_prefix()}-"
-        for attribute, name in (("commit_button", commit), ("add_button", add)):
-            # Each a string by now or ``None``, which names no button: the
-            # base refused a commit button that is neither, and
+        pressed = "so it cannot say which button was pressed"
+        named = (
+            ("commit_button", commit, pressed),
+            ("add_button", add, pressed),
+            ("redirect_field_name", way_back, "and one would be read as the URL to return to"),
+        )
+        for attribute, name, why in named:
+            # Each a string by now or ``None``, which names no key: the base
+            # refused a commit button or a redirect field that is neither, and
             # ``_check_add_button`` an add button. One branch to coverage, so
             # each condition is held by its own test:
             # test_renders_an_unbound_formset_of_extra_forms (a page naming
             # no button) and test_the_commit_button_commits (a button's name
             # outside the prefix), beside
-            # test_a_button_under_the_formset_s_prefix_is_refused.
+            # test_a_button_under_the_formset_s_prefix_is_refused and
+            # test_a_name_a_post_carries_otherwise_is_refused[under-the-prefix].
             if name is not None and name.startswith(prefix):
                 raise ImproperlyConfigured(
                     f"{label}.{attribute} names {name!r}, under the formset's {prefix!r} "
-                    "prefix: every post carries the formset's keys, so it cannot say which "
-                    "button was pressed."
+                    f"prefix: every post carries the formset's keys, {why}."
                 )
 
     def _form(

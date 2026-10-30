@@ -10,6 +10,7 @@ own URLconf, since ``resolve_url`` reads the project's.
 from __future__ import annotations
 
 import dataclasses
+import re
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Annotated, Any
@@ -553,6 +554,98 @@ class TestTheConfirmationPage:
         rendered = body(get(built(SpecConfirmView, confirm_spec()), ada, HTMX, pk=note.pk))
         assert DOCUMENT not in rendered
         assert "<button" in rendered
+
+
+# What each write page's refused post sends, posted as its own form posts it.
+REFUSED_POSTS: Any = [
+    pytest.param(SpecFormView, form_spec, {"title": "x" * 21}, id="form"),
+    pytest.param(
+        SpecFormSetView,
+        many_spec,
+        {"form-TOTAL_FORMS": "1", "form-INITIAL_FORMS": "0", "form-0-title": "x" * 21},
+        id="formset",
+    ),
+    pytest.param(
+        SpecConfirmView,
+        lambda: confirm_spec(service=raising(ServiceConflict("No."))),
+        {},
+        id="confirm",
+    ),
+]
+WAY_BACK = '<input type="hidden" name="next" value="/list/?page=3&amp;q=a">'
+
+
+def refused_post(
+    view_class: type[SpecPageBase],
+    spec: Callable[[], ServiceSpec],
+    data: Mapping[str, Any],
+    user: Any,
+    pk: int,
+    query: str = "",
+    **attributes: Any,
+) -> str:
+    """``view_class``'s refused post, rendered, with ``attributes`` set as a host's subclass sets them."""
+    page = type(view_class.__name__, (view_class,), attributes)
+    served = spec()
+    url_kwargs = {"pk": pk} if "pk" in served.parameters().names() else {}
+    response = built(page, served)(
+        signed_in(FACTORY.post(f"/{query}", data=data), user), **url_kwargs
+    )
+    assert response.status_code in {400, 409}
+    return body(response)
+
+
+class TestTheWayBack:
+    """A page reading ``next`` keeps it through a refused post, which posts to its own URL."""
+
+    @pytest.mark.parametrize(("view_class", "spec", "data"), REFUSED_POSTS)
+    def test_a_posted_next_is_rendered_as_a_hidden_input(
+        self, ada: Any, note: Note, view_class: Any, spec: Any, data: Any
+    ) -> None:
+        posted = {**data, "next": "/list/?page=3&q=a"}
+        rendered = refused_post(view_class, spec, posted, ada, note.pk, redirect_field_name="next")
+        assert rendered.count(WAY_BACK) == 1
+
+    @pytest.mark.parametrize(("view_class", "spec", "data"), REFUSED_POSTS)
+    def test_a_next_in_the_query_survives_since_the_form_posts_to_the_page_s_own_url(
+        self, ada: Any, note: Note, view_class: Any, spec: Any, data: Any
+    ) -> None:
+        rendered = refused_post(
+            view_class,
+            spec,
+            data,
+            ada,
+            note.pk,
+            "?next=/list/%3Fpage%3D3%26q%3Da",
+            redirect_field_name="next",
+        )
+        assert re.search(r"<form method=\"post\"[^>]*>", rendered)
+        assert "action=" not in rendered
+        assert rendered.count(WAY_BACK) == 1
+
+    @pytest.mark.parametrize(("view_class", "spec", "data"), REFUSED_POSTS)
+    def test_a_page_reading_no_next_renders_none(
+        self, ada: Any, note: Note, view_class: Any, spec: Any, data: Any
+    ) -> None:
+        rendered = refused_post(view_class, spec, {**data, "next": "/list/"}, ada, note.pk)
+        assert 'name="next"' not in rendered
+
+    @pytest.mark.parametrize(("view_class", "spec", "data"), REFUSED_POSTS)
+    def test_an_unsafe_next_is_never_rendered(
+        self, ada: Any, note: Note, view_class: Any, spec: Any, data: Any
+    ) -> None:
+        posted = {**data, "next": "https://evil.example/"}
+        rendered = refused_post(view_class, spec, posted, ada, note.pk, redirect_field_name="next")
+        assert "evil.example" not in rendered
+
+    def test_the_fragment_carries_it(self, ada: Any) -> None:
+        page = type("SpecFormView", (SpecFormView,), {"redirect_field_name": "next"})
+        request = signed_in(
+            FACTORY.post("/", data={"title": "x" * 21, "next": "/list/"}, **HTMX), ada
+        )
+        rendered = body(built(page, form_spec())(request))
+        assert DOCUMENT not in rendered
+        assert '<input type="hidden" name="next" value="/list/">' in rendered
 
 
 def listed(**kwargs: Any) -> Any:

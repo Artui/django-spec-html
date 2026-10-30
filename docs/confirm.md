@@ -164,10 +164,54 @@ page that works, and says why.
   target is shown again.
 - A denial is raised for the host's 403 or 404 page.
 
+## A refusal sent back
+
+A button in a list's row is posted from the list, and the page a refusal is
+rendered on is one the person never opened. **`refusal_redirect=True` sends
+the refusal back instead**, to the page it came from. The URLconf routes the
+example as `books/<int:pk>/withdraw/from-the-list/`, with
+`redirect_field_name="next"` beside it, and a row's form posts to it with
+`?next=` naming the page of the list it sits on:
+
+```python
+--8<--
+docs/examples/spec_confirm.py:from-the-list
+--8<--
+```
+
+- **An invalid, a failed or a needs-input refusal is sent back.** Each
+  message the page would have shown in `errors` is sent through
+  `messages.error`, and the refusal's `code`, where it has one, is the
+  message's `extra_tags`, so the list can style or match an unavailable
+  action: a book withdrawn already is sent back with "Only a published book
+  can be withdrawn." tagged `not_published`.
+- **The post redirects to `get_refusal_url(refused)`**: the safe URL
+  `redirect_field_name` reads, checked as
+  [a form page checks it](pages.md#returning-where-the-page-was-opened-from),
+  and otherwise `success_url`. Override it to read the refusal, such as to
+  send one `code` to a page of its own. Under htmx it answers `HX-Redirect`
+  to the same URL, since an XHR would follow a 302 and swap the list into the
+  row.
+- **A denial is raised as ever**, for the host's 403 or 404 page.
+- **Without the messages middleware the page is rendered as above.** Django
+  raises `MessageFailure` with nowhere to keep a message, before any is
+  stored, so the page renders the refusal itself rather than lose it in a
+  redirect.
+
+`as_view()` refuses `refusal_redirect` on a page with no `success_url` that
+does not override `get_refusal_url`, since a refused post naming no safe URL
+would have nowhere to go. A form page has no such switch: a refused form
+redirected away would lose what the person typed.
+
 ## A success
 
 A success redirects to `get_success_url(result)`, or under htmx answers
-`HX-Redirect` or the `spec-result` fragment, as on a form page.
+`HX-Redirect` or the `spec-result` fragment, as on a form page. Where the view
+names `redirect_field_name`, a safe URL the post or its query carries under
+that key is where the success goes instead, as on
+[a form page](pages.md#returning-where-the-page-was-opened-from): the example
+above returns to `/books/?page=3`. Nothing the post carries is an argument, so
+the key never reaches dispatch.
 
 **`success_message` is formatted with the target**, `%` with a mapping whose
 one key is `target`, `result.instance`: `"%(target)s was archived."` names

@@ -745,6 +745,178 @@ class TestSuccess:
         assert post(view, ada, {"title": "Hi"}).url == "/entries/7/"
 
 
+class ReturnsToNext(SpecFormView):
+    """A page that reads ``next``, set as a host's subclass sets it."""
+
+    template_name = TEMPLATE
+    success_url = "/done/"
+    redirect_field_name = "next"
+
+
+def posted_to(view: Any, user: Any, url: str, data: Mapping[str, Any], **extra: Any) -> Any:
+    return view(signed_in(FACTORY.post(url, data=data, **extra), user))
+
+
+def named(**attributes: Any) -> Any:
+    """``ReturnsToNext`` with ``attributes`` set on a subclass, as ``as_view()`` checks them."""
+    return type("Named", (ReturnsToNext,), attributes).as_view(spec=entry_spec())
+
+
+class TestReturningToNext:
+    def test_a_success_redirects_to_next_from_the_query(self, ada: Any) -> None:
+        view = ReturnsToNext.as_view(spec=entry_spec())
+        response = posted_to(view, ada, "/?next=/list/%3Fpage%3D3", {"title": "Hi"})
+        assert (response.status_code, response.url) == (302, "/list/?page=3")
+
+    def test_next_posted_is_read_before_the_query_s(self, ada: Any) -> None:
+        view = ReturnsToNext.as_view(spec=entry_spec())
+        response = posted_to(view, ada, "/?next=/query/", {"title": "Hi", "next": "/posted/"})
+        assert response.url == "/posted/"
+
+    def test_an_empty_posted_next_masks_the_query_s_as_django_s_login_view_reads_it(
+        self, ada: Any
+    ) -> None:
+        view = ReturnsToNext.as_view(spec=entry_spec())
+        response = posted_to(view, ada, "/?next=/query/", {"title": "Hi", "next": ""})
+        assert response.url == "/done/"
+
+    @pytest.mark.parametrize(
+        "unsafe",
+        ["https://evil.example/", "//evil.example", "javascript:alert(1)"],
+        ids=["another-host", "scheme-relative", "another-scheme"],
+    )
+    def test_an_unsafe_next_falls_back_to_the_success_url(self, ada: Any, unsafe: str) -> None:
+        view = ReturnsToNext.as_view(spec=entry_spec())
+        response = posted_to(view, ada, "/", {"title": "Hi", "next": unsafe})
+        assert (response.status_code, response.url) == (302, "/done/")
+
+    def test_a_next_naming_the_request_s_own_host_is_followed(self, ada: Any) -> None:
+        view = ReturnsToNext.as_view(spec=entry_spec())
+        response = posted_to(view, ada, "/", {"title": "Hi", "next": "http://testserver/list/"})
+        assert response.url == "http://testserver/list/"
+
+    @pytest.mark.parametrize(
+        ("scheme", "expected"),
+        [("http", "/done/"), ("https", "https://testserver/list/")],
+        ids=["http-refused", "https-followed"],
+    )
+    def test_a_secure_request_follows_only_an_https_next(
+        self, ada: Any, scheme: str, expected: str
+    ) -> None:
+        view = ReturnsToNext.as_view(spec=entry_spec())
+        data = {"title": "Hi", "next": f"{scheme}://testserver/list/"}
+        assert posted_to(view, ada, "/", data, secure=True).url == expected
+
+    def test_a_page_naming_no_field_reads_no_next(self, ada: Any) -> None:
+        response = posted_to(form_view(entry_spec()), ada, "/?next=/list/", {"title": "Hi"})
+        assert response.url == "/done/"
+
+    def test_next_wins_over_an_overridden_get_success_url(self, ada: Any) -> None:
+        class ToTheEntry(ReturnsToNext):
+            def get_success_url(self, result: DispatchResult) -> str:
+                return f"/entries/{result.value}/"
+
+        view = ToTheEntry.as_view(spec=entry_spec(returns=7))
+        assert posted_to(view, ada, "/?next=/list/", {"title": "Hi"}).url == "/list/"
+        assert posted_to(view, ada, "/", {"title": "Hi"}).url == "/entries/7/"
+
+    def test_it_may_be_passed_to_as_view(self, ada: Any) -> None:
+        view = form_view(entry_spec(), redirect_field_name="back")
+        assert posted_to(view, ada, "/?back=/list/", {"title": "Hi"}).url == "/list/"
+
+    def test_next_never_reaches_dispatch(self, ada: Any) -> None:
+        # The default closed argument set would refuse a key no parameter
+        # declares, so a success here is the key never read as an argument.
+        spec = entry_spec()
+        view = ReturnsToNext.as_view(spec=spec)
+        response = posted_to(view, ada, "/?next=/a/", {"title": "Hi", "next": "/b/"})
+        assert (response.status_code, response.url) == (302, "/b/")
+        call = spec.service.calls[0]
+        assert "next" not in call
+        assert "next" not in call["data"]
+
+    def test_htmx_is_sent_to_next(self, ada: Any) -> None:
+        view = fragmented(entry_spec(), redirect_field_name="next")
+        response = posted_to(view, ada, "/?next=/list/%3Fpage%3D3", {"title": "Hi"}, **HTMX)
+        assert (response.status_code, response["HX-Redirect"]) == (200, "/list/?page=3")
+        assert not response.has_header("Location")
+
+    def test_a_result_fragment_answers_in_place_whatever_next_says(
+        self, ada: Any, result_fragment: str
+    ) -> None:
+        view = fragmented(
+            entry_spec(returns=7),
+            template_name=None,
+            fragment_template_name=result_fragment,
+            extra_context={"heading": "the entries"},
+            redirect_field_name="next",
+        )
+        response = posted_to(view, ada, "/?next=/list/", {"title": "Hi"}, **HTMX).render()
+        assert (response.status_code, response.content) == (200, b"<p>Saved 7 for the entries.</p>")
+        assert not response.has_header("HX-Redirect")
+        # The result's own context carries it, so the fragment can link back.
+        assert (response.context_data["redirect_field_name"], response.context_data["next"]) == (
+            "next",
+            "/list/",
+        )
+
+
+class TestNextOnARefusedPost:
+    def test_a_refused_post_carries_the_name_and_the_value(self, ada: Any) -> None:
+        view = ReturnsToNext.as_view(spec=entry_spec())
+        response = posted_to(view, ada, "/", {"title": "too long", "next": "/list/"})
+        assert response.status_code == 400
+        context = response.context_data
+        assert (context["redirect_field_name"], context["next"]) == ("next", "/list/")
+
+    def test_get_carries_the_query_s(self, ada: Any) -> None:
+        view = ReturnsToNext.as_view(spec=entry_spec())
+        response = view(signed_in(FACTORY.get("/?next=/list/"), ada))
+        assert response.context_data["next"] == "/list/"
+
+    @pytest.mark.parametrize(
+        "query", ["", "?next=https://evil.example/"], ids=["none-sent", "unsafe"]
+    )
+    def test_without_a_safe_value_neither_key_is_there(self, ada: Any, query: str) -> None:
+        view = ReturnsToNext.as_view(spec=entry_spec())
+        context = view(signed_in(FACTORY.get(f"/{query}"), ada)).context_data
+        assert {"redirect_field_name", "next"}.isdisjoint(context)
+
+    def test_a_page_naming_no_field_carries_neither_key(self, ada: Any) -> None:
+        context = get(form_view(entry_spec()), ada).context_data
+        assert {"redirect_field_name", "next"}.isdisjoint(context)
+
+
+class TestTheRedirectFieldName:
+    @pytest.mark.parametrize("name", ["", ("next",), 1], ids=["empty", "a-tuple", "an-int"])
+    def test_anything_but_a_name_is_refused(self, name: Any) -> None:
+        with pytest.raises(ImproperlyConfigured) as raised:
+            named(redirect_field_name=name)
+        assert str(raised.value) == (
+            "Named.redirect_field_name must be None or the name of the key a post or its "
+            f"query carries the URL to return to in; got {name!r}."
+        )
+
+    def test_a_field_s_name_is_refused(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as raised:
+            named(redirect_field_name="urgent")
+        assert str(raised.value) == (
+            "Named.redirect_field_name names 'urgent', a field EntryForm declares: the field's "
+            "value would be read as the URL to return to."
+        )
+
+    def test_the_commit_button_s_name_is_refused(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as raised:
+            named(commit_button="next")
+        assert str(raised.value) == (
+            "Named.redirect_field_name and commit_button both name 'next': the button's value "
+            "would be read as the URL to return to."
+        )
+
+    def test_a_name_beside_another_commit_button_builds(self) -> None:
+        named(commit_button="save")
+
+
 class TestReadingThroughTheWidgets:
     def test_a_checked_box_is_true_and_an_unchecked_one_false(self, ada: Any) -> None:
         checked, unchecked = entry_spec(), entry_spec()

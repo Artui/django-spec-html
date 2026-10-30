@@ -5,11 +5,13 @@ Django this package supports. ``as_div`` rather than ``{{ form }}``, which is a
 table below Django 5.0. The form renders each field's own ``required``, which
 a partial page's form has switched off; a question's message is the form's
 non-field error and its asked field is in the form, so each is rendered once.
+The URL to return to, where the view reads one, is posted again as a hidden
+input, since a refused post may have carried it in its body alone.
 {% endcomment %}{% include "django_spec_html/target.html" %}
 {% if unavailable %}<p data-code="{{ unavailable.code }}">{{ unavailable.reason }}</p>{% endif %}
 {% if spec.partial %}<p>{% translate "A field left blank is left as it is." %}</p>{% endif %}
 <form method="post"{% if form.is_multipart %} enctype="multipart/form-data"{% endif %}{% if code %} data-code="{{ code }}"{% endif %}>
-{% csrf_token %}
+{% csrf_token %}{% if next %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ next }}">{% endif %}
 <fieldset{% if unavailable %} disabled{% endif %}>
 {{ form.as_div }}
 <button type="submit"{% if view.commit_button %} name="{{ view.commit_button }}"{% endif %}>{% translate "Save" %}</button>

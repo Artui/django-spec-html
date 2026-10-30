@@ -5,8 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from django.contrib import messages
+from django.contrib.messages import MessageFailure
 from django.core.exceptions import ImproperlyConfigured
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseRedirect
+from django.shortcuts import resolve_url
 from django_service_specs import (
     AdditionalInputRequired,
     DispatchError,
@@ -25,7 +28,7 @@ from django_service_specs import (
 
 from django_spec_html.http.route_arguments import route_arguments
 from django_spec_html.http.utils import route_targets
-from django_spec_html.views.utils import Served, SpecPageBase, refusal_tree
+from django_spec_html.views.utils import ClientRedirect, Served, SpecPageBase, refusal_tree
 
 
 class SpecConfirmView(SpecPageBase):
@@ -53,8 +56,8 @@ class SpecConfirmView(SpecPageBase):
     ``target_count`` and ``target_counted_at``, and ``target_display`` on a
     page that sets ``display_target`` - the affordances asked on GET as
     ``unavailable``, ``commit_button``, the fragment wrapper under htmx, the
-    request hooks, ``success_url`` and ``success_message``, each as
-    ``SpecFormView`` documents it.
+    request hooks, ``success_url``, ``redirect_field_name`` and
+    ``success_message``, each as ``SpecFormView`` documents it.
 
     **GET** renders ``template_name`` with that context, beside ``view`` and
     ``spec``, and **no** ``form``: there is nothing to fill in, so the
@@ -67,17 +70,20 @@ class SpecConfirmView(SpecPageBase):
     ships, with its button in ``django_spec_html/spec_confirm_fragment.html``.
     It renders the target pane, an unmet affordance's reason with the button
     disabled, a refused post's ``errors`` or a question's message alone, and
-    the button, posting ``commit_button``'s name where one is set. Found,
+    the button, posting ``commit_button``'s name where one is set, and the
+    URL to return to as a hidden input where the view reads one. Found,
     refused at ``as_view()`` and overridden as ``SpecFormView``'s is.
 
     **POST** dispatches with the route's kwargs, read by ``route_kwargs`` and
     coerced as a form page's are, under the binding and with the request's
     seeds. **Nothing the post carries becomes an argument**: not the CSRF
-    token, not the button, and not a key named like a parameter, so the
-    closed argument set holds with nothing to check. A success redirects to
-    ``get_success_url(result)``, or under htmx answers ``HX-Redirect`` or the
-    ``spec-result`` fragment, with ``success_message`` sent through
-    ``django.contrib.messages`` where its middleware runs.
+    token, not the button, not ``redirect_field_name``'s key and not a key
+    named like a parameter, so the closed argument set holds with nothing to
+    check. A success redirects to ``get_redirect_url()`` where the request
+    names a safe URL to return to, else to ``get_success_url(result)``, or
+    under htmx answers ``HX-Redirect`` to the same URL or the ``spec-result``
+    fragment, with ``success_message`` sent through ``django.contrib.messages``
+    where its middleware runs.
 
     **A refused post is the confirmation page again**, at the status of the
     one map - 400 for an argument refusal, 409 for a conflict or an
@@ -87,6 +93,18 @@ class SpecConfirmView(SpecPageBase):
     strings, a message about a parameter prefixed with its path
     (``"pk: Enter a whole number."``), and ``code`` for a refusal carrying
     one. A denial is raised for the host's 403 or 404 page, as on any page.
+
+    **A refused post may return where it came from instead.** A button in a
+    list's row posts to this page, and a refusal rendered here leaves the
+    person on a page they never opened. With ``refusal_redirect``, a refused
+    post that is invalid, failed or a question sends each message of
+    ``errors`` through ``messages.error``, with the refusal's ``code`` as
+    ``extra_tags`` where it has one, and redirects to
+    ``get_refusal_url(refused)``: the safe URL ``redirect_field_name`` reads,
+    else ``success_url``. Under htmx it answers ``HX-Redirect`` to the same
+    URL. A denial is raised as ever. Without the messages middleware there is
+    nowhere to keep the messages, so the page is rendered as without
+    ``refusal_redirect``.
 
     **A question is shown, and cannot be answered here.** A service raising
     ``AdditionalInputRequired`` re-renders the page at 422, its schema first
@@ -107,7 +125,9 @@ class SpecConfirmView(SpecPageBase):
     ``route_kwargs`` names a kwarg into, since the URL pattern is not known
     when ``as_view()`` runs - by a seed the declared ``pool_seeds`` registers,
     as ``server_owned_keys`` reads them, or by a value ``server_arguments``
-    binds.
+    binds. It refuses ``refusal_redirect`` on a page with no ``success_url``
+    that does not override ``get_refusal_url``, since a refused post naming
+    no URL to return to would have nowhere to go.
 
     Attributes:
         spec: The operation served, declaring no Validator. Required.
@@ -131,11 +151,19 @@ class SpecConfirmView(SpecPageBase):
             projects.
         commit_button: The ``name`` of the submit button whose post commits;
             ``None``, the default, commits every post.
+        redirect_field_name: The key a post or its query carries the URL to
+            return to under, as on ``SpecFormView``: ``None``, the default,
+            reads none.
+        refusal_redirect: Whether a refused post that is not a denial
+            redirects to ``get_refusal_url``, its messages sent through
+            ``django.contrib.messages``, rather than rendering the page:
+            ``False`` by default.
         success_message: The message a successful post sends, formatted by
             ``get_success_message`` with the target.
     """
 
     template_name = "django_spec_html/spec_confirm.html"
+    refusal_redirect: bool = False
 
     @classmethod
     def _check_spec(cls, label: str, spec: ServiceSpec) -> None:
@@ -167,7 +195,8 @@ class SpecConfirmView(SpecPageBase):
         refused as one (test_a_bare_string_route_kwargs_is_refused_as_a_string)
         and a withheld name in the kernel's words
         (test_withholding_it_is_refused_by_the_kernel_s_own_check). There is
-        no form, so ``commit_button`` clashes with no field.
+        no form, so neither ``commit_button`` nor ``redirect_field_name``
+        clashes with a field. Then a ``refusal_redirect`` with nowhere to go.
         """
         _check_supplied(
             label,
@@ -176,6 +205,24 @@ class SpecConfirmView(SpecPageBase):
             initkwargs.get("server_arguments", cls.server_arguments),
             initkwargs.get("pool_seeds", cls.pool_seeds),
         )
+        # A refused post with no ``next`` returns to ``success_url``, so a page
+        # redirecting its refusals needs one, or a ``get_refusal_url`` of its
+        # own. One branch to coverage, so each condition is held by its own
+        # test: test_a_page_not_redirecting_needs_none (the page redirects),
+        # test_a_success_url_is_somewhere_to_go (it has no success_url) and
+        # test_an_overridden_get_refusal_url_is_somewhere_to_go (nor its own
+        # get_refusal_url), with test_get_refusal_url_may_be_passed_to_as_view
+        # for the override passed to ``as_view``.
+        if (
+            initkwargs.get("refusal_redirect", cls.refusal_redirect)
+            and initkwargs.get("success_url", cls.success_url) is None
+            and initkwargs.get("get_refusal_url", cls.get_refusal_url)
+            is SpecConfirmView.get_refusal_url
+        ):
+            raise ImproperlyConfigured(
+                f"{label}.refusal_redirect needs a success_url, where a refused post returns "
+                "without a next, or a get_refusal_url that returns one."
+            )
 
     def _form(
         self, spec: ServiceSpec, principal: Any, target: Any, served: Served, **bound: Any
@@ -219,12 +266,49 @@ class SpecConfirmView(SpecPageBase):
         (test_a_service_s_tree_is_flattened_with_each_path). A question's
         ``requested_input`` is the base's, its message and its schema: there
         is no field to answer it with.
+
+        With ``refusal_redirect``, the page is not rendered: each of those
+        messages is sent through ``messages.error``, carrying the refusal's
+        ``code`` as ``extra_tags`` where it has one, and the post redirects
+        to ``get_refusal_url(refused)``, or under htmx is sent there with
+        ``HX-Redirect``
+        (test_an_unmet_affordance_returns_to_next_with_its_reason,
+        test_htmx_is_sent_back_with_hx_redirect). Where the messages
+        middleware does not run, Django raises ``MessageFailure`` on the first
+        message, before any is stored, and the page is rendered as without
+        it, so the refusal is never lost to a redirect
+        (test_without_the_messages_middleware_it_is_the_page_again). A denial
+        never reaches here: it is raised before.
         """
-        context["errors"] = [
+        errors = [
             f"{'.'.join(where)}: {message}" if where else message
             for where, message in refusal_messages(refusal_tree(refused))
         ]
+        if self.refusal_redirect:
+            try:
+                for error in errors:
+                    messages.error(self.request, error, extra_tags=context.get("code", ""))
+            except MessageFailure:
+                ...
+            else:
+                url = self.get_refusal_url(refused)
+                if self.wants_fragment(self.request):
+                    return ClientRedirect(url)
+                return HttpResponseRedirect(url)
+        context["errors"] = errors
         return self._rendered(self.get_context_data(**context), status=status)
+
+    def get_refusal_url(self, refused: DispatchError | ServiceError) -> str:
+        """Where a refused post returns, with ``refusal_redirect`` on: the way back, or ``success_url``.
+
+        ``get_redirect_url()``, the safe URL the request names under
+        ``redirect_field_name``, and otherwise ``success_url``, resolved as
+        ``redirect()`` reads it: a page posted from a list returns to the
+        list, the refusal's messages waiting there. Override it to read
+        ``refused``, such as to send an unavailable action's ``code`` to a
+        page of its own.
+        """
+        return self.get_redirect_url() or resolve_url(self.success_url)
 
     def get_success_message(self, result: DispatchResult) -> str:
         """``success_message`` formatted with the target: ``"%(target)s was withdrawn."``.

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.messages.storage.cookie import CookieStorage
@@ -144,6 +145,49 @@ class TestThePost:
         assert b'<p class="error">Only a published book can be withdrawn.</p>' in (
             response.render().content
         )
+
+
+class TestPostedFromTheList:
+    """A row's button posts with ``?next=``, and a success and a refusal both go back to it."""
+
+    URL = "/books/{pk}/withdraw/from-the-list/?next=/books/%3Fpage%3D3"
+
+    def from_the_list(self, book: Book, user: Any, **headers: Any) -> tuple[Any, Any]:
+        request = FACTORY.post(self.URL.format(pk=book.pk), data=PRESSED, **headers)
+        request._messages = CookieStorage(request)
+        return serve(request, user), request
+
+    def test_a_success_returns_to_the_list(self, ada: Any, book: Book) -> None:
+        response, _ = self.from_the_list(book, ada)
+        assert (response.status_code, response.url) == (302, "/books/?page=3")
+        book.refresh_from_db()
+        assert book.status == Status.DRAFT
+
+    def test_a_refusal_returns_to_the_list_saying_why(self, ada: Any, book: Book) -> None:
+        Book.objects.filter(pk=book.pk).update(status=Status.DRAFT)
+        response, request = self.from_the_list(book, ada)
+        assert (response.status_code, response.url) == (302, "/books/?page=3")
+        sent = [(each.level, each.message, each.extra_tags) for each in request._messages]
+        assert sent == [
+            (messages.ERROR, "Only a published book can be withdrawn.", "not_published")
+        ]
+
+    def test_htmx_is_sent_back_with_hx_redirect(self, ada: Any, book: Book) -> None:
+        Book.objects.filter(pk=book.pk).update(status=Status.DRAFT)
+        response, _ = self.from_the_list(book, ada, **HTMX)
+        assert (response.status_code, response["HX-Redirect"]) == (200, "/books/?page=3")
+
+    def test_without_next_it_returns_to_the_success_url(self, ada: Any, book: Book) -> None:
+        Book.objects.filter(pk=book.pk).update(status=Status.DRAFT)
+        request = FACTORY.post(f"/books/{book.pk}/withdraw/from-the-list/", data=PRESSED)
+        request._messages = CookieStorage(request)
+        assert serve(request, ada).url == "/books/"
+
+    def test_without_the_messages_middleware_the_page_says_why(self, ada: Any, book: Book) -> None:
+        Book.objects.filter(pk=book.pk).update(status=Status.DRAFT)
+        response = serve(FACTORY.post(self.URL.format(pk=book.pk), data=PRESSED), ada)
+        assert response.status_code == 409
+        assert response.context_data["errors"] == ["Only a published book can be withdrawn."]
 
 
 def test_a_route_parameter_route_kwargs_does_not_name_is_refused() -> None:

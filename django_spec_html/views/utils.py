@@ -48,6 +48,7 @@ from django.template.loader import get_template, select_template
 from django.utils import timezone
 from django.utils.cache import patch_vary_headers
 from django.utils.decorators import classonlymethod
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic.base import ContextMixin, TemplateResponseMixin
 from django_service_specs import (
@@ -325,6 +326,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
     target_display_limit: int = 10
     commit_button: str | None = None
     success_message: str = ""
+    redirect_field_name: str | None = None
 
     @classonlymethod
     def as_view(cls, **initkwargs: Any) -> Callable[..., HttpResponseBase]:
@@ -530,12 +532,67 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         messages.success(request, self.get_success_message(result), fail_silently=True)
         if self.wants_fragment(request):
             return self.fragment_success(result)
-        return HttpResponseRedirect(self.get_success_url(result))
+        return HttpResponseRedirect(self.get_redirect_url() or self.get_success_url(result))
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
-        """Django's context - ``view``, and ``extra_context`` - with the ``spec`` served."""
+        """Django's context - ``view``, and ``extra_context`` - with the ``spec`` served, and the way back.
+
+        Where ``get_redirect_url()`` answers a URL, the context carries
+        ``redirect_field_name``, the key it was read from, and ``next``, the
+        URL, so a page posting back to itself can send it again: the shipped
+        templates render both as a hidden input. Two fixed keys, where
+        Django's ``LoginView`` puts the URL under the field's own name, so a
+        name such as ``errors`` or ``target`` never overwrites what the page
+        renders. Both are absent where there is no URL to hold, an unsafe one
+        included, so an unsafe value is never written back into the page
+        (test_without_a_safe_value_neither_key_is_there).
+        """
         kwargs.setdefault("spec", self.served_spec())
+        way_back = self.get_redirect_url()
+        if way_back:
+            kwargs.setdefault("redirect_field_name", self.redirect_field_name)
+            kwargs.setdefault("next", way_back)
         return super().get_context_data(**kwargs)
+
+    def get_redirect_url(self) -> str:
+        """The URL the request asks to return to, under ``redirect_field_name``, where it is safe; otherwise ``""``.
+
+        ``None``, the default, reads nothing, so a page follows a
+        client-chosen URL only where its view names the key, as Django's
+        ``FormView`` never does and its ``LoginView`` does. Named, it is read
+        as ``LoginView`` reads it: the post's value, then the query's, so a
+        value posted empty masks the query's
+        (test_an_empty_posted_next_masks_the_query_s_as_django_s_login_view_reads_it).
+        Then it is used only where Django's ``url_has_allowed_host_and_scheme``
+        allows it, against the request's own host and requiring ``https`` on a
+        secure request, so the page is no open redirect. Each argument is held
+        by its own tests: the host by
+        test_a_next_naming_the_request_s_own_host_is_followed, which fails
+        with no host allowed, and test_an_unsafe_next_falls_back_to_the_success_url,
+        which fails with another; the scheme by the ``http-refused`` case of
+        test_a_secure_request_follows_only_an_https_next, which fails with
+        ``https`` never required, and by
+        test_a_next_naming_the_request_s_own_host_is_followed, which fails
+        with it always required.
+
+        A success redirects to it, or under htmx is sent to it with
+        ``HX-Redirect``, in place of ``get_success_url(result)``, even where
+        that is overridden (test_next_wins_over_an_overridden_get_success_url);
+        a ``spec-result`` fragment still answers in place, since it navigates
+        nowhere. The page's arguments are its form's fields and its route, so
+        the value never reaches dispatch (test_next_never_reaches_dispatch).
+        A host's own ``fragment_success`` reads it the same way:
+        ``self.get_redirect_url() or self.get_success_url(result)``.
+        """
+        name = self.redirect_field_name
+        if name is None:
+            return ""
+        request = self.request
+        url = request.POST.get(name, request.GET.get(name))
+        safe = url_has_allowed_host_and_scheme(
+            url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+        )
+        return cast("str", url) if safe else ""
 
     def get_success_url(self, result: DispatchResult) -> str:
         """Where a successful post redirects: ``success_url``, resolved as ``redirect()`` reads it.
@@ -603,9 +660,13 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         ``spec-succeeded`` for the rest of the page to listen for. Its context
         is the view's - ``view``, ``spec`` and ``extra_context`` - with
         ``result`` in it, and no form, since the post's form is done with.
-        Otherwise ``HX-Redirect`` to ``get_success_url(result)``, at 200 and
-        never a 302: an XHR follows a 302 itself and would swap the next page
-        into the form. The URL is encoded and checked as the page's redirect
+        Otherwise ``HX-Redirect`` to ``get_redirect_url()``, where the request
+        names a safe URL to return to, or to ``get_success_url(result)``, at
+        200 and never a 302: an XHR follows a 302 itself and would swap the
+        next page into the form. The result fragment is rendered whatever
+        ``get_redirect_url()`` answers: it is an answer in place, with nowhere
+        to go, and its context carries ``next`` for a link back
+        (test_a_result_fragment_answers_in_place_whatever_next_says). The URL is encoded and checked as the page's redirect
         is, so a path outside ASCII reaches the browser as the page's
         ``Location`` would, and an unsafe scheme raises
         ``DisallowedRedirect`` in both modes.
@@ -625,7 +686,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         if template is None:
             # Outside the ``except``, so an error of ``get_success_url``'s own
             # is not reported as raised while handling the lookup.
-            return _ClientRedirect(self.get_success_url(result))
+            return ClientRedirect(self.get_redirect_url() or self.get_success_url(result))
         response = self.response_class(
             request=self.request,
             template=template,
@@ -851,7 +912,11 @@ def _check_configuration(cls: type[SpecPageBase], initkwargs: Mapping[str, Any])
         )
     if initkwargs.get("display_target", cls.display_target):
         check_display(label, spec)
-    _check_commit_button(label, initkwargs.get("commit_button", cls.commit_button))
+    button = initkwargs.get("commit_button", cls.commit_button)
+    _check_commit_button(label, button)
+    _check_redirect_field_name(
+        label, initkwargs.get("redirect_field_name", cls.redirect_field_name), button
+    )
 
 
 def check_shipped_templates(cls: type[SpecRequestBase], initkwargs: Mapping[str, Any]) -> None:
@@ -930,7 +995,33 @@ def _check_commit_button(label: str, button: Any) -> None:
         )
 
 
-class _ClientRedirect(HttpResponseRedirectBase):
+def _check_redirect_field_name(label: str, name: Any, button: str | None) -> None:
+    """Refuse a ``redirect_field_name`` that is not a key's name, or that is the ``commit_button``.
+
+    ``None`` reads nothing. Otherwise a non-empty string: one branch to
+    coverage, held by the ``a-tuple`` and ``an-int`` cases of
+    test_anything_but_a_name_is_refused (the type) and its ``empty`` case
+    (the length). The button's name is refused since a button posts its
+    value, which would be read as the URL; ``commit_button`` was checked
+    first, so the two compare as strings or ``None``. Whether it is the name
+    of a field is each page's own check, since only a page with a form has
+    fields to clash with.
+    """
+    if name is None:
+        return
+    if not isinstance(name, str) or not name:
+        raise ImproperlyConfigured(
+            f"{label}.redirect_field_name must be None or the name of the key a post or its "
+            f"query carries the URL to return to in; got {name!r}."
+        )
+    if name == button:
+        raise ImproperlyConfigured(
+            f"{label}.redirect_field_name and commit_button both name {name!r}: the button's "
+            "value would be read as the URL to return to."
+        )
+
+
+class ClientRedirect(HttpResponseRedirectBase):
     """A redirect htmx follows as a navigation: ``HX-Redirect`` at 200, where the page answers 302.
 
     Built as Django's own redirect is, so the URL is IRI-encoded and an unsafe

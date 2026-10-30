@@ -26,6 +26,7 @@ This package defines none. The argument reader reads one of the kernel's:
         - post
         - get_context_data
         - get_success_url
+        - get_redirect_url
         - get_success_message
         - get_pool_seeds
         - get_server_arguments
@@ -43,6 +44,7 @@ This package defines none. The argument reader reads one of the kernel's:
         - post
         - get_context_data
         - get_success_url
+        - get_redirect_url
         - get_pool_seeds
         - get_server_arguments
         - wants_fragment
@@ -59,6 +61,7 @@ This package defines none. The argument reader reads one of the kernel's:
         - post
         - get_context_data
         - get_success_url
+        - get_redirect_url
         - get_pool_seeds
         - get_server_arguments
         - wants_fragment

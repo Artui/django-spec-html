@@ -164,7 +164,9 @@ validated by nothing, as on [the single page](pages.md#a-post-that-does-not-comm
 ## A success
 
 A success redirects to `success_url`, or answers `HX-Redirect` or the result
-fragment to htmx, as on the single page. **`success_message` is formatted
+fragment to htmx, as on the single page, and a view naming
+`redirect_field_name` returns to the URL it reads,
+[as the single page does](pages.md#returning-where-the-page-was-opened-from). **`success_message` is formatted
 with the rows' `count`**, `%` with `{"count": n}`, so `"%(count)d books were
 added."` above says how many: the single page formats with the cleaned data,
 and a `many` call's is a list, which `%` with a name cannot read. Override
@@ -176,7 +178,8 @@ the operation returned, under `result.value`.
 When the URLconf is imported: a spec whose Validator is not a `FormValidator`;
 a spec that is not `many`; a view displaying its target; an `extra` that is
 not a non-negative int; an `add_button` that is not a button's name, is set
-without a `commit_button`, or is the `commit_button`; and either button named
+without a `commit_button`, or is the `commit_button`; a `redirect_field_name`
+that is either button; and either button or the `redirect_field_name` named
 under the formset's `form-` prefix, which every post carries. Then every check
 the single page makes of the request's hooks. The view is **sync only** in this
 release.
