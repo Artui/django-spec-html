@@ -351,7 +351,7 @@ class SpecSelectorView(SpecRequestBase):
         page does not await it. The answer must be a ``QueryDict``, since the
         paging keys are popped off a copy of it as lists; anything else is a
         ``TypeError`` naming the hook. The answer is never changed in place
-        (test_the_request_s_own_query_is_left_as_it_came).
+        (test_the_hook_s_answer_is_left_as_it_came).
         """
         return request.GET
 

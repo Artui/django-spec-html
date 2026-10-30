@@ -1140,6 +1140,20 @@ class TestTheQueryHook:
 
         assert asked == [request]
 
+    def test_the_hook_s_answer_is_left_as_it_came(self, ada: Any, notes: list[Note]) -> None:
+        answered = QueryDict("per=2&page=2", mutable=True)
+
+        class Kept(SpecSelectorView):
+            def get_query(self, request: HttpRequest) -> QueryDict:
+                return answered
+
+        view = Kept.as_view(spec=listing(), page_size_kwarg="per", max_page_size=3)
+        response = view(signed_in(FACTORY.get("/notes/"), ada))
+
+        assert answered.urlencode() == "per=2&page=2"
+        assert response.context_data["page"].page == 2
+        assert response.context_data["next_page_query"] == "per=2&page=3"
+
     def test_the_default_is_the_request_s_query(self, ada: Any) -> None:
         request = signed_in(FACTORY.get("/notes/?title=x"), ada)
 
