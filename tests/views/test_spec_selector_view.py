@@ -604,8 +604,13 @@ class TestTheRequest:
 
         assert titles(response) == ["note 2"]
 
-    def test_a_route_capture_the_spec_does_not_declare_is_refused(self, ada: Any) -> None:
-        view = SpecSelectorView.as_view(spec=listing())
+    @pytest.mark.parametrize("policy", [UnknownArguments.IGNORE, UnknownArguments.REJECT])
+    def test_a_route_capture_the_spec_does_not_declare_is_refused(
+        self, ada: Any, policy: UnknownArguments
+    ) -> None:
+        # The route is the host's, so the policy, which governs what a
+        # client sends, does not reach it.
+        view = SpecSelectorView.as_view(spec=listing(), unknown_arguments=policy)
 
         with pytest.raises(ImproperlyConfigured, match=r"pk"):
             view(signed_in(FACTORY.get("/"), ada), pk=1)
