@@ -40,6 +40,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to send is the page again too. A refusal sent back counts and presents no
   target. `as_view()` refuses it on a
   page with no `success_url` that does not override `get_refusal_url`.
+- **The `unavailable` template filter: why a row's action is unavailable.**
+  `{% with why=row|unavailable:"withdraw" %}{% if why %}{{ why.reason }}{% endif %}{% endwith %}`
+  returns the row's answer, with the `code` and `reason` of the first
+  condition the row does not meet, when the action is unavailable, and
+  `None` when it is available. It reads the answers `available` reads, so it
+  costs no query, and raises the same `TemplateSyntaxError` for a name the
+  spec does not declare or a row the page did not serve. A condition on the
+  row asked of a row that no longer exists answers with no code and no
+  reason, so `{% if why %}` holds and `{{ why.reason }}` renders empty. The
+  answer is a fresh `dict` per read, so `json_script` takes it, whose `clear`
+  and `popitem` are marked `alters_data`, so no template can empty it. The
+  example's table shows the reason where a row has no Withdraw button.
+  - **The docs read a negated or combined condition through `{% with %}`**,
+    for both filters, where they said to use `available` only as a bare
+    `{% if %}` condition: Django's `{% if %}` reads an error inside `not`,
+    `and`, `or` or a comparison as the condition being false, so a misspelt
+    name there draws nothing and raises nothing, and
+    `{% with ok=row|available:"withdraw" %}{% if not ok %}` resolves the filter
+    outside `{% if %}`, where a misspelt name raises.
+- **`SpecSelectorView.get_query(request)`, the query string a page reads.**
+  It answers `request.GET` unless a subclass answers another `QueryDict`, and
+  the page asks it once a request. On a list page the paging keys, the filter
+  form, the spec's arguments and the previous and next links all read its
+  answer; an instance page, which is not paged, reads the spec's arguments
+  from it. The template is handed a `request` whose `GET` is that answer, so a
+  django-tables2 table's header sort links keep it. A list that opens where
+  the last visit left it answers a query kept in the session on a bare visit;
+  the selector guide shows one, with a `?reset=1` that forgets a saved query
+  the spec refuses. Like every request hook it is a plain `def`, and
+  `as_view()` refuses an `async def` one; an answer that is not a `QueryDict`
+  raises `TypeError` naming the hook.
+
+### Changed
+- **The htmx handler example answers an anonymous visitor with the login page
+  whether or not htmx asked, and gains a `handler404`.** Without htmx, a
+  visitor who is not signed in is redirected to the login page and back to the
+  page they asked for, where the 403 page used to be shown; a signed-in
+  visitor still gets Django's 403 page. The new `handler404` answers an htmx
+  request with `HX-Refresh`, since htmx swaps no 4xx body and a stale row's
+  action would otherwise do nothing visible, and a browser with Django's 404
+  page. The pages state that the same handlers answer a list row's and a
+  confirmation's denial, and that the sync pages serve under ASGI, with the
+  reason there is no async page.
+- **`SpecSelectorView` ignores a query key its spec does not declare.**
+  `unknown_arguments` defaults to `UnknownArguments.IGNORE` on the list and
+  instance pages, so `?utm_source=x`, or a bookmark from before a filter was
+  renamed, is answered 200 with the rows the rest of the query selects, where
+  it was a 400 with `utm_source: Unknown argument.` A declared key's value is
+  read and refused as before, a route kwarg the spec does not declare is
+  still the host's misconfiguration, and the JSON views still refuse an
+  undeclared key. The form, formset and confirmation pages keep `REJECT` for
+  what they dispatch, their form's fields and the route. Set
+  `unknown_arguments = UnknownArguments.REJECT` on a list whose query only
+  code builds to keep the refusal. A list page and a JSON list now read each
+  value of one query string the same way, rather than answering it the same.
 
 ## [0.6.0] — 2026-10-29
 

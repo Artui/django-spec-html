@@ -81,15 +81,49 @@ where their labels say.
 | `page_size_kwarg` | `None` | a query key a client chooses the page size with, up to `max_page_size`, which it then needs |
 
 **The paging keys never reach the spec.** They are taken off the query before
-the spec reads it, so `?page=2` is not refused as an argument the spec does
-not declare, and `as_view()` refuses a list spec declaring a parameter under
-a paging key, since that parameter could never be sent. Rename the key with
-`page_kwarg` instead. A page that is not a whole number is page one, and a
+the spec reads it, so `?page=2` is the page's under either
+[`unknown_arguments` policy](#a-key-the-spec-does-not-declare), and
+`as_view()` refuses a list spec declaring a parameter under a paging key,
+since that parameter could never be sent. Rename the key with `page_kwarg`
+instead. A page that is not a whole number is page one, and a
 size that is not one is `paginate_by`. An instance page is not paged, so its
 query is all the spec's: there `?page=2` is an argument like any other.
 
 The links keep every other key, the filters and a client's page size among
 them, and replace the page.
+
+## A list that remembers its query
+
+The query the page reads is `get_query(request)`, which answers
+`request.GET` unless a subclass answers another `QueryDict`. The page asks it
+once a request and reads every key from its answer: the paging keys, the
+filter form, the spec's arguments and the links. A list that opens where the
+last visit left it keeps the query in the session:
+
+```python
+--8<--
+docs/examples/spec_selector.py:remembered
+--8<--
+```
+
+A bare visit to `/books/remembered/` serves the filters, the sort and the page
+of the visit before it, and its links keep them; a visit that sends any key is
+the query, and is saved in its place. The template is handed a `request`
+whose `GET` is the query the page read, so a tag building a link from
+`request.GET` keeps it too: a django-tables2 table's header sort links carry
+the remembered filters. The project needs Django's sessions installed, as the
+session is the host's and not the page's.
+
+The hook saves the query before dispatch judges it. A saved query the spec
+refuses - a key it no longer declares under `REJECT`, or a filter value that
+is no longer valid, such as an author since deleted - is refused again on
+every bare visit. So the example forgets it on `?reset=1`, which answers the
+list with no query at all; a page's "clear filters" link is that URL.
+
+The hook is a plain `def`, as every request hook is, and `as_view()` refuses
+an `async def` one, since the page does not await it. An answer that is not
+a `QueryDict` raises `TypeError` naming the hook: the paging keys are popped
+off a copy of it as lists.
 
 ## Filters
 
@@ -106,6 +140,35 @@ messages in `errors` and no rows.
 The shipped page draws the form's fields with no errors beside them, and
 every message of a refusal in the results, so a page that swaps its results
 under htmx shows them too.
+
+## A key the spec does not declare
+
+**Is ignored.** `SpecSelectorView.unknown_arguments` is
+`UnknownArguments.IGNORE`, so `?utm_source=newsletter` on a list page serves
+the rows as if it were not there, and beside a filter the filter is read as
+usual. The page links keep it, as they keep every key. The query string of a
+page a person reads is written by links the page does not control: a
+tracking parameter, a bookmark from before a filter was renamed. Refusing what the spec does not declare would answer that visitor a
+400 for the link. It holds on an instance page too.
+
+A key the spec does declare is still read by its declaration, so
+`?author=999` is refused at 400 whatever else the query carries, and a
+route kwarg the spec does not declare is the host's misconfiguration under
+either policy. The form and confirmation pages send dispatch only their
+form's fields and the route, so a query key they do not declare never reaches
+it; the [JSON views](http.md) refuse an undeclared key by default, since a
+client's code chose it rather than whoever wrote a link.
+
+A list whose query is built by code alone opts back into the refusal:
+
+```python
+--8<--
+docs/examples/spec_selector.py:strict
+--8<--
+```
+
+which answers `?utm_source=newsletter` with a 400 and `utm_source: Unknown
+argument.` on the page, placed on the filter form's non-field errors.
 
 ## What a row offers
 
@@ -126,16 +189,52 @@ row it serves, and the `available` filter reads them:
 So the button follows the rule the operation's own dispatch enforces, and
 asking costs no query. **A name the spec does not declare raises**
 `TemplateSyntaxError`, naming those it does, rather than reading as
-unavailable for good. Use the filter as an `{% if %}` condition on its own,
-with the unavailable branch as the `{% else %}`: Django reads an error
-raised inside `not`, `and`, `or` or a comparison as the whole condition
-false, so `{% if not row|available:"withdarw" %}` draws nothing and raises
-nothing.
+unavailable for good.
+
+**Read a negated or combined condition through `{% with %}`.** Django's
+`{% if %}` reads an error raised inside `not`, `and`, `or` or a comparison
+as the whole condition false, so `{% if not row|available:"withdarw" %}`
+draws nothing and raises nothing. `{% with %}` resolves the filter outside
+`{% if %}`, so the same misspelt name raises there:
+
+```django
+{% with ok=row|available:"withdraw" %}
+  {% if not ok %}<span>Not available</span>{% endif %}
+{% endwith %}
+```
+
+A filter on its own, `{% if row|available:"withdraw" %}`, raises as it is.
+The same holds for `unavailable`, below.
 
 A row that is a mapping, such as one from `values()`, is answered on a copy,
 so a selector's own rows are left as they were. A row that cannot carry an
 attribute, such as a tuple from `values_list()`, is served without answers,
-and the filter raises for it.
+and either filter raises for it.
+
+### Why a row's action is unavailable
+
+The `unavailable` filter reads the same answers and says why: the row's
+answer, with the `code` and `reason` of the first condition the row does
+not meet, when the action is unavailable, and `None` when it is available.
+It costs no query either, and raises for the same names and rows.
+
+```django
+{% with why=row|unavailable:"withdraw" %}
+  {% if why %}<span title="{{ why.code }}">{{ why.reason }}</span>
+  {% else %}<a href="{% url "withdraw-book" row.pk %}">Withdraw</a>{% endif %}
+{% endwith %}
+```
+
+A condition on the row asked of a row that no longer exists answers with no
+code and no reason, since none of the conditions' sentences is true of it:
+`why` is still the answer, so `{% if why %}` holds, and `{{ why.reason }}`
+renders as any missing variable does. The answer is a `dict`, so
+`{{ why|json_script:"why" }}` hands it to a script, and a fresh copy per read
+whose `clear` and `popitem` no template can call, so a template cannot empty
+it.
+
+A row's action refused or gone is the host's to answer, for htmx too, by the
+handlers in [a denial under htmx](pages.md#denials).
 
 ## A django-tables2 table
 
@@ -152,7 +251,7 @@ docs/examples/spec_selector.py:table
 ```
 
 A `TemplateColumn` asks each `record` what it offers, as a template asks a
-row. **The table never pages or orders the rows**: they are the spec's page,
+row: the example's shows the button, or the reason it is not there. **The table never pages or orders the rows**: they are the spec's page,
 in the spec's order. It is built with no `request`, since django-tables2 then
 runs its `RequestConfig`, which would page and order the data from the query
 string, and with `order_by=()`, so a `Meta.order_by` is never applied.

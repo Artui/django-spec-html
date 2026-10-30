@@ -19,6 +19,7 @@ from typing import Annotated
 import django_filters
 import django_tables2 as tables
 from django.db.models import Q, QuerySet
+from django.http import HttpRequest, QueryDict
 from django.urls import path, reverse_lazy
 from django_service_specs import (
     Affordance,
@@ -29,6 +30,7 @@ from django_service_specs import (
     SelectorKind,
     SelectorSpec,
     ServiceSpec,
+    UnknownArguments,
     Unrestricted,
 )
 
@@ -133,16 +135,28 @@ class BookTable(tables.Table):
     # sort: dispatch would refuse ``o=author``, and the link would answer 400.
     author = tables.Column(accessor="author__name", verbose_name="Author", orderable=False)
     price = tables.Column()
+    # The button where the row may be withdrawn, and otherwise why not: the
+    # reason of the first condition the row does not meet.
     withdraw = tables.TemplateColumn(
-        '{% load django_spec_html %}{% if record|available:"withdraw" %}'
-        '<a href="{% url "withdraw-book" record.pk %}">Withdraw</a>'
-        "{% else %}<span>Not available</span>{% endif %}",
+        '{% load django_spec_html %}{% with why=record|unavailable:"withdraw" %}'
+        "{% if why %}<span>{{ why.reason }}</span>"
+        '{% else %}<a href="{% url "withdraw-book" record.pk %}">Withdraw</a>{% endif %}'
+        "{% endwith %}",
         orderable=False,
         verbose_name="",
     )
 
 
 # --8<-- [end:table]
+
+
+# --8<-- [start:strict]
+# A list whose query only code builds, refusing a key the spec does not
+# declare where the default would ignore it.
+strict_book_list = SpecSelectorView.as_view(
+    spec=book_list_spec, paginate_by=10, unknown_arguments=UnknownArguments.REJECT
+)
+# --8<-- [end:strict]
 
 
 # --8<-- [start:urls]
@@ -182,6 +196,34 @@ urlpatterns = [
     ),
 ]
 # --8<-- [end:urls]
+
+
+# --8<-- [start:remembered]
+class RememberedBooks(SpecSelectorView):
+    """The book list, opened where this session's last visit left it."""
+
+    def get_query(self, request: HttpRequest) -> QueryDict:
+        # ?reset=1 forgets the saved query: the way out of one the spec
+        # refuses, since it is saved before dispatch judges it.
+        if "reset" in request.GET:
+            request.session.pop("books_query", None)
+            return QueryDict()
+        # A visit that sends anything is the query, and is remembered...
+        if request.GET:
+            request.session["books_query"] = request.GET.urlencode()
+            return request.GET
+        # ...and a bare visit reads the last one: its filters, sort and page.
+        return QueryDict(request.session.get("books_query", ""))
+
+
+urlpatterns += [
+    path(
+        "books/remembered/",
+        RememberedBooks.as_view(spec=book_list_spec, paginate_by=10),
+        name="remembered-books",
+    ),
+]
+# --8<-- [end:remembered]
 
 
 def seed(count: int = 25) -> list[Book]:

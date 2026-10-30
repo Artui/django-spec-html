@@ -131,6 +131,15 @@ class TestServing:
         assert (response.status_code, body(response)) == (201, {"id": 1})
         assert spec.service.calls[0]["tenant"] == "tenant-of-ada"
 
+    def test_a_query_key_the_spec_does_not_declare_is_refused_by_default(self, ada: Any) -> None:
+        # The JSON views keep REJECT where the list page ignores the key: a
+        # client's code chose it, not a link someone else wrote.
+        response = query(SpecView.as_view(spec=notes_spec()), ada, "/?colour=red")
+        assert (response.status_code, body(response)) == (
+            400,
+            {"colour": ["Unknown argument."]},
+        )
+
     def test_a_body_nested_past_the_decoder_is_the_clients_400(self, ada: Any) -> None:
         # The decoder raises RecursionError, which no refusal above
         # request_arguments catches, so unless it is refused there the
@@ -370,6 +379,15 @@ class TestPoolSeeds:
         )
         with pytest.raises(ImproperlyConfigured, match=f"SpecView.{hook} is async"):
             SpecView.as_view(spec=notes_spec(), **{hook: asynchronous})
+
+    def test_an_async_method_of_a_name_the_view_never_calls_is_not_a_hook(self, ada: Any) -> None:
+        # ``get_query`` is the list page's hook, not a JSON view's: a mixin
+        # carrying an async one of that name builds and serves here.
+        async def get_query(self: Any, request: Any) -> Any: ...
+
+        view = type("Mixed", (SpecView,), {"spec": notes_spec(), "get_query": get_query})
+
+        assert query(view.as_view(), ada, "/").status_code == 200
 
     def test_a_seed_from_the_request_reaches_the_permission_check(self, ada: Any) -> None:
         check = SeesTenant()
