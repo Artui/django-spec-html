@@ -23,6 +23,7 @@ from django.http import Http404, HttpRequest, QueryDict
 from django.template import TemplateSyntaxError
 from django_service_specs import (
     DEFAULT_PAGE_SIZE,
+    DEFAULT_POOL_SEEDS,
     ActionUnavailable,
     AdditionalInputRequired,
     Affordance,
@@ -64,6 +65,7 @@ from tests.dispatch.utils import (
 )
 from tests.dispatch_app.models import Note
 from tests.http.utils import FACTORY, SPEC_OR_SOURCE, signed_in
+from tests.views.utils import Fresh, SeesTenantAtEachQuestion
 
 pytestmark = pytest.mark.django_db
 
@@ -599,6 +601,71 @@ class TestTheRequest:
         response = shown_by(Tenanted, listing(selector=scoped), user=ada)
 
         assert titles(response) == ["note for tenant-of-ada"]
+
+    @pytest.mark.parametrize(
+        ("make_spec", "url_kwargs", "questions"),
+        [(listing, {}, ["class", "scope"]), (one, {"pk": 0}, ["class", "object"])],
+        ids=["a-list", "an-instance"],
+    )
+    def test_one_resolution_from_the_class_level_check_to_the_run(
+        self,
+        ada: Any,
+        notes: list[Note],
+        make_spec: Any,
+        url_kwargs: dict[str, Any],
+        questions: list[str],
+    ) -> None:
+        # The admission resolves the seeds the checks name once, and dispatch
+        # runs on them: the class-level check, the check dispatch asks and the
+        # selector each see the resolver's one object.
+        fresh = Fresh()
+        check = SeesTenantAtEachQuestion()
+        selected: list[Any] = []
+
+        def tenanted(*, tenant: Any) -> QuerySet[Note]:
+            selected.append(tenant)
+            return Note.objects.filter(owner=ada)
+
+        def tenanted_row(*, pk: int, tenant: Any) -> QuerySet[Note]:
+            return tenanted(tenant=tenant).filter(pk=pk)
+
+        routed = {name: notes[0].pk for name in url_kwargs}
+        selector = tenanted_row if routed else tenanted
+        spec = make_spec(selector=selector, permissions=[check])
+        response = shown(
+            spec,
+            user=ada,
+            url_kwargs=routed,
+            pool_seeds=DEFAULT_POOL_SEEDS.extend(tenant=fresh),
+        )
+        assert response.status_code == 200
+        assert len(fresh.resolved) == 1
+        seen = fresh.resolved[0]
+        assert [question for question, _ in check.asked] == questions
+        assert all(tenant is seen for _, tenant in check.asked)
+        assert selected == [seen]
+
+    def test_a_route_the_host_got_wrong_runs_no_resolver(self, ada: Any) -> None:
+        # The route is read before the seeds are resolved.
+        fresh = Fresh()
+        check = SeesTenantAtEachQuestion()
+        with pytest.raises(ImproperlyConfigured):
+            shown(
+                listing(permissions=[check]),
+                user=ada,
+                url_kwargs={"zone": "eu"},
+                pool_seeds=DEFAULT_POOL_SEEDS.extend(tenant=fresh),
+            )
+        assert fresh.resolved == []
+        assert check.asked == []
+
+    def test_a_resolver_refusing_the_principal_is_denied(self, ada: Any) -> None:
+        def gone() -> object:
+            raise PrincipalUnavailable("The tenant is gone.")
+
+        spec = listing(permissions=[SeesTenantAtEachQuestion()])
+        with pytest.raises(PermissionDenied, match=r"^The tenant is gone\.$"):
+            shown(spec, user=ada, pool_seeds=DEFAULT_POOL_SEEDS.extend(tenant=gone))
 
     def test_the_server_s_binding_outranks_the_client(self, ada: Any, notes: list[Note]) -> None:
         def titled(*, user: Any, title: str) -> QuerySet[Note]:

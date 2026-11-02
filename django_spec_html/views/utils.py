@@ -59,6 +59,7 @@ from django_service_specs import (
     AdditionalInputRequired,
     Affordance,
     AudienceProjection,
+    CallSeeds,
     DispatchError,
     DispatchResult,
     FieldAudience,
@@ -86,6 +87,7 @@ from django_service_specs import (
     dispatch,
     enforce_affordances,
     project_payload,
+    resolve_seeds,
     resolve_target,
     row_affordance_answers,
     unmet_operation_affordance,
@@ -387,9 +389,9 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         """
         spec = self.served_spec()
         served = self._served(request)
-        principal, grant = admitted(spec, request, url_kwargs, served)
+        principal, grant, seeds = admitted(spec, request, url_kwargs, served)
         try:
-            target, _ = _found(spec, principal, grant, url_kwargs, served, ask_scope=True)
+            target, _ = _found(spec, principal, grant, seeds, url_kwargs, served, ask_scope=True)
         except InvalidArguments as refused:
             # No post to place it on beside the form's: the route names a
             # target its reads refuse, which a post answers at 400 too.
@@ -427,18 +429,26 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         # it waits too. The grant hands dispatch the check already made, so it
         # runs once.
         served = self._served(request)
-        principal, grant = admitted(spec, request, kwargs, served)
+        principal, grant, seeds = admitted(spec, request, kwargs, served)
         # Then the target, found as the page finds it, so the form a refused
         # post re-renders shows the row - its held file, and the clear
         # checkbox beside it - and the object-level and scope checks and a
         # missing row answer before the post is read. Dispatch takes the
         # target and the grant vouching for it, so it looks nothing up again
-        # and asks no check twice. A route value the target's reads refuse is
+        # and asks no check twice, and the seeds ``admitted`` resolved, which
+        # the class-level check and the target's checks were offered, so it
+        # resolves none a check names again: from the class-level check to
+        # the service, each sees one value of each
+        # (test_one_resolution_from_the_class_level_check_to_the_run).
+        # ``pool_seeds`` stays beside them, the registry the carrier is
+        # matched against and the one every seed no check names resolves
+        # from. A ``many`` spec finds no target, and dispatch asks its scope
+        # check on the same seeds. A route value the target's reads refuse is
         # left to dispatch, whose one refusal carries it beside the form's:
         # test_a_url_kwarg_the_shape_check_refuses_is_a_prefixed_non_field_error.
         target: Any = UNSET
         with suppress(InvalidArguments):
-            target, grant = _found(spec, principal, grant, kwargs, served)
+            target, grant = _found(spec, principal, grant, seeds, kwargs, served)
         form = self._form(spec, principal, target, served, data=request.POST, files=request.FILES)
         try:
             read = self._arguments(form, spec, kwargs, served)
@@ -447,6 +457,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
                 principal=principal,
                 arguments=with_binding(spec, read, served.server),
                 grant=grant,
+                seeds=seeds,
                 pool_seeds=served.seeds,
                 unknown_arguments=self.unknown_arguments,
                 target=target,
@@ -477,7 +488,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
                 # the refusal's kind by
                 # test_a_service_s_refusal_asks_the_scope_check_once.
                 with suppress(InvalidArguments):
-                    _found(spec, principal, grant, kwargs, served, ask_scope=True)
+                    _found(spec, principal, grant, seeds, kwargs, served, ask_scope=True)
             # The outcome is decided here, once, from the one map, and the
             # wrapper is chosen only after it. A denial raised by the
             # operation, the target's checks having answered before dispatch,
@@ -1122,8 +1133,8 @@ def admitted(
     request: HttpRequest,
     url_kwargs: Mapping[str, Any],
     served: Served,
-) -> tuple[Any, Grant]:
-    """The principal and its grant, once the route and the class-level check pass.
+) -> tuple[Any, Grant, CallSeeds]:
+    """The principal, its grant and the request's seeds, once the route and the class-level check pass.
 
     The route first, as ``SpecView`` refuses it on any method: a route
     capturing a kwarg the spec does not declare is wrong for every request and
@@ -1132,24 +1143,48 @@ def admitted(
     host's too, refused by the rule ``request_arguments`` refuses it by. Then
     the principal the spec's class-level check admits, so neither the page
     nor anything the post reaches is offered to one it refuses. The check is
-    asked with the request's seeds, resolving those it names, as dispatch
-    asks it (test_the_class_level_check_is_asked_with_the_seed_it_names).
+    asked with the request's seeds, as dispatch asks it
+    (test_the_class_level_check_is_asked_with_the_seed_it_names).
+
+    The seeds are resolved here, once for the request, by the kernel's
+    ``resolve_seeds``: every registered seed a check of the spec names at any
+    of its three questions, ahead of the class-level check, as dispatch
+    resolves them. The ``CallSeeds`` it returns is handed to that check, to
+    the target's lookup and its checks, and to dispatch, so each sees one
+    value of each seed, resolved once
+    (test_one_resolution_from_the_class_level_check_to_the_run). After the
+    route, so a route the host got wrong runs no resolver
+    (test_a_route_the_host_got_wrong_runs_no_resolver); inside the ``try``,
+    so a deactivated principal or a resolver raising ``PrincipalUnavailable``
+    is the host's 403 (test_a_resolver_refusing_the_principal_is_denied).
+    Each step takes the carrier beside ``pool_seeds=served.seeds``, the
+    registry it was minted under and is matched against, and
+    ``call_context=served.call_context``, the dict it is bound to.
     """
     route_arguments(spec.parameters(), url_kwargs, route_kwargs=served.route_kwargs)
     refuse_server_owned(url_kwargs, served.route_kwargs, server_names(served.server))
     try:
         principal = request_principal(request)
-        return principal, authorize(
-            spec, principal, pool_seeds=served.seeds, call_context=served.call_context
+        seeds = resolve_seeds(
+            spec, principal=principal, pool_seeds=served.seeds, call_context=served.call_context
+        )
+        grant = authorize(
+            spec,
+            principal,
+            seeds=seeds,
+            pool_seeds=served.seeds,
+            call_context=served.call_context,
         )
     except (NotPermitted, PrincipalUnavailable) as refused:
         raise denial(refused) from refused
+    return principal, grant, seeds
 
 
 def _found(
     spec: ServiceSpec,
     principal: Any,
     grant: Grant,
+    seeds: CallSeeds,
     url_kwargs: Mapping[str, Any],
     served: Served,
     *,
@@ -1165,7 +1200,10 @@ def _found(
     typed; a value they refuse raises ``InvalidArguments``, for the caller to
     answer. The server's binding is laid over them as dispatch's arguments
     are, so a target selector reading a bound parameter finds the row by the
-    server's value, the one dispatch is then handed.
+    server's value, the one dispatch is then handed. The target's checks are
+    offered ``seeds``, the request's carrier from ``admitted``, so they
+    resolve nothing and see the values the class-level check saw and the run
+    will see (test_one_resolution_from_the_class_level_check_to_the_run).
 
     A ``many`` spec has no target: ``resolve_target`` refuses one with
     ``ImproperlyConfigured`` and dispatch refuses ``target=``, ``None``
@@ -1190,6 +1228,7 @@ def _found(
                     None,
                     grant=grant,
                     arguments=arguments,
+                    seeds=seeds,
                     pool_seeds=served.seeds,
                     call_context=served.call_context,
                 )
@@ -1199,6 +1238,7 @@ def _found(
             principal=principal,
             arguments=arguments,
             grant=grant,
+            seeds=seeds,
             pool_seeds=served.seeds,
             call_context=served.call_context,
         )
@@ -1206,7 +1246,11 @@ def _found(
         raise denial(refused) from refused
     if isinstance(resolved, DispatchResult):
         raise Http404
-    return resolved
+    # The grant ``resolve_target`` vouches for the target with; its
+    # ``.seeds`` are a new carrier holding the very values ``seeds`` does, so
+    # the caller hands dispatch the request's own.
+    target, found = resolved
+    return target, found
 
 
 def with_binding(

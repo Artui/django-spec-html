@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-11-02
+
+### Changed
+- **A request resolves the seeds its spec's checks name once, and every check
+  and the run see one value of each.** The form, formset and selector pages
+  resolve them with the kernel's `resolve_seeds` once the route is read and
+  before the class-level check, and hand its `CallSeeds` to that check, to
+  the target's lookup and its object-level or scope check, and to dispatch,
+  so from the class-level check to the service or selector nothing a check
+  names resolves again. A resolver answering a fresh object answered each of
+  those steps a different one. A seed no check names still resolves from the
+  request's seeds; the form's `form_kwargs`, the affordances' pool and a
+  validated refresh's `bind_arguments` take no carrier and resolve the seeds
+  on their own. Every seed a check
+  names now resolves ahead of the class-level check, as dispatch resolves
+  them, so a resolver for a seed only the object-level or scope check names
+  runs even for a principal the class-level check then refuses, and a
+  `PrincipalUnavailable` it raises is the 403 that principal is answered.
+  Such a resolver now runs for every principal, anonymous included: one that
+  reads something only an admitted principal has should raise
+  `PrincipalUnavailable` for anyone else, or its error reaches the host as a
+  server error where the class-level check used to answer a 403.
+- **Requires `django-service-specs>=0.23.0`**, for `resolve_seeds`, the
+  `CallSeeds` that `authorize`, `authorize_scope`, `resolve_target` and
+  `dispatch` take.
+
 ## [0.8.0] — 2026-10-30
 
 ### Added
@@ -547,7 +573,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Artui/django-spec-html/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Artui/django-spec-html/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Artui/django-spec-html/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Artui/django-spec-html/compare/v0.5.0...v0.6.0

@@ -309,4 +309,7 @@ selects the author the table shows.
 As on every page: a route's captured values are arguments, `pool_seeds` and
 `get_pool_seeds` add to the call's seeds, and `server_arguments` fills a
 parameter from the server's side, outranking a value the query string sends
-([the request](pages.md)).
+([the request](pages.md)). The seeds the spec's checks name are resolved once
+for the request, before the class-level check, and dispatch runs on them, so
+that check, the check dispatch asks of the rows and the selector see one
+value of each.

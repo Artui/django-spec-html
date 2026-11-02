@@ -71,7 +71,9 @@ class SpecSelectorView(SpecRequestBase):
 
     1. **admitted**, as every page admits it: the route checked against the
        spec's parameters, then the principal the class-level check admits,
-       a denial raised for the host's 403 or 404 page;
+       a denial raised for the host's 403 or 404 page. The seeds the
+       spec's checks name are resolved there, once, by the kernel's
+       ``resolve_seeds``, and that check is asked on them;
     2. **read** by
        [`request_arguments`][django_spec_html.http.request_arguments.request_arguments]'
        query-string branch - the URL kwargs under ``route_kwargs``, the names
@@ -82,7 +84,9 @@ class SpecSelectorView(SpecRequestBase):
        paging keys are taken off first, so ``?page=2`` never reaches the
        spec;
     3. **dispatched** by the kernel's ``dispatch``, with the grant the
-       admission made, so the class-level check is asked once;
+       admission made, so the class-level check is asked once, and the
+       seeds it resolved, so the checks dispatch asks and the selector see
+       the values the class-level check saw;
     4. **rendered** with the raw rows dispatch answered, and no
        ``present()``: a template reads the rows themselves.
 
@@ -285,7 +289,7 @@ class SpecSelectorView(SpecRequestBase):
         """The page: the spec's rows, or the refusal of the query that asked for them."""
         spec = self.served_spec()
         served = self._served(request)
-        principal, grant = admitted(spec, request, kwargs, served)
+        principal, grant, seeds = admitted(spec, request, kwargs, served)
         listing = spec.kind is SelectorKind.LIST
         read = self._query(request)
         query, page, limit = self._paging(read) if listing else (read, None, None)
@@ -320,6 +324,11 @@ class SpecSelectorView(SpecRequestBase):
                 principal=principal,
                 arguments=with_binding(spec, arguments, served.server),
                 grant=grant,
+                # The seeds ``admitted`` resolved for the class-level check,
+                # so the selector and the checks dispatch asks see the values
+                # it saw, resolved once
+                # (test_one_resolution_from_the_class_level_check_to_the_run).
+                seeds=seeds,
                 pool_seeds=served.seeds,
                 unknown_arguments=self.unknown_arguments,
                 call_context=served.call_context,
