@@ -259,14 +259,18 @@ class SpecFormView(SpecPageBase):
     ``get_pool_seeds(request)``, asked once per request, answers the seeds
     the class-level check, the target's lookup and its object-level or scope
     check, the form's ``form_kwargs``, the affordances and dispatch are
-    handed, each resolving only the seeds it names; and
+    handed; and
     ``get_server_arguments(request)`` answers the binding, laid over the
     route's arguments before the target is found and over the post's before
     dispatch. A field of the page's form the binding binds renders disabled
     with the server's value, and one it withholds disabled and empty, so the
-    post never reads it. **A named seed is resolved again at each step that
-    names it**, since a ``Grant`` carries no values: a resolver answering a
-    fresh object answers each step a different one.
+    post never reads it. **The seeds the spec's checks name are resolved
+    once per request**, by the kernel's ``resolve_seeds`` ahead of the
+    class-level check, and its ``CallSeeds`` is handed to that check, the
+    target's lookup and its checks, and dispatch, so each sees one value of
+    each. The form's ``form_kwargs`` and the affordances' pool take no
+    carrier, and resolve the seeds they name again: a resolver answering a
+    fresh object answers each of those a different one.
 
     **The page's form is the Validator's**, built with what its
     ``form_kwargs`` answers, through the kernel's ``form_keywords``: on GET,

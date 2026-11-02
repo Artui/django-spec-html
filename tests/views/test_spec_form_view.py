@@ -98,7 +98,7 @@ from tests.http.utils import (
     note_spec,
     signed_in,
 )
-from tests.views.utils import SeesTenantInTheScope
+from tests.views.utils import Fresh, SeesTenantAtEachQuestion
 
 pytestmark = pytest.mark.django_db
 
@@ -2905,71 +2905,117 @@ class TestAPartialPage:
 
 
 class TestASeedResolvedAtEachStep:
-    """Each step naming a seed resolves it again, but a post's dispatch, which runs on the lookup's."""
+    """The request resolves a seed once for its checks and its run; a step outside them again."""
 
     @pytest.mark.parametrize(
         ("form_kwargs", "on_get", "on_post"),
         [
-            (None, 3, 2),
-            (lambda *, tenant: {}, 4, 3),
+            (None, 2, 1),
+            (lambda *, tenant: {}, 3, 2),
         ],
         ids=["the-check-names-it", "the-check-and-the-form-name-it"],
     )
     def test_a_named_seed_is_resolved_at_each_step_that_names_it(
         self, ada: Any, note: Note, form_kwargs: Any, on_get: int, on_post: int
     ) -> None:
-        # GET: the class-level check, the target's lookup, the affordances'
-        # pool and the form's keywords; POST: the check, the lookup and the
-        # form's keywords, dispatch running on the seeds the lookup resolved.
-        # A resolver answering a fresh object answers each step a different
-        # one.
-        resolved: list[object] = []
-
-        def fresh() -> object:
-            resolved.append(object())
-            return resolved[-1]
-
+        # GET: the admission, whose seeds the class-level check and the
+        # target's lookup share, the affordances' pool and the form's
+        # keywords; POST: the admission, whose seeds dispatch runs on too, and
+        # the form's keywords. A resolver answering a fresh object answers
+        # each of those steps a different one.
+        fresh = Fresh()
         spec = row_spec(
             permissions=[SeesTenant()],
             validator=FormValidator(NoteTitleForm, form_kwargs=form_kwargs),
         )
         view = form_view(spec, pool_seeds=DEFAULT_POOL_SEEDS.extend(tenant=fresh))
         assert get(view, ada, pk=note.pk).status_code == 200
-        assert len(resolved) == on_get
-        resolved.clear()
+        assert len(fresh.resolved) == on_get
+        fresh.resolved.clear()
         assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
-        assert len(resolved) == on_post
-        assert len({id(each) for each in resolved}) == on_post
+        assert len(fresh.resolved) == on_post
+        assert len({id(each) for each in fresh.resolved}) == on_post
 
 
-class TestOneSeedValueFromTheTargetToTheService:
-    """The target's checks and the service see one value of each seed a check names."""
+class TestOneResolutionPerRequest:
+    """A post resolves each seed a check names once, from the class-level check to the run."""
 
     @pytest.mark.parametrize(
-        ("make_spec", "check", "routed"),
-        [(row_spec, SeesTenantOnTheRow(), True), (entry_spec, SeesTenantInTheScope(), False)],
+        ("make_spec", "routed", "questions"),
+        [(row_spec, True, ["class", "object"]), (entry_spec, False, ["class", "scope"])],
         ids=["the-object-level-check", "the-scope-check"],
     )
-    def test_the_service_runs_on_the_value_the_target_s_check_saw(
-        self, ada: Any, note: Note, make_spec: Any, check: Any, routed: bool
+    def test_one_resolution_from_the_class_level_check_to_the_run(
+        self, ada: Any, note: Note, make_spec: Any, routed: bool, questions: list[str]
     ) -> None:
-        # Dispatch is handed the seeds ``resolve_target`` offered the
-        # target's check, so it resolves none of them again: a resolver
-        # answering a fresh object answers the check and the service the
-        # same one, resolved once, the class-level check naming none.
-        resolved: list[object] = []
-
-        def fresh() -> object:
-            resolved.append(object())
-            return resolved[-1]
-
+        # ``admitted`` resolves the seeds once and hands the carrier to the
+        # class-level check, the target's lookup and its checks, and
+        # dispatch: a resolver answering a fresh object answers every one of
+        # them the same object, and is called once.
+        fresh = Fresh()
+        check = SeesTenantAtEachQuestion()
         spec = make_spec(permissions=[check])
         view = form_view(spec, pool_seeds=DEFAULT_POOL_SEEDS.extend(tenant=fresh))
         url_kwargs = {"pk": note.pk} if routed else {}
         assert post(view, ada, {"title": "Hi"}, **url_kwargs).status_code == 302
-        [seen] = check.tenants
+        assert len(fresh.resolved) == 1
+        seen = fresh.resolved[0]
+        assert [question for question, _ in check.asked] == questions
+        assert all(tenant is seen for _, tenant in check.asked)
         assert spec.service.calls[0]["tenant"] is seen
-        assert resolved == [seen]
+
+    @pytest.mark.parametrize(
+        ("attributes", "url_kwargs"),
+        [
+            ({}, {"zone": "eu"}),
+            ({"server_arguments": ServerArguments(withheld=frozenset({"count"}))}, {"count": "1"}),
+        ],
+        ids=["an-undeclared-kwarg", "a-name-the-server-answers-for"],
+    )
+    @pytest.mark.parametrize("method", ["get", "post"])
+    def test_a_route_the_host_got_wrong_runs_no_resolver(
+        self, ada: Any, attributes: dict[str, Any], url_kwargs: dict[str, str], method: str
+    ) -> None:
+        # The route is read before the seeds are resolved, so a resolver that
+        # has a cost is never paid for a page that cannot be served.
+        fresh = Fresh()
+        check = SeesTenantAtEachQuestion()
+        seeds = DEFAULT_POOL_SEEDS.extend(tenant=fresh)
+        view = paged(entry_spec(permissions=[check]), pool_seeds=seeds, **attributes).as_view()
+        with pytest.raises(ImproperlyConfigured):
+            if method == "get":
+                get(view, ada, **url_kwargs)
+            else:
+                post(view, ada, {"title": "Hi"}, **url_kwargs)
+        assert fresh.resolved == []
+        assert check.asked == []
+
+    @pytest.mark.parametrize("method", ["get", "post"])
+    @pytest.mark.parametrize(
+        "permissions",
+        [[SeesTenant()], [Refuse(), SeesTenantOnTheRow()]],
+        ids=["the-class-level-check-names-it", "only-the-object-level-check-names-it"],
+    )
+    def test_a_resolver_refusing_the_principal_is_denied(
+        self, ada: Any, note: Note, permissions: list[PermissionCheck], method: str
+    ) -> None:
+        # Resolved inside the admission, so a resolver raising
+        # ``PrincipalUnavailable`` is the host's 403 rather than an unhandled
+        # refusal. Every seed a check names resolves ahead of the class-level
+        # check, as dispatch resolves them, so one only the object-level check
+        # names is resolved, and refuses, before a class-level check that
+        # would refuse the principal is asked.
+        def gone() -> object:
+            raise PrincipalUnavailable("The tenant is gone.")
+
+        spec = row_spec(permissions=permissions)
+        view = form_view(spec, pool_seeds=DEFAULT_POOL_SEEDS.extend(tenant=gone))
+        with pytest.raises(PermissionDenied, match=r"^The tenant is gone\.$"):
+            if method == "get":
+                get(view, ada, pk=note.pk)
+            else:
+                post(view, ada, {"title": "Hi"}, pk=note.pk)
+        assert spec.service.calls == []
 
 
 class SeesTheContext(PermissionCheck):

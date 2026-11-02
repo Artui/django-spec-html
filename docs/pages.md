@@ -161,10 +161,11 @@ scope check refuses is `PermissionDenied`, and a missing row `Http404`, even
 for a post that is malformed, where dispatch's own order would refuse the
 malformed post first and re-render the page for them. Dispatch is handed the
 target and the grant `resolve_target` returns, so it looks nothing up again and
-asks no check twice, and the
-[`CallSeeds`][django_service_specs.dispatch.call_seeds.CallSeeds] it returns
-beside them, so the service runs on the values of the seeds the object-level
-or scope check was offered. One case is left to dispatch: a route value the
+asks no check twice, and the request's
+[`CallSeeds`][django_service_specs.dispatch.call_seeds.CallSeeds], so the
+service runs on the values of the seeds the class-level check and the
+object-level or scope check were offered
+([one resolution per request](#what-the-request-carries)). One case is left to dispatch: a route value the
 target's reads refuse, which comes back in dispatch's one refusal beside the
 form's own, as a non-field error. A create resolves `None` and a collection target
 its set, each handed on the same way.
@@ -529,9 +530,9 @@ do, with the same attributes and hooks, checked by the same code:
   [`form_kwargs`](#a-form-that-takes-keywords), and dispatch. Seed what the
   request carries, never the request itself. **The class-level check is asked
   with them too**: the page asks `has_permission` before it reads anything
-  else, through the kernel's `authorize`, which resolves the seeds the check
-  names, so a check reading a tenant admits the principal on the page as
-  dispatch would.
+  else, through the kernel's `authorize`, on the seeds the request resolved
+  for its checks, so a check reading a tenant admits the principal on the
+  page as dispatch would.
 - **`get_server_arguments(request)`**, `server_arguments` unless overridden,
   answers the kernel's
   [`ServerArguments`][django_service_specs.types.server_arguments.ServerArguments],
@@ -547,19 +548,30 @@ do, with the same attributes and hooks, checked by the same code:
   server's value. Anything else a template shows - the row's own fields, say -
   is what it is.
 
-**A named seed is resolved again at each step that names it**, because the
-`Grant` a step hands on carries no values, **but dispatch on a POST**, which
-runs on the seeds the target's lookup resolved. So the object-level or scope
-check and the service see one value of each seed a check names. On a POST, the
-class-level check and the target's lookup each resolve it, and the form's
-keywords too where `form_kwargs` names it; a `many` post finds no target, so
-there dispatch resolves it once more, for its scope check and the service
-alike. On a GET, the class-level check, the target's lookup and the
-affordances' pool each resolve it, and the form's keywords too where
-`form_kwargs` names it; a [target's display](#the-targets-display), where the
-page shows one, is presented with that same pool. A refused post that
-presents a display resolves it once more, for the presenter's. So a resolver answering a fresh object answers each step a
-different one. Write seed resolvers that answer the same each time.
+**The seeds the spec's checks name are resolved once per request**, after the
+route is read and before the class-level check, by the kernel's
+[`resolve_seeds`][django_service_specs.dispatch.resolve_seeds.resolve_seeds]:
+every registered seed a check names at any of its three questions, as
+dispatch resolves them. The
+[`CallSeeds`][django_service_specs.dispatch.call_seeds.CallSeeds] it returns
+is handed to the class-level check, the target's lookup and its object-level
+or scope check, and dispatch, so from the class-level check to the service
+each sees one value of each seed. That holds on the form page, on the
+[formset page](formsets.md), whose scope check dispatch asks on the same
+seeds, and on the [selector page](selectors.md), whose selector reads them.
+A route the host got wrong is refused before any resolver runs, and a
+resolver raising `PrincipalUnavailable` is the host's 403. Since a seed only
+the object-level or scope check names is resolved ahead of the class-level
+check too, its resolver runs for a principal that check then refuses, as it
+does under dispatch.
+
+Two steps take no carrier and resolve the seeds again: the form's keywords,
+where `form_kwargs` names one, and the affordances' pool on a GET, which a
+[target's display](#the-targets-display), where the page shows one, is
+presented with too. A refused post that presents a display resolves them
+once more, for the presenter's. So a resolver answering a fresh object
+answers each of those steps a different one. Write seed resolvers that
+answer the same each time.
 
 **One call context per request.** The page creates one plain dict for each
 request, starting with `request`, this request, and `view`, this page, and

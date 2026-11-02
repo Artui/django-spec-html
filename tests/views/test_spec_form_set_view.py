@@ -48,7 +48,7 @@ from django_spec_html.views.utils import SpecPageBase
 from tests.adapter_app.models import Author
 from tests.dispatch.utils import OPEN, Record, Refuse, Titled, make_user
 from tests.http.utils import FACTORY, Handed, handed_spec, signed_in
-from tests.views.utils import SeesTenantInTheScope
+from tests.views.utils import Fresh, SeesTenantAtEachQuestion
 
 pytestmark = pytest.mark.django_db
 
@@ -851,24 +851,37 @@ class TestASuccess:
         assert sent(response) == ["One, Two"]
 
 
-class TestASeedOnAPost:
-    def test_dispatch_resolves_the_seeds_the_scope_check_names(self, ada: Any) -> None:
-        # A many call finds no target, so the post hands dispatch no seeds of
-        # a lookup's, and dispatch resolves them once, for its own scope
-        # check and the run alike.
-        resolved: list[object] = []
-
-        def fresh() -> object:
-            resolved.append(object())
-            return resolved[-1]
-
-        check = SeesTenantInTheScope()
+class TestOneResolutionPerRequest:
+    def test_one_resolution_from_the_class_level_check_to_the_run(self, ada: Any) -> None:
+        # A many call finds no target, so dispatch asks its scope check: on
+        # the seeds the admission resolved for the class-level check, as the
+        # run is, so the resolver is called once and every step sees its one
+        # object.
+        fresh = Fresh()
+        check = SeesTenantAtEachQuestion()
         spec = many_spec(permissions=[check])
         view = formset_view(spec, pool_seeds=DEFAULT_POOL_SEEDS.extend(tenant=fresh))
         assert post(view, ada, posted({"title": "One"})).status_code == 302
-        [seen] = check.tenants
+        assert len(fresh.resolved) == 1
+        seen = fresh.resolved[0]
+        assert [question for question, _ in check.asked] == ["class", "scope"]
+        assert all(tenant is seen for _, tenant in check.asked)
         assert spec.service.calls[0]["tenant"] is seen
-        assert resolved == [seen]
+
+    def test_a_refused_post_asks_the_scope_check_again_on_the_same_seeds(self, ada: Any) -> None:
+        # A post the page's reading refuses leaves dispatch's scope check
+        # unasked, so the page asks it, with the admission's seeds too.
+        fresh = Fresh()
+        check = SeesTenantAtEachQuestion()
+        view = formset_view(
+            many_spec(AuthoredRow, permissions=[check]),
+            pool_seeds=DEFAULT_POOL_SEEDS.extend(tenant=fresh),
+        )
+        assert post(view, ada, posted({"author": "x"})).status_code == 400
+        assert len(fresh.resolved) == 1
+        seen = fresh.resolved[0]
+        assert [question for question, _ in check.asked] == ["class", "scope"]
+        assert all(tenant is seen for _, tenant in check.asked)
 
 
 def returning(spec: ServiceSpec, **attributes: Any) -> Any:

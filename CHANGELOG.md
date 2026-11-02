@@ -10,17 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.9.0] — 2026-11-02
 
 ### Changed
-- **A post's object-level or scope check and its service see one value of
-  each seed a check names.** The post hands dispatch the kernel's `CallSeeds`
-  that `resolve_target` returns beside the target and the grant, so dispatch
-  runs on the values the target's checks were offered rather than resolving
-  them again; a seed no check names still resolves from the request's seeds.
-  A resolver answering a fresh object answered the check one and the service
-  another. The class-level check still resolves its seeds on its own, and a
-  `many` post, which finds no target, and a post whose route value the
-  target's reads refuse leave them to dispatch as before.
-- **Requires `django-service-specs>=0.23.0`**, for `resolve_target`'s
-  `CallSeeds` and `dispatch(seeds=)`.
+- **A request resolves the seeds its spec's checks name once, and every check
+  and the run see one value of each.** The form, formset and selector pages
+  resolve them with the kernel's `resolve_seeds` once the route is read and
+  before the class-level check, and hand its `CallSeeds` to that check, to
+  the target's lookup and its object-level or scope check, and to dispatch,
+  so from the class-level check to the service or selector nothing a check
+  names resolves again. A resolver answering a fresh object answered each of
+  those steps a different one. A seed no check names still resolves from the
+  request's seeds; the form's `form_kwargs` and the affordances' pool take
+  no carrier and resolve the seeds they name on their own. Every seed a check
+  names now resolves ahead of the class-level check, as dispatch resolves
+  them, so a resolver for a seed only the object-level or scope check names
+  runs even for a principal the class-level check then refuses, and a
+  `PrincipalUnavailable` it raises is the 403 that principal is answered.
+- **Requires `django-service-specs>=0.23.0`**, for `resolve_seeds`, the
+  `CallSeeds` that `authorize`, `authorize_scope`, `resolve_target` and
+  `dispatch` take.
 
 ## [0.8.0] — 2026-10-30
 
