@@ -1304,7 +1304,10 @@ selects the author the table shows.</p>
 <p>As on every page: a route's captured values are arguments, <code>pool_seeds</code> and
 <code>get_pool_seeds</code> add to the call's seeds, and <code>server_arguments</code> fills a
 parameter from the server's side, outranking a value the query string sends
-(<a href="../pages/">the request</a>).</p>
+(<a href="../pages/">the request</a>). The seeds the spec's checks name are resolved once
+for the request, before the class-level check, and dispatch runs on them, so
+that check, the check dispatch asks of the rows and the selector see one
+value of each.</p>
 
 
 

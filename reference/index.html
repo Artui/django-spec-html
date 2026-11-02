@@ -2949,14 +2949,19 @@ a confirmation page and a post that does not commit send none.</p>
 <code>get_pool_seeds(request)</code>, asked once per request, answers the seeds
 the class-level check, the target's lookup and its object-level or scope
 check, the form's <code>form_kwargs</code>, the affordances and dispatch are
-handed, each resolving only the seeds it names; and
+handed; and
 <code>get_server_arguments(request)</code> answers the binding, laid over the
 route's arguments before the target is found and over the post's before
 dispatch. A field of the page's form the binding binds renders disabled
 with the server's value, and one it withholds disabled and empty, so the
-post never reads it. <strong>A named seed is resolved again at each step that
-names it</strong>, since a <code>Grant</code> carries no values: a resolver answering a
-fresh object answers each step a different one.</p>
+post never reads it. <strong>The seeds the spec's checks name are resolved
+once per request</strong>, by the kernel's <code>resolve_seeds</code> ahead of the
+class-level check, and its <code>CallSeeds</code> is handed to that check, the
+target's lookup and its checks, and dispatch, so each sees one value of
+each. The form's <code>form_kwargs</code>, the affordances' pool and a validated
+refresh's <code>bind_arguments</code> take no carrier, and resolve the seeds
+again: a resolver answering a fresh object answers each of those a
+different one.</p>
 <p><strong>The page's form is the Validator's</strong>, built with what its
 <code>form_kwargs</code> answers, through the kernel's <code>form_keywords</code>: on GET,
 on a refused post and for its own validation below, with the principal,
@@ -5240,7 +5245,9 @@ methods it answers; anything else is 405. A request is:</p>
 <ol>
 <li><strong>admitted</strong>, as every page admits it: the route checked against the
    spec's parameters, then the principal the class-level check admits,
-   a denial raised for the host's 403 or 404 page;</li>
+   a denial raised for the host's 403 or 404 page. The seeds the
+   spec's checks name are resolved there, once, by the kernel's
+   <code>resolve_seeds</code>, and that check is asked on them;</li>
 <li><strong>read</strong> by
    <a class="autorefs autorefs-internal" title="request_arguments" href="#django_spec_html.http.request_arguments.request_arguments"><code>request_arguments</code></a>'
    query-string branch - the URL kwargs under <code>route_kwargs</code>, the names
@@ -5251,7 +5258,9 @@ methods it answers; anything else is 405. A request is:</p>
    paging keys are taken off first, so <code>?page=2</code> never reaches the
    spec;</li>
 <li><strong>dispatched</strong> by the kernel's <code>dispatch</code>, with the grant the
-   admission made, so the class-level check is asked once;</li>
+   admission made, so the class-level check is asked once, and the
+   seeds it resolved, so the checks dispatch asks and the selector see
+   the values the class-level check saw;</li>
 <li><strong>rendered</strong> with the raw rows dispatch answered, and no
    <code>present()</code>: a template reads the rows themselves.</li>
 </ol>
