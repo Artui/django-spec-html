@@ -563,12 +563,15 @@ A route the host got wrong is refused before any resolver runs, and a
 resolver raising `PrincipalUnavailable` is the host's 403. Since a seed only
 the object-level or scope check names is resolved ahead of the class-level
 check too, its resolver runs for a principal that check then refuses, as it
-does under dispatch.
+does under dispatch, and for every principal, anonymous included. A resolver
+that reads something only an admitted principal has should raise
+`PrincipalUnavailable` for anyone else; any other error it raises reaches the
+host as a server error, where the class-level check used to answer a 403.
 
 Three steps take no carrier and resolve the seeds again: the form's keywords,
-where `form_kwargs` names one; the affordances' pool on a GET, which a
-[target's display](#the-targets-display), where the page shows one, is
-presented with too; and, on a post that does not commit under
+where `form_kwargs` names one; the affordances' pool on a GET and on a post
+that does not commit, which a [target's display](#the-targets-display), where
+the page shows one, is presented with too; and, on a post that does not commit under
 `validate_on_refresh`, the kernel's `bind_arguments`. A refused post that
 presents a display resolves them once more, for the presenter's. So a resolver answering a fresh object
 answers each of those steps a different one. Write seed resolvers that

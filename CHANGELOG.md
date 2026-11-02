@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   them, so a resolver for a seed only the object-level or scope check names
   runs even for a principal the class-level check then refuses, and a
   `PrincipalUnavailable` it raises is the 403 that principal is answered.
+  Such a resolver now runs for every principal, anonymous included: one that
+  reads something only an admitted principal has should raise
+  `PrincipalUnavailable` for anyone else, or its error reaches the host as a
+  server error where the class-level check used to answer a 403.
 - **Requires `django-service-specs>=0.23.0`**, for `resolve_seeds`, the
   `CallSeeds` that `authorize`, `authorize_scope`, `resolve_target` and
   `dispatch` take.
