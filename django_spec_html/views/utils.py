@@ -59,6 +59,7 @@ from django_service_specs import (
     AdditionalInputRequired,
     Affordance,
     AudienceProjection,
+    CallSeeds,
     DispatchError,
     DispatchResult,
     FieldAudience,
@@ -389,7 +390,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         served = self._served(request)
         principal, grant = admitted(spec, request, url_kwargs, served)
         try:
-            target, _ = _found(spec, principal, grant, url_kwargs, served, ask_scope=True)
+            target, _, _ = _found(spec, principal, grant, url_kwargs, served, ask_scope=True)
         except InvalidArguments as refused:
             # No post to place it on beside the form's: the route names a
             # target its reads refuse, which a post answers at 400 too.
@@ -433,12 +434,21 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         # checkbox beside it - and the object-level and scope checks and a
         # missing row answer before the post is read. Dispatch takes the
         # target and the grant vouching for it, so it looks nothing up again
-        # and asks no check twice. A route value the target's reads refuse is
-        # left to dispatch, whose one refusal carries it beside the form's:
+        # and asks no check twice, and the seeds those checks were offered,
+        # so it resolves none a check names again: the object-level or scope
+        # check and the service see one value of each
+        # (test_the_service_runs_on_the_value_the_target_s_check_saw). The
+        # class-level check, asked by ``admitted`` above, resolves its own.
+        # ``pool_seeds`` stays beside them, for every seed no check names.
+        # A ``many`` spec finds no target and so carries no seeds, and
+        # dispatch resolves them as it asks the scope check. A route value
+        # the target's reads refuse is left to dispatch, with no seeds
+        # either, whose one refusal carries it beside the form's:
         # test_a_url_kwarg_the_shape_check_refuses_is_a_prefixed_non_field_error.
         target: Any = UNSET
+        seeds: CallSeeds | None = None
         with suppress(InvalidArguments):
-            target, grant = _found(spec, principal, grant, kwargs, served)
+            target, grant, seeds = _found(spec, principal, grant, kwargs, served)
         form = self._form(spec, principal, target, served, data=request.POST, files=request.FILES)
         try:
             read = self._arguments(form, spec, kwargs, served)
@@ -447,6 +457,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
                 principal=principal,
                 arguments=with_binding(spec, read, served.server),
                 grant=grant,
+                seeds=seeds,
                 pool_seeds=served.seeds,
                 unknown_arguments=self.unknown_arguments,
                 target=target,
@@ -1154,8 +1165,8 @@ def _found(
     served: Served,
     *,
     ask_scope: bool = False,
-) -> tuple[Any, Grant]:
-    """The row, set or ``None`` the post acts on, and the grant vouching for it.
+) -> tuple[Any, Grant, CallSeeds | None]:
+    """The row, set or ``None`` the post acts on, the grant vouching for it, and its seeds.
 
     Found by ``resolve_target`` as dispatch would find it, and refused as
     dispatch would refuse it, with Django's exceptions for the host's 403 and
@@ -1165,12 +1176,15 @@ def _found(
     typed; a value they refuse raises ``InvalidArguments``, for the caller to
     answer. The server's binding is laid over them as dispatch's arguments
     are, so a target selector reading a bound parameter finds the row by the
-    server's value, the one dispatch is then handed.
+    server's value, the one dispatch is then handed. The seeds are the
+    ``CallSeeds`` the target's checks were offered, for ``dispatch(seeds=)``,
+    so the run sees the values those checks saw
+    (test_the_service_runs_on_the_value_the_target_s_check_saw).
 
     A ``many`` spec has no target: ``resolve_target`` refuses one with
     ``ImproperlyConfigured`` and dispatch refuses ``target=``, ``None``
     included, asking the scope check of ``None`` itself on every call. So it
-    is ``UNSET`` once the route is read, and the scope check is asked of
+    is ``UNSET``, with no seeds, once the route is read, and the scope check is asked of
     ``None`` here only when ``ask_scope`` says dispatch will not ask it: on
     the page, so a principal the post would refuse is never offered it, and
     on a post the page's own reading refused; any other post leaves it to
@@ -1193,7 +1207,7 @@ def _found(
                     pool_seeds=served.seeds,
                     call_context=served.call_context,
                 )
-            return UNSET, grant
+            return UNSET, grant, None
         resolved = resolve_target(
             spec,
             principal=principal,
@@ -1206,7 +1220,8 @@ def _found(
         raise denial(refused) from refused
     if isinstance(resolved, DispatchResult):
         raise Http404
-    return resolved
+    target, found = resolved
+    return target, found, resolved.seeds
 
 
 def with_binding(

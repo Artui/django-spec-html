@@ -161,9 +161,12 @@ scope check refuses is `PermissionDenied`, and a missing row `Http404`, even
 for a post that is malformed, where dispatch's own order would refuse the
 malformed post first and re-render the page for them. Dispatch is handed the
 target and the grant `resolve_target` returns, so it looks nothing up again and
-asks no check twice. One case is left to dispatch: a route value the target's
-reads refuse, which comes back in dispatch's one refusal beside the form's
-own, as a non-field error. A create resolves `None` and a collection target
+asks no check twice, and the
+[`CallSeeds`][django_service_specs.dispatch.call_seeds.CallSeeds] it returns
+beside them, so the service runs on the values of the seeds the object-level
+or scope check was offered. One case is left to dispatch: a route value the
+target's reads refuse, which comes back in dispatch's one refusal beside the
+form's own, as a non-field error. A create resolves `None` and a collection target
 its set, each handed on the same way.
 
 **POST** then binds the form to the post and reads the arguments **through
@@ -545,10 +548,13 @@ do, with the same attributes and hooks, checked by the same code:
   is what it is.
 
 **A named seed is resolved again at each step that names it**, because the
-`Grant` a step hands on carries no values. On a POST, the class-level check,
-the target's lookup and dispatch each resolve it, and the form's keywords too
-where `form_kwargs` names it; on a GET, the affordances' pool takes
-dispatch's place, and a [target's display](#the-targets-display), where the
+`Grant` a step hands on carries no values, **but dispatch on a POST**, which
+runs on the seeds the target's lookup resolved. So the object-level or scope
+check and the service see one value of each seed a check names. On a POST, the
+class-level check and the target's lookup each resolve it, and the form's
+keywords too where `form_kwargs` names it; a `many` post finds no target, so
+there dispatch resolves it once more, for its scope check and the service
+alike. On a GET, the affordances' pool takes dispatch's place, and a [target's display](#the-targets-display), where the
 page shows one, is presented with that same pool. A refused post that
 presents a display resolves it once more, for the presenter's. So a resolver answering a fresh object answers each step a
 different one. Write seed resolvers that answer the same each time.

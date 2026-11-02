@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -461,16 +461,16 @@ wheels = [
 
 [[package]]
 name = "django-service-specs"
-version = "0.21.1"
+version = "0.23.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django", version = "5.2.18", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "django", version = "6.1.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d8/55/48f24e1005b5855ff5410551083b8abb1edd9d2dd65f30731641863287cf/django_service_specs-0.21.1.tar.gz", hash = "sha256:d608c3d1b68af054070915cb2e842fae50a176c0bb5ed59f81be0641a35dc965", size = 1088189, upload-time = "2026-10-30T10:21:51.307Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/42/f0/a381dcfc31a187c5c828b4352d9a4ca6ceaba9850e0d8f53832a7145c1cc/django_service_specs-0.23.0.tar.gz", hash = "sha256:66ae717fb11544f3e682cf4acfaede870e9cdb5c8cce90a12aba991a78184e29", size = 1158203, upload-time = "2026-11-02T15:05:51.407Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/57/bb/b62d947e9068f750135b5f725c0b558c24a6b6409c2aa7b9ce0ae5ce850e/django_service_specs-0.21.1-py3-none-any.whl", hash = "sha256:6b5bf3757d9692eb0275d3f6ed2b1bab92f71276bbf1734d41250308cba47571", size = 480774, upload-time = "2026-10-30T10:21:49.52Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/55/9394ae7e94906b4d748a00ebf47771a652f5d7ec6fbad7a144e3126e860d/django_service_specs-0.23.0-py3-none-any.whl", hash = "sha256:47444d917333f75bb8d2d7bf2cbe6e6c44ce43acd888490faad1b840d79b4d73", size = 509812, upload-time = "2026-11-02T15:05:49.728Z" },
 ]
 
 [package.optional-dependencies]
@@ -518,7 +518,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=4.2" },
-    { name = "django-service-specs", specifier = ">=0.21.1" },
+    { name = "django-service-specs", specifier = ">=0.23.0" },
 ]
 
 [package.metadata.requires-dev]

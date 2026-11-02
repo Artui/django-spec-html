@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **A post's object-level or scope check and its service see one value of
+  each seed a check names.** The post hands dispatch the kernel's `CallSeeds`
+  that `resolve_target` returns beside the target and the grant, so dispatch
+  runs on the values the target's checks were offered rather than resolving
+  them again; a seed no check names still resolves from the request's seeds.
+  A resolver answering a fresh object answered the check one and the service
+  another. The class-level check still resolves its seeds on its own, and a
+  `many` post, which finds no target, and a post whose route value the
+  target's reads refuse leave them to dispatch as before.
+- **Requires `django-service-specs>=0.23.0`**, for `resolve_target`'s
+  `CallSeeds` and `dispatch(seeds=)`.
+
 ## [0.8.0] — 2026-10-30
 
 ### Added

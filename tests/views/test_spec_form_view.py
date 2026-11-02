@@ -2904,13 +2904,13 @@ class TestAPartialPage:
 
 
 class TestASeedResolvedAtEachStep:
-    """A ``Grant`` carries no values, so each step naming a seed resolves it again."""
+    """Each step naming a seed resolves it again, but a post's dispatch, which runs on the lookup's."""
 
     @pytest.mark.parametrize(
         ("form_kwargs", "on_get", "on_post"),
         [
-            (None, 3, 3),
-            (lambda *, tenant: {}, 4, 4),
+            (None, 3, 2),
+            (lambda *, tenant: {}, 4, 3),
         ],
         ids=["the-check-names-it", "the-check-and-the-form-name-it"],
     )
@@ -2918,9 +2918,10 @@ class TestASeedResolvedAtEachStep:
         self, ada: Any, note: Note, form_kwargs: Any, on_get: int, on_post: int
     ) -> None:
         # GET: the class-level check, the target's lookup, the affordances'
-        # pool and the form's keywords; POST: the check, the lookup, the
-        # form's keywords and dispatch. A resolver answering a fresh object
-        # answers each step a different one.
+        # pool and the form's keywords; POST: the check, the lookup and the
+        # form's keywords, dispatch running on the seeds the lookup resolved.
+        # A resolver answering a fresh object answers each step a different
+        # one.
         resolved: list[object] = []
 
         def fresh() -> object:
@@ -2938,6 +2939,50 @@ class TestASeedResolvedAtEachStep:
         assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
         assert len(resolved) == on_post
         assert len({id(each) for each in resolved}) == on_post
+
+
+class SeesTenantInTheScope(PermissionCheck):
+    """Admits every principal and scope, recording the ``tenant`` seed its scope check was asked with."""
+
+    def __init__(self) -> None:
+        self.tenants: list[Any] = []
+
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        return True
+
+    def has_scope_permission(self, principal: Any, spec: Any, scope: Any, *, tenant: Any) -> bool:
+        self.tenants.append(tenant)
+        return True
+
+
+class TestOneSeedValueFromTheTargetToTheService:
+    """The target's checks and the service see one value of each seed a check names."""
+
+    @pytest.mark.parametrize(
+        ("make_spec", "check", "routed"),
+        [(row_spec, SeesTenantOnTheRow(), True), (entry_spec, SeesTenantInTheScope(), False)],
+        ids=["the-object-level-check", "the-scope-check"],
+    )
+    def test_the_service_runs_on_the_value_the_target_s_check_saw(
+        self, ada: Any, note: Note, make_spec: Any, check: Any, routed: bool
+    ) -> None:
+        # Dispatch is handed the seeds ``resolve_target`` offered the
+        # target's check, so it resolves none of them again: a resolver
+        # answering a fresh object answers the check and the service the
+        # same one, resolved once, the class-level check naming none.
+        resolved: list[object] = []
+
+        def fresh() -> object:
+            resolved.append(object())
+            return resolved[-1]
+
+        spec = make_spec(permissions=[check])
+        view = form_view(spec, pool_seeds=DEFAULT_POOL_SEEDS.extend(tenant=fresh))
+        url_kwargs = {"pk": note.pk} if routed else {}
+        assert post(view, ada, {"title": "Hi"}, **url_kwargs).status_code == 302
+        [seen] = check.tenants
+        assert spec.service.calls[0]["tenant"] is seen
+        assert resolved == [seen]
 
 
 class SeesTheContext(PermissionCheck):

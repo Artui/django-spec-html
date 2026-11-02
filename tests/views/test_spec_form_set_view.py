@@ -23,6 +23,7 @@ from django.http import HttpResponse
 from django.test import Client
 from django.urls import path
 from django_service_specs import (
+    DEFAULT_POOL_SEEDS,
     NON_FIELD_ERRORS,
     AdditionalInputRequired,
     DataclassPresenter,
@@ -847,6 +848,40 @@ class TestASuccess:
         view = Named.as_view(spec=many_spec(), template_name=TEMPLATE, success_url="/done/")
         response = stack(view, ada, posted({"title": "One"}, {"title": "Two"}))
         assert sent(response) == ["One, Two"]
+
+
+class SeesTenantInTheScope(PermissionCheck):
+    """Admits every principal and scope, recording the ``tenant`` seed its scope check was asked with."""
+
+    def __init__(self) -> None:
+        self.tenants: list[Any] = []
+
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        return True
+
+    def has_scope_permission(self, principal: Any, spec: Any, scope: Any, *, tenant: Any) -> bool:
+        self.tenants.append(tenant)
+        return True
+
+
+class TestASeedOnAPost:
+    def test_dispatch_resolves_the_seeds_the_scope_check_names(self, ada: Any) -> None:
+        # A many call finds no target, so the post hands dispatch no seeds of
+        # a lookup's, and dispatch resolves them once, for its own scope
+        # check and the run alike.
+        resolved: list[object] = []
+
+        def fresh() -> object:
+            resolved.append(object())
+            return resolved[-1]
+
+        check = SeesTenantInTheScope()
+        spec = many_spec(permissions=[check])
+        view = formset_view(spec, pool_seeds=DEFAULT_POOL_SEEDS.extend(tenant=fresh))
+        assert post(view, ada, posted({"title": "One"})).status_code == 302
+        [seen] = check.tenants
+        assert spec.service.calls[0]["tenant"] is seen
+        assert resolved == [seen]
 
 
 def returning(spec: ServiceSpec, **attributes: Any) -> Any:

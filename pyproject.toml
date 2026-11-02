@@ -40,7 +40,11 @@ dependencies = [
     # kernel's specs, so this package cannot support a Django the kernel does
     # not.
     "django>=4.2",
-    # Validating a refresh needs 0.21.0: ``bind_arguments`` takes the call's
+    # A post needs 0.23.0: ``resolve_target`` hands back the ``CallSeeds`` the
+    # target's checks were offered, and ``dispatch`` takes them as ``seeds=``,
+    # so the service runs on the values of the seeds those checks saw; below
+    # it ``resolve_target`` returns a bare pair and ``dispatch`` refuses the
+    # keyword. Validating a refresh needs 0.21.0: ``bind_arguments`` takes the call's
     # ``pool_seeds`` and binds as dispatch binds with them, so a form whose
     # constructor keywords name a seed is built with it rather than raising
     # ``TypeError``; and a refusal's ``default_message`` is translated where it
@@ -70,7 +74,7 @@ dependencies = [
     # the kernel's root also exported its own copy of the ten JSON names, so
     # one process held two ``SpecView`` classes. Every other name the moved
     # code reads at the kernel's root is public from 0.10.0.
-    "django-service-specs>=0.21.1",
+    "django-service-specs>=0.23.0",
 ]
 
 [project.urls]
