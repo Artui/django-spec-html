@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-11-02
+
 ### Changed
 - **A post's object-level or scope check and its service see one value of
   each seed a check names.** The post hands dispatch the kernel's `CallSeeds`
@@ -560,7 +562,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Artui/django-spec-html/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Artui/django-spec-html/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Artui/django-spec-html/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Artui/django-spec-html/compare/v0.5.0...v0.6.0
