@@ -18,8 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so from the class-level check to the service or selector nothing a check
   names resolves again. A resolver answering a fresh object answered each of
   those steps a different one. A seed no check names still resolves from the
-  request's seeds; the form's `form_kwargs` and the affordances' pool take
-  no carrier and resolve the seeds they name on their own. Every seed a check
+  request's seeds; the form's `form_kwargs`, the affordances' pool and a
+  validated refresh's `bind_arguments` take no carrier and resolve the seeds
+  on their own. Every seed a check
   names now resolves ahead of the class-level check, as dispatch resolves
   them, so a resolver for a seed only the object-level or scope check names
   runs even for a principal the class-level check then refuses, and a

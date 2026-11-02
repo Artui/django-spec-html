@@ -2936,6 +2936,20 @@ class TestASeedResolvedAtEachStep:
         assert len(fresh.resolved) == on_post
         assert len({id(each) for each in fresh.resolved}) == on_post
 
+    @pytest.mark.parametrize(("validate", "more"), [(False, 0), (True, 1)])
+    def test_a_validated_refresh_resolves_it_once_more_to_bind(
+        self, ada: Any, note: Note, validate: bool, more: int
+    ) -> None:
+        # A post that does not commit is the page again: the admission and
+        # the affordances' pool. Under ``validate_on_refresh`` the kernel's
+        # ``bind_arguments``, which takes no carrier, resolves it once more.
+        fresh = Fresh()
+        spec = row_spec(permissions=[SeesTenant()])
+        seeds = DEFAULT_POOL_SEEDS.extend(tenant=fresh)
+        view = checking(spec, pool_seeds=seeds, validate_on_refresh=validate)
+        assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 200
+        assert len(fresh.resolved) == 2 + more
+
 
 class TestOneResolutionPerRequest:
     """A post resolves each seed a check names once, from the class-level check to the run."""

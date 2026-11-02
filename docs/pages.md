@@ -565,11 +565,12 @@ the object-level or scope check names is resolved ahead of the class-level
 check too, its resolver runs for a principal that check then refuses, as it
 does under dispatch.
 
-Two steps take no carrier and resolve the seeds again: the form's keywords,
-where `form_kwargs` names one, and the affordances' pool on a GET, which a
+Three steps take no carrier and resolve the seeds again: the form's keywords,
+where `form_kwargs` names one; the affordances' pool on a GET, which a
 [target's display](#the-targets-display), where the page shows one, is
-presented with too. A refused post that presents a display resolves them
-once more, for the presenter's. So a resolver answering a fresh object
+presented with too; and, on a post that does not commit under
+`validate_on_refresh`, the kernel's `bind_arguments`. A refused post that
+presents a display resolves them once more, for the presenter's. So a resolver answering a fresh object
 answers each of those steps a different one. Write seed resolvers that
 answer the same each time.
 

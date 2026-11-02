@@ -268,9 +268,10 @@ class SpecFormView(SpecPageBase):
     once per request**, by the kernel's ``resolve_seeds`` ahead of the
     class-level check, and its ``CallSeeds`` is handed to that check, the
     target's lookup and its checks, and dispatch, so each sees one value of
-    each. The form's ``form_kwargs`` and the affordances' pool take no
-    carrier, and resolve the seeds they name again: a resolver answering a
-    fresh object answers each of those a different one.
+    each. The form's ``form_kwargs``, the affordances' pool and a validated
+    refresh's ``bind_arguments`` take no carrier, and resolve the seeds
+    again: a resolver answering a fresh object answers each of those a
+    different one.
 
     **The page's form is the Validator's**, built with what its
     ``form_kwargs`` answers, through the kernel's ``form_keywords``: on GET,
