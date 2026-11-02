@@ -554,7 +554,9 @@ check and the service see one value of each seed a check names. On a POST, the
 class-level check and the target's lookup each resolve it, and the form's
 keywords too where `form_kwargs` names it; a `many` post finds no target, so
 there dispatch resolves it once more, for its scope check and the service
-alike. On a GET, the affordances' pool takes dispatch's place, and a [target's display](#the-targets-display), where the
+alike. On a GET, the class-level check, the target's lookup and the
+affordances' pool each resolve it, and the form's keywords too where
+`form_kwargs` names it; a [target's display](#the-targets-display), where the
 page shows one, is presented with that same pool. A refused post that
 presents a display resolves it once more, for the presenter's. So a resolver answering a fresh object answers each step a
 different one. Write seed resolvers that answer the same each time.

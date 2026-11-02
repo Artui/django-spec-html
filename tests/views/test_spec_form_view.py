@@ -98,6 +98,7 @@ from tests.http.utils import (
     note_spec,
     signed_in,
 )
+from tests.views.utils import SeesTenantInTheScope
 
 pytestmark = pytest.mark.django_db
 
@@ -2939,20 +2940,6 @@ class TestASeedResolvedAtEachStep:
         assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
         assert len(resolved) == on_post
         assert len({id(each) for each in resolved}) == on_post
-
-
-class SeesTenantInTheScope(PermissionCheck):
-    """Admits every principal and scope, recording the ``tenant`` seed its scope check was asked with."""
-
-    def __init__(self) -> None:
-        self.tenants: list[Any] = []
-
-    def has_permission(self, principal: Any, spec: Any) -> bool:
-        return True
-
-    def has_scope_permission(self, principal: Any, spec: Any, scope: Any, *, tenant: Any) -> bool:
-        self.tenants.append(tenant)
-        return True
 
 
 class TestOneSeedValueFromTheTargetToTheService:

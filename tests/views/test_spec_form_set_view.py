@@ -48,6 +48,7 @@ from django_spec_html.views.utils import SpecPageBase
 from tests.adapter_app.models import Author
 from tests.dispatch.utils import OPEN, Record, Refuse, Titled, make_user
 from tests.http.utils import FACTORY, Handed, handed_spec, signed_in
+from tests.views.utils import SeesTenantInTheScope
 
 pytestmark = pytest.mark.django_db
 
@@ -848,20 +849,6 @@ class TestASuccess:
         view = Named.as_view(spec=many_spec(), template_name=TEMPLATE, success_url="/done/")
         response = stack(view, ada, posted({"title": "One"}, {"title": "Two"}))
         assert sent(response) == ["One, Two"]
-
-
-class SeesTenantInTheScope(PermissionCheck):
-    """Admits every principal and scope, recording the ``tenant`` seed its scope check was asked with."""
-
-    def __init__(self) -> None:
-        self.tenants: list[Any] = []
-
-    def has_permission(self, principal: Any, spec: Any) -> bool:
-        return True
-
-    def has_scope_permission(self, principal: Any, spec: Any, scope: Any, *, tenant: Any) -> bool:
-        self.tenants.append(tenant)
-        return True
 
 
 class TestASeedOnAPost:
