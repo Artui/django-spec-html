@@ -584,7 +584,10 @@ class-level check, the target's lookup and its object-level or scope check,
 the affordances, the form's `form_kwargs` and dispatch. The spec's parameters
 are read with it too, for the route's check and the post's reading, a validated
 refresh's included, so a Validator whose `parameters` declares `call_context`
-declares to the page what it declares to dispatch. What `as_view()` checks runs
+declares to the page's reading what it declares to dispatch. The kernel's own
+helpers the page calls around it - applying the server's binding, checking an
+asked question's keys - still read the parameters with no context. What
+`as_view()` checks runs
 with no request, and reads them with no context: `route_kwargs`, and a list
 page's paging keys and table order field. So a check, a
 condition, `form_kwargs` or the service declaring
@@ -931,10 +934,11 @@ books" shows every error the form has.
   refusal, since validated whole it would call every blank field required.
 - **`HX-Trigger-Name` decides which errors.** Where it names one of the
   form's fields, as the field posts it - its `html_name` - only that
-  field's errors are shown, the shape check's and the form's own alike, and no
-  non-field error: a person has not reached the rest of the form yet. Every other refresh - no header, the form's own
-  name, a refresh button, one part of a multi-widget field such as `when_0` -
-  shows the whole refusal.
+  field's errors are shown, the shape check's and the form's own alike, and
+  no non-field error: a person has not reached the rest of the form yet.
+  Every other refresh - no header, the form's own name, a refresh button,
+  one part of a multi-widget field such as `when_0` - shows every error, the
+  refusal's and the form's own.
 - **No provider runs.** `bind_arguments` runs neither the spec's
   `input_data` nor a `kwargs` provider, and that is the one difference in how
   the post is bound. A field `input_data` fills is judged as posted: a
