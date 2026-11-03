@@ -470,7 +470,7 @@ class SpecFormView(SpecPageBase):
         the check ``request_arguments`` makes too - has refused any kwarg the
         spec does not declare.
         """
-        parameters = spec.parameters()
+        parameters = spec.parameters(call_context=served.call_context)
         route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
         return coerce_flat(parameters, {**form_values(form), **route})
 

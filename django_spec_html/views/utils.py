@@ -1161,7 +1161,11 @@ def admitted(
     registry it was minted under and is matched against, and
     ``call_context=served.call_context``, the dict it is bound to.
     """
-    route_arguments(spec.parameters(), url_kwargs, route_kwargs=served.route_kwargs)
+    route_arguments(
+        spec.parameters(call_context=served.call_context),
+        url_kwargs,
+        route_kwargs=served.route_kwargs,
+    )
     refuse_server_owned(url_kwargs, served.route_kwargs, server_names(served.server))
     try:
         principal = request_principal(request)
@@ -1216,7 +1220,7 @@ def _found(
     (test_a_principal_the_scope_check_refuses_is_never_offered_the_page,
     test_the_scope_check_is_asked_once_a_post).
     """
-    parameters = spec.parameters()
+    parameters = spec.parameters(call_context=served.call_context)
     route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
     arguments = with_binding(spec, coerce_flat(parameters, route), served.server)
     try:

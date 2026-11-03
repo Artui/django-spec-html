@@ -32,6 +32,7 @@ from tests.dispatch.utils import (
     TENANT_SEEDS,
     Listed,
     OwnerOnly,
+    Record,
     Refuse,
     Titled,
     make_user,
@@ -42,6 +43,7 @@ from tests.http.utils import (
     HANDED_STAGES,
     SPEC_OR_SOURCE,
     Conflicting,
+    DeclaredByTheRequest,
     Foreign,
     Handed,
     Seen,
@@ -507,6 +509,22 @@ class TestTheRequestAndTheView:
         assert dispatch_request(spec, request).status_code == 204
         assert seen == [("submitted", request)]
         assert seen[0][1] is request
+
+
+class TestTheCallsDeclaration:
+    """The request is read with the call's own context, the dict dispatch is then handed."""
+
+    def test_the_arguments_are_read_as_the_call_declares_them(self, ada: Any) -> None:
+        # Posted as a form, so the reader types the count by its
+        # declaration: read without the context, as an integer, which the
+        # call refused as no string.
+        validator = DeclaredByTheRequest()
+        spec = ServiceSpec(service=Record(), permissions=OPEN, validator=validator)
+        request = signed_in(FACTORY.post("/", data={"title": "Hi", "count": "3"}), ada)
+        response = dispatch_request(spec, request)
+        assert response.status_code == 204
+        assert spec.service.calls[0]["data"]["count"] == "3"
+        assert validator.one_context()["request"] is request
 
 
 class TestSources:

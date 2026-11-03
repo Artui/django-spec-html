@@ -92,6 +92,7 @@ from tests.dispatch_app.models import Note
 from tests.http.utils import (
     FACTORY,
     HANDED_STAGES,
+    DeclaredByTheRequest,
     Handed,
     SeesTenant,
     handed_spec,
@@ -3093,6 +3094,34 @@ class TestOneCallContextPerRequest:
         assert {name for name, _ in on_post} == {"class", "object", "form", "affordance", "service"}
         assert len({id(context) for _, context in on_post}) == 1
         assert on_get[0][1] is not on_post[0][1]
+
+
+class TestTheCallsDeclaration:
+    """The page reads a spec's parameters with the request's call context, as dispatch does."""
+
+    def test_the_post_is_read_as_the_call_declares_it(self, ada: Any) -> None:
+        # The call declares the count a string: read without the context, the
+        # page coerced "3" to 3, which dispatch refused as no string.
+        validator = DeclaredByTheRequest()
+        spec = entry_spec(validator=validator)
+        request = signed_in(FACTORY.post("/", data={"title": "Hi", "count": "3"}), ada)
+        response = form_view(spec)(request)
+        assert (response.status_code, received(spec)["count"]) == (302, "3")
+        assert validator.one_context()["request"] is request
+
+    def test_a_route_kwarg_the_call_declares_is_read(self, ada: Any) -> None:
+        # Declared to a call alone: read without the context, the route's
+        # check called the kwarg one the spec does not declare.
+        spec = entry_spec(validator=DeclaredByTheRequest(routed="slug"))
+        assert get(form_view(spec), ada, slug="spring").status_code == 200
+        response = post(form_view(spec), ada, {"title": "Hi"}, slug="spring")
+        assert response.status_code == 302
+
+    def test_a_validated_refresh_reads_it_as_the_call_declares_it(self, ada: Any) -> None:
+        spec = entry_spec(validator=DeclaredByTheRequest())
+        data = {"title": "Hi", "count": "3", "refresh": "Refresh"}
+        response = post(checking(spec), ada, data)
+        assert (response.status_code, refused(response)) == (200, {})
 
 
 class TestTheRequestAndTheView:

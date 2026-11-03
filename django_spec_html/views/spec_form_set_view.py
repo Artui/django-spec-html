@@ -305,7 +305,8 @@ class SpecFormSetView(SpecPageBase):
             missing = ", ".join(management.add_prefix(name) for name in management.errors)
             message = formset.error_messages["missing_management_form"] % {"field_names": missing}
             raise InvalidArguments({NON_FIELD_ERRORS: [message]})
-        rows_parameters = _rows_parameters(spec)
+        parameters = spec.parameters(call_context=served.call_context)
+        rows_parameters = _rows_parameters(spec, parameters)
         rows: list[dict[str, Any]] = []
         refused_rows: dict[int, Any] = {}
         # Collected, not raised as it comes: a row's tree raised alone would
@@ -316,7 +317,6 @@ class SpecFormSetView(SpecPageBase):
                 rows.append(_row_arguments(row, rows_parameters))
             except InvalidArguments as refused:
                 refused_rows[index] = refused.detail
-        parameters = spec.parameters()
         route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
         problems: dict[Any, Any] = {}
         top: dict[str, Any] = {}
@@ -457,9 +457,9 @@ def _one_more_form(formset_class: type[BaseFormSet], data: Any) -> Any:
     return added
 
 
-def _rows_parameters(spec: ServiceSpec) -> Parameters:
+def _rows_parameters(spec: ServiceSpec, parameters: Parameters) -> Parameters:
     """The list's rows, as the kernel checks each: the items of the parameter ``many_argument`` names."""
-    the_list = spec.parameters().get(spec.many_argument)
+    the_list = parameters.get(spec.many_argument)
     return cast(Parameters, cast(Any, the_list).items)
 
 

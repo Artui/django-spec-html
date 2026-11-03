@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shape check answers before the form": a field's `clean_<field>()` no
   longer waits until the rest of the form is well formed. A partial page's
   form is still not validated beside the refusal.
+- **The pages and the JSON views read a spec's parameters with the request's
+  call context**, the dict every other stage of the request is handed. A
+  Validator whose `parameters` declares `call_context` (kernel 0.23.0) was
+  asked with none by the route's check and the post's reading, and with the
+  call's dict by dispatch, so it could declare one set of arguments to the
+  page and another to the run: a count it declared a string to the call was
+  read as the integer it declared to no call, and refused. The form,
+  formset, confirmation and selector pages, `dispatch_request` and
+  `adispatch_request` now read it with the call's dict, which
+  `dispatch_request` and `adispatch_request` make before reading the request
+  and hand on to dispatch. The checks `as_view()` makes have no request, and
+  still read the parameters with no context.
 
 ## [0.9.0] — 2026-11-02
 

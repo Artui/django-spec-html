@@ -43,6 +43,7 @@ from tests.http.utils import (
     HANDED_STAGES,
     SPEC_OR_SOURCE,
     Conflicting,
+    DeclaredByTheRequest,
     Foreign,
     Handed,
     asking_for_tenant_spec,
@@ -79,6 +80,20 @@ def post(user: Any, payload: Any) -> Any:
     request = ASYNC_FACTORY.post("/", data=json.dumps(payload), content_type="application/json")
     request.user = lazy(user)
     return request
+
+
+async def test_the_arguments_are_read_as_the_call_declares_them(ada: Any) -> None:
+    # Posted as a form, so the reader types the count by its declaration:
+    # read without the context, as an integer, which the call refused as no
+    # string. The read is its own hop, handed the call's dict.
+    validator = DeclaredByTheRequest()
+    spec = ServiceSpec(service=Record(), permissions=OPEN, validator=validator)
+    request = ASYNC_FACTORY.post("/", data={"title": "Hi", "count": "3"})
+    request.user = lazy(ada)
+    response = await adispatch_request(spec, request)
+    assert response.status_code == 204
+    assert spec.service.calls[0]["data"]["count"] == "3"
+    assert validator.one_context()["request"] is request
 
 
 class Querying(Titled):

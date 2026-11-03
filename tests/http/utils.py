@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import pytest
@@ -215,6 +215,52 @@ class TitleForm(forms.Form):
     """One required ``title``, so a post without one is refused by the form."""
 
     title = forms.CharField(max_length=20)
+
+
+class CountForm(forms.Form):
+    """A title and a count the form takes as text, so it cleans a string or a number alike."""
+
+    title = forms.CharField(max_length=20)
+    count = forms.CharField(required=False)
+
+
+class DeclaredByTheRequest(FormValidator):
+    """A Validator declaring one thing to a call that carries a request and another to every other reader.
+
+    Asked with a call context holding a ``request``, it declares what its
+    form does, ``count`` a string, and ``routed``, where given, as a
+    parameter a route fills; asked with none, as at ``as_view()``, ``count``
+    an integer. The form cleans a count either way, so the shape check is
+    what tells them apart: a reader that asked without the call's context
+    coerces a posted ``"3"`` to ``3``, which the call's declaration refuses
+    as no string, and refuses the route's kwarg as one the spec does not
+    declare. Each context it is asked with is recorded.
+    """
+
+    def __init__(self, form_class: type[forms.BaseForm] = CountForm, routed: str = "") -> None:
+        super().__init__(form_class)
+        self.routed = routed
+        self.contexts: list[dict[str, Any]] = []
+
+    def parameters(self, *, call_context: dict[str, Any] | None = None) -> Parameters:
+        declared = super().parameters()
+        if call_context is None or call_context.get("request") is None:
+            return Parameters(
+                tuple(
+                    replace(each, type="integer") if each.name == "count" else each
+                    for each in declared
+                )
+            )
+        self.contexts.append(call_context)
+        return (
+            declared + Parameters.of(Parameter(self.routed, "string")) if self.routed else declared
+        )
+
+    def one_context(self) -> dict[str, Any]:
+        """The one dict every ask of a call's declaration was handed."""
+        assert self.contexts
+        assert len({id(context) for context in self.contexts}) == 1, self.contexts
+        return self.contexts[0]
 
 
 @dataclass

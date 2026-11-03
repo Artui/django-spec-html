@@ -581,7 +581,12 @@ answer the same each time.
 request, starting with `request`, this request, and `view`, this page, and
 hands that same object to every kernel call it makes: the
 class-level check, the target's lookup and its object-level or scope check,
-the affordances, the form's `form_kwargs` and dispatch. So a check, a
+the affordances, the form's `form_kwargs` and dispatch. The spec's parameters
+are read with it too, for the route's check and the post's reading, a validated
+refresh's included, so a Validator whose `parameters` declares `call_context`
+declares to the page what it declares to dispatch. What `as_view()` checks runs
+with no request, and reads them with no context: `route_kwargs`, and a list
+page's paging keys and table order field. So a check, a
 condition, `form_kwargs` or the service declaring
 [`call_context`](https://artui.github.io/django-service-specs/dispatching/)
 reads what an earlier stage of the same request put there, and each request

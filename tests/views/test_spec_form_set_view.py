@@ -47,7 +47,7 @@ from django_spec_html.views.spec_form_view import SpecFormView
 from django_spec_html.views.utils import SpecPageBase
 from tests.adapter_app.models import Author
 from tests.dispatch.utils import OPEN, Record, Refuse, Titled, make_user
-from tests.http.utils import FACTORY, Handed, handed_spec, signed_in
+from tests.http.utils import FACTORY, DeclaredByTheRequest, Handed, handed_spec, signed_in
 from tests.views.utils import Fresh, SeesTenantAtEachQuestion
 
 pytestmark = pytest.mark.django_db
@@ -975,3 +975,19 @@ def test_every_stage_is_handed_the_request_and_the_page(ada: Any) -> None:
     page = handed.one_view(request)
     assert isinstance(page, SpecFormSetView)
     assert page.request is request
+
+
+class TestTheCallsDeclaration:
+    """The page reads a spec's parameters with the request's call context, as dispatch does."""
+
+    def test_each_row_is_read_as_the_call_declares_it(self, ada: Any) -> None:
+        # The call declares each row's count a string: read without the
+        # context, the page coerced "3" to 3, which dispatch refused.
+        validator = DeclaredByTheRequest()
+        spec = ServiceSpec(service=Record(), many=True, permissions=OPEN, validator=validator)
+        data = posted({"title": "Hi", "count": "3"})
+        request = signed_in(FACTORY.post("/", data=data), ada)
+        response = formset_view(spec)(request)
+        assert response.status_code == 302
+        assert spec.service.calls[0]["data"][0]["count"] == "3"
+        assert validator.one_context()["request"] is request
