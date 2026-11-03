@@ -51,11 +51,13 @@ from django_service_specs import (
     ServiceSpec,
     ServiceValidationError,
     Unrestricted,
+    bind_arguments,
 )
 
 from django_spec_html import SpecFormView, UnsupportedMediaType
 from django_spec_html.http.utils import refusal_outcome
 from docs.examples import htmx as htmx_example
+from docs.examples.spec_form import check_edition_spec
 from tests.adapter_app.models import Author, Book, Edition, Status
 
 pytestmark = pytest.mark.django_db
@@ -981,13 +983,15 @@ class TestValidatingARefresh:
     ) -> None:
         # The copies fail the shape check, so the kernel never runs the form;
         # the number's error is the page's form validated beside the refusal.
-        data = editions(
-            author=str(author.pk),
-            book=str(earthsea.pk),
-            number="1",
-            copies="many",
-            refresh="Show their books",
-        )
+        # Both checks spell the copies' error alike, so the kernel's own
+        # refusal is read first: without it, copies the shape check admits
+        # would pass here with the form's error alone.
+        fields = {"author": author.pk, "book": earthsea.pk, "number": "1", "copies": "many"}
+        with pytest.raises(InvalidArguments) as refused:
+            bind_arguments(check_edition_spec, fields, principal=ada)
+        assert set(refused.value.detail) == {"copies"}
+        data = editions(**{key: str(value) for key, value in fields.items()})
+        data["refresh"] = "Show their books"
         response = serve(FACTORY.post(CHECKED, data=data), ada).render()
         assert response.status_code == 200
         assert field_errors(response) == {

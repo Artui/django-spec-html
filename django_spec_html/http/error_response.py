@@ -34,7 +34,7 @@ def error_response(exc: DispatchError | ServiceError) -> JsonResponse:
     | --- | --- | --- |
     | `InvalidArguments` | 400 | the error tree |
     | `ServiceValidationError` | 400 | its detail, as a field map |
-    | `NotPermitted`, `PrincipalUnavailable` | 403 | `{"detail": message}` |
+    | `PermissionCheckDenied`, `NotPermitted`, `PrincipalUnavailable` | 403 | `{"detail": message}` |
     | `ServiceNotFound` | 404 | `{"detail": message}` |
     | `ActionUnavailable` | 409 | `{"detail": message, "code": code}` |
     | any other `ServiceConflict` | 409 | `{"detail": message}` |
