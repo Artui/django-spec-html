@@ -2928,11 +2928,14 @@ laid over it, and bound through the kernel's
 with the principal, the target the page found, the request's seeds and
 its call context: the shape check and the Validator, and nothing
 dispatched, no <code>success_message</code> sent. Its refusal is placed on the
-form as a refused commit's is, at 200 still, with <code>refreshed</code> in the
-context. Where <code>HX-Trigger-Name</code> names one of the form's fields, as
-its <code>html_name</code>, the name it posts under, only that field's errors are
-placed and no non-field error; on every other refresh, the whole
-refusal. <strong>It runs no provider</strong>, as <code>bind_arguments</code> runs neither
+form as a refused commit's is, beside the page's own form validated on a
+whole call, so a field the shape check refuses does not hide what the
+form's own checks - <code>clean_&lt;field&gt;()</code>, a length, <code>clean()</code> - say of
+the rest, at 200 still, with <code>refreshed</code> in the context. Where
+<code>HX-Trigger-Name</code> names one of the form's fields, as its
+<code>html_name</code>, the name it posts under, only that field's errors are
+shown, the shape check's and the form's own alike, and no non-field
+error; on every other refresh, every error. <strong>It runs no provider</strong>, as <code>bind_arguments</code> runs neither
 <code>input_data</code> nor <code>kwargs</code>: a field the spec's <code>input_data</code> fills
 is judged as posted, so a required one left blank is refused by the
 refresh and accepted by the commit, which the provider fills.</p>

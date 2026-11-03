@@ -924,7 +924,12 @@ context holds <code>request</code>, the request it was handed, and <code>view</c
 <code>view=</code> a host's own view passes as itself and <code>None</code> where it passes nothing,
 so a spec callable naming either is handed it
 (<a href="#what-the-request-carries">what the request carries</a>). <code>SpecView</code> and
-<code>AsyncSpecView</code> pass themselves.</p>
+<code>AsyncSpecView</code> pass themselves. The spec's parameters are read with that same
+dict, so a Validator whose <code>parameters</code> declares <code>call_context</code> declares to
+the request's reader what it declares to dispatch. The kernel's own helpers
+called around the read, <code>apply_server_arguments</code> and the asked-input check,
+still read the parameters with no context, and so does the views' <code>as_view()</code>
+check of <code>route_kwargs</code>, which runs with no request.</p>
 <p>The answer:</p>
 <ul>
 <li><strong>A not-found result</strong> is 404, <code>{"detail": "Not found."}</code>.</li>

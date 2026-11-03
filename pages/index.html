@@ -1886,7 +1886,15 @@ answer the same each time.</p>
 request, starting with <code>request</code>, this request, and <code>view</code>, this page, and
 hands that same object to every kernel call it makes: the
 class-level check, the target's lookup and its object-level or scope check,
-the affordances, the form's <code>form_kwargs</code> and dispatch. So a check, a
+the affordances, the form's <code>form_kwargs</code> and dispatch. The spec's parameters
+are read with it too, for the route's check and the post's reading, a validated
+refresh's included, so a Validator whose <code>parameters</code> declares <code>call_context</code>
+declares to the page's reading what it declares to dispatch. The kernel's own
+helpers the page calls around it - applying the server's binding, checking an
+asked question's keys - still read the parameters with no context. What
+<code>as_view()</code> checks runs
+with no request, and reads them with no context: <code>route_kwargs</code>, and a list
+page's paging keys and table order field. So a check, a
 condition, <code>form_kwargs</code> or the service declaring
 <a href="https://artui.github.io/django-service-specs/dispatching/"><code>call_context</code></a>
 reads what an earlier stage of the same request put there, and each request
@@ -2378,23 +2386,27 @@ books" shows every error the form has.</p>
   answers 200, and an htmx request the form's fragment at 200, with
   <code>refreshed</code> in the context as on any post that does not commit.</li>
 <li><strong>The refusal is placed on the form as a refused commit's is</strong>, by
-  <code>add_argument_errors</code>.</li>
+  <code>add_argument_errors</code>, beside the page's own form validated. While a field
+  fails the shape check - a required field blank, a number that does not
+  parse - the kernel never runs the Validator, but the page's form, built as
+  the Validator's is, still answers for the rest: a field's
+  <code>clean_&lt;field&gt;()</code>, a length, the form's <code>clean()</code>. So a refresh shows
+  every error its commit would refuse in one post, not the shape's first and
+  the form's after it. A partial page's form is not validated beside the
+  refusal, since validated whole it would call every blank field required.</li>
 <li><strong><code>HX-Trigger-Name</code> decides which errors.</strong> Where it names one of the
   form's fields, as the field posts it - its <code>html_name</code> - only that
-  field's errors are placed, and no non-field error: a person has not reached
-  the rest of the form yet. Every other refresh - no header, the form's own
-  name, a refresh button, one part of a multi-widget field such as <code>when_0</code> -
-  shows the whole refusal.</li>
+  field's errors are shown, the shape check's and the form's own alike, and
+  no non-field error: a person has not reached the rest of the form yet.
+  Every other refresh - no header, the form's own name, a refresh button,
+  one part of a multi-widget field such as <code>when_0</code> - shows every error, the
+  refusal's and the form's own.</li>
 <li><strong>No provider runs.</strong> <code>bind_arguments</code> runs neither the spec's
   <code>input_data</code> nor a <code>kwargs</code> provider, and that is the one difference in how
   the post is bound. A field <code>input_data</code> fills is judged as posted: a
   required one left blank is refused by the refresh, and accepted by the
   commit, which the provider fills. What the service, an unmet affordance or a
   conflict refuses is the commit's alone, since nothing is dispatched.</li>
-<li><strong>The shape check answers before the form.</strong> While any field fails it - a
-  required field blank, a number that does not parse - the form's own checks
-  have not run, so a field's request shows its own shape error, or none, and
-  its <code>clean_&lt;field&gt;()</code> waits until the rest of the form is well formed.</li>
 </ul>
 <h2 id="returning-where-the-page-was-opened-from">Returning where the page was opened from<a class="headerlink" href="#returning-where-the-page-was-opened-from" title="Permanent link">&para;</a></h2>
 <p>A page linked to from the third page of a list should save and go back to the
