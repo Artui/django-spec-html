@@ -581,7 +581,15 @@ answer the same each time.
 request, starting with `request`, this request, and `view`, this page, and
 hands that same object to every kernel call it makes: the
 class-level check, the target's lookup and its object-level or scope check,
-the affordances, the form's `form_kwargs` and dispatch. So a check, a
+the affordances, the form's `form_kwargs` and dispatch. The spec's parameters
+are read with it too, for the route's check and the post's reading, a validated
+refresh's included, so a Validator whose `parameters` declares `call_context`
+declares to the page's reading what it declares to dispatch. The kernel's own
+helpers the page calls around it - applying the server's binding, checking an
+asked question's keys - still read the parameters with no context. What
+`as_view()` checks runs
+with no request, and reads them with no context: `route_kwargs`, and a list
+page's paging keys and table order field. So a check, a
 condition, `form_kwargs` or the service declaring
 [`call_context`](https://artui.github.io/django-service-specs/dispatching/)
 reads what an earlier stage of the same request put there, and each request
@@ -916,23 +924,27 @@ books" shows every error the form has.
   answers 200, and an htmx request the form's fragment at 200, with
   `refreshed` in the context as on any post that does not commit.
 - **The refusal is placed on the form as a refused commit's is**, by
-  `add_argument_errors`.
+  `add_argument_errors`, beside the page's own form validated. While a field
+  fails the shape check - a required field blank, a number that does not
+  parse - the kernel never runs the Validator, but the page's form, built as
+  the Validator's is, still answers for the rest: a field's
+  `clean_<field>()`, a length, the form's `clean()`. So a refresh shows
+  every error its commit would refuse in one post, not the shape's first and
+  the form's after it. A partial page's form is not validated beside the
+  refusal, since validated whole it would call every blank field required.
 - **`HX-Trigger-Name` decides which errors.** Where it names one of the
   form's fields, as the field posts it - its `html_name` - only that
-  field's errors are placed, and no non-field error: a person has not reached
-  the rest of the form yet. Every other refresh - no header, the form's own
-  name, a refresh button, one part of a multi-widget field such as `when_0` -
-  shows the whole refusal.
+  field's errors are shown, the shape check's and the form's own alike, and
+  no non-field error: a person has not reached the rest of the form yet.
+  Every other refresh - no header, the form's own name, a refresh button,
+  one part of a multi-widget field such as `when_0` - shows every error, the
+  refusal's and the form's own.
 - **No provider runs.** `bind_arguments` runs neither the spec's
   `input_data` nor a `kwargs` provider, and that is the one difference in how
   the post is bound. A field `input_data` fills is judged as posted: a
   required one left blank is refused by the refresh, and accepted by the
   commit, which the provider fills. What the service, an unmet affordance or a
   conflict refuses is the commit's alone, since nothing is dispatched.
-- **The shape check answers before the form.** While any field fails it - a
-  required field blank, a number that does not parse - the form's own checks
-  have not run, so a field's request shows its own shape error, or none, and
-  its `clean_<field>()` waits until the rest of the form is well formed.
 
 ## Returning where the page was opened from
 

@@ -98,6 +98,9 @@ def dispatch_request(
     exempts a view, and ``csrf_exempt`` is one line for a host that wants it.
     """
     spec = kernel_spec(spec)
+    # One dict for the call, made before the request is read, so the spec's
+    # parameters are declared to the reader as dispatch then declares them.
+    call_context = {"request": request, "view": view}
     try:
         # The principal first, as ``adispatch`` resolves a ``principal_id``
         # and ``dispatch`` refuses a deactivated principal before its shape
@@ -106,7 +109,7 @@ def dispatch_request(
         principal = request_principal(request)
         arguments = request_arguments(
             request,
-            spec.parameters(),
+            spec.parameters(call_context=call_context),
             url_kwargs=url_kwargs,
             route_kwargs=route_kwargs,
             server_arguments=server_arguments,
@@ -120,7 +123,7 @@ def dispatch_request(
             grant=grant,
             pool_seeds=pool_seeds,
             unknown_arguments=unknown_arguments,
-            call_context={"request": request, "view": view},
+            call_context=call_context,
         )
         if result.kind == "not_found":
             return not_found_response()

@@ -432,7 +432,9 @@ def check_request_hooks(
             )
     route_kwargs = _configured(view_class, initkwargs, "route_kwargs")
     if route_kwargs is not None:
-        # No URL kwargs: what is left is the setting's own check.
+        # No URL kwargs: what is left is the setting's own check. At
+        # ``as_view()``, with no request, so the parameters are read with no
+        # call context.
         route_arguments(kernel_spec(spec).parameters(), None, route_kwargs=route_kwargs)
     server = _configured(view_class, initkwargs, "server_arguments")
     if server is not None:

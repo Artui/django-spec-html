@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-11-03
+
+### Changed
+- **A validated refresh shows the form's own errors beside a shape-check
+  refusal, as a refused commit does.** Under `validate_on_refresh`, a post the
+  kernel's shape check refused - a required field left blank, a number that
+  does not parse - showed that refusal alone, so a field's own request named
+  no error of its own and a refresh button showed less than the same post's
+  commit refused: a blank name and an invalid email showed the name's
+  `required` and not the email's error. The refresh now places its refusal
+  through the commit's own path, the page's form validated beside it on a
+  whole call, and `HX-Trigger-Name` keeps that field's errors from both,
+  never a `clean()`'s non-field error. This reverses 0.8.0's documented "the
+  shape check answers before the form": a field's `clean_<field>()` no
+  longer waits until the rest of the form is well formed. A partial page's
+  form is still not validated beside the refusal.
+- **The pages and the JSON views read a spec's parameters with the request's
+  call context**, the dict every other stage of the request is handed. A
+  Validator whose `parameters` declares `call_context` (kernel 0.23.0) was
+  asked with none by the route's check and the post's reading, and with the
+  call's dict by dispatch, so it could declare one set of arguments to the
+  page and another to the run: a count it declared a string to the call was
+  read as the integer it declared to no call, and refused. The form,
+  formset, confirmation and selector pages, `dispatch_request` and
+  `adispatch_request` now read it with the call's dict, which
+  `dispatch_request` and `adispatch_request` make before reading the request
+  and hand on to dispatch. The checks `as_view()` makes have no request, and
+  still read the parameters with no context.
+
 ## [0.9.0] — 2026-11-02
 
 ### Changed
@@ -573,7 +602,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Artui/django-spec-html/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Artui/django-spec-html/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Artui/django-spec-html/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Artui/django-spec-html/compare/v0.6.0...v0.7.0

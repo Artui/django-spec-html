@@ -67,9 +67,12 @@ async def adispatch_request(
     # Compiled once, before anything is read, so the arguments, the answer's
     # status and the asked-input check all read the one compiled spec.
     spec = kernel_spec(spec)
+    # One dict for the call, made before the request is read, so the spec's
+    # parameters are declared to the reader as dispatch then declares them.
+    call_context = {"request": request, "view": view}
     try:
         principal, arguments = await sync_to_async(_read_request, thread_sensitive=True)(
-            spec, request, url_kwargs, route_kwargs, server_arguments
+            spec, request, url_kwargs, route_kwargs, server_arguments, call_context
         )
         result = await adispatch(
             spec,
@@ -78,7 +81,7 @@ async def adispatch_request(
             grant=grant,
             pool_seeds=pool_seeds,
             unknown_arguments=unknown_arguments,
-            call_context={"request": request, "view": view},
+            call_context=call_context,
         )
         if result.kind == "not_found":
             return not_found_response()
@@ -94,6 +97,7 @@ def _read_request(
     url_kwargs: Mapping[str, Any] | None,
     route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
     server_arguments: ServerArguments | None,
+    call_context: dict[str, Any],
 ) -> tuple[Any, dict[str, Any]]:
     """The principal, then the arguments, in the one executor hop they share.
 
@@ -107,7 +111,7 @@ def _read_request(
     principal = request_principal(request)
     arguments = request_arguments(
         request,
-        spec.parameters(),
+        spec.parameters(call_context=call_context),
         url_kwargs=url_kwargs,
         route_kwargs=route_kwargs,
         server_arguments=server_arguments,

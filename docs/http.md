@@ -47,7 +47,12 @@ context holds `request`, the request it was handed, and `view`, which is the
 `view=` a host's own view passes as itself and `None` where it passes nothing,
 so a spec callable naming either is handed it
 ([what the request carries](#what-the-request-carries)). `SpecView` and
-`AsyncSpecView` pass themselves.
+`AsyncSpecView` pass themselves. The spec's parameters are read with that same
+dict, so a Validator whose `parameters` declares `call_context` declares to
+the request's reader what it declares to dispatch. The kernel's own helpers
+called around the read, `apply_server_arguments` and the asked-input check,
+still read the parameters with no context, and so does the views' `as_view()`
+check of `route_kwargs`, which runs with no request.
 
 The answer:
 

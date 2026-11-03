@@ -92,6 +92,7 @@ from tests.dispatch_app.models import Note
 from tests.http.utils import (
     FACTORY,
     HANDED_STAGES,
+    DeclaredByTheRequest,
     Handed,
     SeesTenant,
     handed_spec,
@@ -3095,6 +3096,34 @@ class TestOneCallContextPerRequest:
         assert on_get[0][1] is not on_post[0][1]
 
 
+class TestTheCallsDeclaration:
+    """The page reads a spec's parameters with the request's call context, as dispatch does."""
+
+    def test_the_post_is_read_as_the_call_declares_it(self, ada: Any) -> None:
+        # The call declares the count a string: read without the context, the
+        # page coerced "3" to 3, which dispatch refused as no string.
+        validator = DeclaredByTheRequest()
+        spec = entry_spec(validator=validator)
+        request = signed_in(FACTORY.post("/", data={"title": "Hi", "count": "3"}), ada)
+        response = form_view(spec)(request)
+        assert (response.status_code, received(spec)["count"]) == (302, "3")
+        assert validator.one_context()["request"] is request
+
+    def test_a_route_kwarg_the_call_declares_is_read(self, ada: Any) -> None:
+        # Declared to a call alone: read without the context, the route's
+        # check called the kwarg one the spec does not declare.
+        spec = entry_spec(validator=DeclaredByTheRequest(routed="slug"))
+        assert get(form_view(spec), ada, slug="spring").status_code == 200
+        response = post(form_view(spec), ada, {"title": "Hi"}, slug="spring")
+        assert response.status_code == 302
+
+    def test_a_validated_refresh_reads_it_as_the_call_declares_it(self, ada: Any) -> None:
+        spec = entry_spec(validator=DeclaredByTheRequest())
+        data = {"title": "Hi", "count": "3", "refresh": "Refresh"}
+        response = post(checking(spec), ada, data)
+        assert (response.status_code, refused(response)) == (200, {})
+
+
 class TestTheRequestAndTheView:
     """The call context starts with the request and this page, so every stage naming either has it."""
 
@@ -4332,6 +4361,16 @@ class PrefixedForm(forms.Form):
     count = forms.IntegerField()
 
 
+INVALID_EMAIL = "Enter a valid email address."
+
+
+class ContactForm(forms.Form):
+    """Two required fields, the shape check judging the name and the form alone the email."""
+
+    name = forms.CharField()
+    email = forms.EmailField()
+
+
 class ServerTitle(TypedDict):
     title: str
 
@@ -4353,6 +4392,10 @@ def checking(spec: ServiceSpec, **attributes: Any) -> Any:
 
 def closed_spec() -> ServiceSpec:
     return entry_spec(validator=Watched(ClosedForm))
+
+
+def contact_spec() -> ServiceSpec:
+    return entry_spec(validator=Watched(ContactForm))
 
 
 class TestValidatingARefresh:
@@ -4402,16 +4445,66 @@ class TestValidatingARefresh:
         assert (response.status_code, refused(response)) == (200, {"count": [WHOLE]})
         assert validated(spec) == 0
 
-    def test_a_field_s_own_check_waits_on_the_rest_of_the_shape(self, ada: Any) -> None:
+    def test_a_field_s_own_check_answers_beside_the_rest_of_the_shape(self, ada: Any) -> None:
         # The count is no integer, so the shape check refuses the post and
-        # the form's ``clean_title`` is never asked: the title shows nothing.
+        # the Validator never runs; the page's own form, validated beside the
+        # refusal, asks ``clean_title``, and the title shows its answer.
         spec = closed_spec()
         data = {"title": "taken", "count": "many"}
         response = hx_post(checking(spec), ada, data, triggered("title"))
-        assert (response.status_code, refused(response)) == (200, {})
+        assert (response.status_code, refused(response)) == (200, {"title": [TAKEN]})
         assert validated(spec) == 0
         response = hx_post(checking(spec), ada, data, triggered("count"))
         assert refused(response) == {"count": [WHOLE]}
+        assert validated(spec) == 0
+
+    def test_a_field_s_own_request_is_refused_beside_a_blank_one(self, ada: Any) -> None:
+        # The name left blank is absent to the shape check, which refuses it
+        # and never asks the Validator; the email's own error is the form's.
+        data = {"name": "", "email": "nope"}
+        response = hx_post(checking(contact_spec()), ada, data, triggered("email"))
+        assert (response.status_code, refused(response)) == (200, {"email": [INVALID_EMAIL]})
+
+    def test_a_field_s_own_request_shows_its_error_when_the_shape_passes(self, ada: Any) -> None:
+        # The guard beside the one above: the shape check passes, and the
+        # Validator's form answers.
+        spec = contact_spec()
+        data = {"name": "a", "email": "nope"}
+        response = hx_post(checking(spec), ada, data, triggered("email"))
+        assert (response.status_code, refused(response)) == (200, {"email": [INVALID_EMAIL]})
+        assert validated(spec) == 1
+
+    def test_a_refresh_shows_what_its_commit_refuses(self, ada: Any) -> None:
+        # A button that is not the commit's: the whole refusal, which is
+        # what the same post refuses from the commit button.
+        view = checking(contact_spec())
+        data = {"name": "", "email": "nope"}
+        every = {"name": [REQUIRED], "email": [INVALID_EMAIL]}
+        refreshed = hx_post(view, ada, {**data, "add": "1"}, triggered("add"))
+        assert (refreshed.status_code, refused(refreshed)) == (200, every)
+        committed = post(view, ada, {**data, "save": "1"})
+        assert (committed.status_code, refused(committed)) == (400, every)
+
+    def test_a_field_s_own_request_leaves_out_the_form_s_own_non_field_error(
+        self, ada: Any
+    ) -> None:
+        # The count is no integer, so the shape check refuses it alone; the
+        # page's form, validated beside it, calls the blank title required
+        # and adds its ``clean()``'s, and the title's own request shows its
+        # own error and neither the count's nor the form's.
+        spec = closed_spec()
+        data = {"title": "", "count": "many"}
+        response = hx_post(checking(spec), ada, data, triggered("title"))
+        assert (response.status_code, refused(response)) == (200, {"title": [REQUIRED]})
+        assert validated(spec) == 0
+
+    def test_a_partial_page_s_refresh_calls_no_blank_field_required(self, ada: Any) -> None:
+        # The count is no integer, so the shape check refuses it; the title
+        # left blank is one a partial call leaves as it is, and the page's
+        # form validated whole would call it required.
+        spec = entry_spec(partial=True)
+        response = post(checking(spec), ada, {"count": "many", "refresh": "Refresh"})
+        assert (response.status_code, refused(response)) == (200, {"count": [WHOLE]})
 
     def test_a_prefixed_form_s_field_is_named_as_it_posts(self, ada: Any) -> None:
         # Both left blank, so the shape check refuses both; the header names

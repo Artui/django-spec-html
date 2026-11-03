@@ -314,7 +314,7 @@ class SpecSelectorView(SpecRequestBase):
         try:
             arguments = request_arguments(
                 _reading(request, query),
-                spec.parameters(),
+                spec.parameters(call_context=served.call_context),
                 url_kwargs=kwargs,
                 route_kwargs=served.route_kwargs,
                 server_arguments=served.server,
@@ -541,7 +541,9 @@ def _check_paging(label: str, spec: SelectorSpec, configured: Mapping[str, Any])
         )
     if spec.kind is not SelectorKind.LIST:
         return
-    # An unset size key is ``None``, which names no parameter.
+    # An unset size key is ``None``, which names no parameter. At
+    # ``as_view()``, with no request, so the parameters are read with no call
+    # context.
     taken = sorted(name for name in (page_kwarg, size_kwarg) if name in spec.parameters().names())
     if taken:
         raise ImproperlyConfigured(
@@ -565,6 +567,7 @@ def _check_table(label: str, spec: SelectorSpec, table_class: Any, order_by_fiel
     if order_by_field is None:
         return
     key = f"{getattr(getattr(table_class, '_meta', None), 'prefix', '') or ''}{order_by_field}"
+    # At ``as_view()``, with no request, so read with no call context.
     if key in spec.parameters().names():
         return
     raise ImproperlyConfigured(

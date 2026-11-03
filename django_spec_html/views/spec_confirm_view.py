@@ -243,7 +243,7 @@ class SpecConfirmView(SpecPageBase):
         ``route_arguments`` refuses a kwarg the spec does not declare, as on
         every page, and the base lays the binding over the result.
         """
-        parameters = spec.parameters()
+        parameters = spec.parameters(call_context=served.call_context)
         route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
         return coerce_flat(parameters, route)
 
