@@ -14,6 +14,7 @@ from django_service_specs import (
     DispatchError,
     InvalidArguments,
     NotPermitted,
+    PermissionCheckDenied,
     PrincipalUnavailable,
     SelectorKind,
     SelectorSpec,
@@ -35,6 +36,7 @@ from django_spec_html.http.utils import (
     success_response,
 )
 from django_spec_html.types.outcome import Outcome
+from tests.dispatch.utils import Refuse
 from tests.dispatch_app.models import Note
 from tests.http.utils import ASYNC_FACTORY, FACTORY, body, note_spec, signed_in, titled_spec
 
@@ -143,6 +145,7 @@ def test_unsupported_media_type_is_415() -> None:
     ("refused", "outcome"),
     [
         (InvalidArguments({}), Outcome.INVALID),
+        (PermissionCheckDenied(check=Refuse(), spec=None), Outcome.DENIED),
         (NotPermitted(), Outcome.DENIED),
         (PrincipalUnavailable(), Outcome.DENIED),
         (UnsupportedMediaType(), Outcome.INVALID),

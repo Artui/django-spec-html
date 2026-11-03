@@ -43,6 +43,7 @@ from django_service_specs import (
     InvalidArguments,
     NotPermitted,
     PermissionCheck,
+    PermissionCheckDenied,
     PrincipalUnavailable,
     ServiceConflict,
     ServiceError,
@@ -509,6 +510,7 @@ def test_the_pages_outcome_table_is_the_one_shipped(ada: Any) -> None:
     examples: list[Any] = [
         InvalidArguments({}),
         ServiceValidationError("x"),
+        PermissionCheckDenied(check=NeverPermitted(), spec=None),
         NotPermitted(),
         PrincipalUnavailable(),
         ServiceNotFound(),

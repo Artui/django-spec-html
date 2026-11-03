@@ -40,6 +40,7 @@ from django_service_specs import (
     DispatchError,
     InvalidArguments,
     NotPermitted,
+    PermissionCheckDenied,
     PoolSeeds,
     PrincipalUnavailable,
     SelectorSpec,
@@ -72,6 +73,7 @@ REFUSAL_STATUSES: Final[
     tuple[tuple[type[DispatchError] | type[ServiceError], int, Outcome], ...]
 ] = (
     (InvalidArguments, 400, Outcome.INVALID),
+    (PermissionCheckDenied, 403, Outcome.DENIED),
     (NotPermitted, 403, Outcome.DENIED),
     (PrincipalUnavailable, 403, Outcome.DENIED),
     (UnsupportedMediaType, 415, Outcome.INVALID),

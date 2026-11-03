@@ -35,6 +35,7 @@ from django_service_specs import (
     OutputPage,
     Parameter,
     Parameters,
+    PermissionCheckDenied,
     PrincipalUnavailable,
     SelectorKind,
     SelectorSpec,
@@ -899,6 +900,7 @@ def raising(refusal: Exception) -> SelectorSpec:
 
 EXAMPLES: list[Any] = [
     InvalidArguments({"title": ["Too short."]}),
+    PermissionCheckDenied(check=Refuse(), spec=None),
     NotPermitted(),
     PrincipalUnavailable(),
     UnsupportedMediaType(),

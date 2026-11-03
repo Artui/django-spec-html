@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The kernel floor is 0.24.0, and the status map names
+  `PermissionCheckDenied`**, the refusal a declared permission check's denial
+  raises from kernel 0.24.0. It is a `NotPermitted`, and its row answers as
+  that one does: 403 from the JSON views, `PermissionDenied` from the pages,
+  outcome `denied`. No response changes, and an anonymous caller a check
+  refuses is still a 403, never a sign-in redirect. The row is there so the
+  map names every kernel refusal; the status tables in the HTTP and pages
+  docs list it too.
+
 ## [0.10.0] — 2026-11-03
 
 ### Changed

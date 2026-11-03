@@ -222,7 +222,7 @@ its status, and each is answered as the page or, for htmx, as
 | `ActionUnavailable`, `ServiceConflict` | failed | 409, the form re-rendered | 200, the form fragment re-rendered |
 | `ServiceError` | failed | 422, the form re-rendered | 200, the form fragment re-rendered |
 | `DispatchError` | failed | 400, the form re-rendered | 200, the form fragment re-rendered |
-| `NotPermitted`, `PrincipalUnavailable` | denied | `PermissionDenied` | `PermissionDenied` |
+| `PermissionCheckDenied`, `NotPermitted`, `PrincipalUnavailable` | denied | `PermissionDenied` | `PermissionDenied` |
 | `ServiceNotFound` | denied | `Http404` | `Http404` |
 
 A not-found result is `Http404` too, in both. The outcome column is the
