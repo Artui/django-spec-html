@@ -43,6 +43,7 @@ from django_service_specs import (
     InvalidArguments,
     NotPermitted,
     PermissionCheck,
+    PermissionCheckDenied,
     PrincipalUnavailable,
     ServiceConflict,
     ServiceError,
@@ -50,11 +51,13 @@ from django_service_specs import (
     ServiceSpec,
     ServiceValidationError,
     Unrestricted,
+    bind_arguments,
 )
 
 from django_spec_html import SpecFormView, UnsupportedMediaType
 from django_spec_html.http.utils import refusal_outcome
 from docs.examples import htmx as htmx_example
+from docs.examples.spec_form import check_edition_spec
 from tests.adapter_app.models import Author, Book, Edition, Status
 
 pytestmark = pytest.mark.django_db
@@ -509,6 +512,7 @@ def test_the_pages_outcome_table_is_the_one_shipped(ada: Any) -> None:
     examples: list[Any] = [
         InvalidArguments({}),
         ServiceValidationError("x"),
+        PermissionCheckDenied(check=NeverPermitted(), spec=None),
         NotPermitted(),
         PrincipalUnavailable(),
         ServiceNotFound(),
@@ -973,6 +977,28 @@ class TestValidatingARefresh:
             "number": ["This field is required."],
         }
         assert list(response.context_data["form"].fields["book"].queryset) == [earthsea]
+
+    def test_a_refresh_shows_the_number_s_error_beside_the_copies_refusal(
+        self, ada: Any, author: Author, earthsea: Book
+    ) -> None:
+        # The copies fail the shape check, so the kernel never runs the form;
+        # the number's error is the page's form validated beside the refusal.
+        # Both checks spell the copies' error alike, so the kernel's own
+        # refusal is read first: without it, copies the shape check admits
+        # would pass here with the form's error alone.
+        fields = {"author": author.pk, "book": earthsea.pk, "number": "1", "copies": "many"}
+        with pytest.raises(InvalidArguments) as refused:
+            bind_arguments(check_edition_spec, fields, principal=ada)
+        assert set(refused.value.detail) == {"copies"}
+        data = editions(**{key: str(value) for key, value in fields.items()})
+        data["refresh"] = "Show their books"
+        response = serve(FACTORY.post(CHECKED, data=data), ada).render()
+        assert response.status_code == 200
+        assert field_errors(response) == {
+            "number": ["Earthsea already has edition 1."],
+            "copies": ["Enter a whole number."],
+        }
+        assert Edition.objects.count() == 1
 
     def test_add_commits_as_on_the_page_that_does_not_validate(
         self, ada: Any, author: Author, earthsea: Book

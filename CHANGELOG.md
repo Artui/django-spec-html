@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-11-03
+
+### Changed
+- **The kernel floor is 0.24.0, and the status map names
+  `PermissionCheckDenied`**, the refusal a declared permission check's denial
+  raises from kernel 0.24.0. It is a `NotPermitted`, and its row answers as
+  that one does: 403 from the JSON views, `PermissionDenied` from the pages,
+  outcome `denied`. No response changes, and an anonymous caller a check
+  refuses is still a 403, never a sign-in redirect. The row is there so the
+  map names every kernel refusal; the status tables in the HTTP and pages
+  docs list it too.
+- **The pages docs show 0.10.0's validated refresh at work.** The
+  `editions/new/checked/` example's form has a `copies` count of its own, and
+  "Show their books" with copies that do not parse and a number the book
+  already has shows the shape check's refusal of the one beside the form's
+  `clean()` error on the other.
+
 ## [0.10.0] — 2026-11-03
 
 ### Changed
@@ -602,7 +619,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/Artui/django-spec-html/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/Artui/django-spec-html/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Artui/django-spec-html/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Artui/django-spec-html/compare/v0.7.0...v0.8.0

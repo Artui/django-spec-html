@@ -23,6 +23,7 @@ from django_service_specs import (
     NotPermitted,
     Parameter,
     Parameters,
+    PermissionCheckDenied,
     PrincipalUnavailable,
     ServiceConflict,
     ServiceError,
@@ -33,6 +34,7 @@ from django_service_specs import (
 
 from django_spec_html.http.error_response import error_response
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
+from tests.dispatch.utils import Refuse
 
 
 class Postponed(ServiceError):
@@ -202,6 +204,7 @@ def test_no_refusal_is_ever_a_401() -> None:
     # A 401 tells a client to start an authentication flow, and a session has
     # no challenge to answer: an anonymous caller a check refuses is a 403.
     refusals: list[DispatchError | ServiceError] = [
+        PermissionCheckDenied(check=Refuse(), spec=None),
         NotPermitted(),
         PrincipalUnavailable(),
         InvalidArguments({}),

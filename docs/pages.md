@@ -222,7 +222,7 @@ its status, and each is answered as the page or, for htmx, as
 | `ActionUnavailable`, `ServiceConflict` | failed | 409, the form re-rendered | 200, the form fragment re-rendered |
 | `ServiceError` | failed | 422, the form re-rendered | 200, the form fragment re-rendered |
 | `DispatchError` | failed | 400, the form re-rendered | 200, the form fragment re-rendered |
-| `NotPermitted`, `PrincipalUnavailable` | denied | `PermissionDenied` | `PermissionDenied` |
+| `PermissionCheckDenied`, `NotPermitted`, `PrincipalUnavailable` | denied | `PermissionDenied` | `PermissionDenied` |
 | `ServiceNotFound` | denied | `Http404` | `Http404` |
 
 A not-found result is `Http404` too, in both. The outcome column is the
@@ -930,7 +930,10 @@ books" shows every error the form has.
   the Validator's is, still answers for the rest: a field's
   `clean_<field>()`, a length, the form's `clean()`. So a refresh shows
   every error its commit would refuse in one post, not the shape's first and
-  the form's after it. A partial page's form is not validated beside the
+  the form's after it. On `editions/new/checked/`, "Show their books" with
+  copies that do not parse and a number the book already has shows both:
+  the copies' error is the shape check's, the number's is the form's
+  `clean()`. A partial page's form is not validated beside the
   refusal, since validated whole it would call every blank field required.
 - **`HX-Trigger-Name` decides which errors.** Where it names one of the
   form's fields, as the field posts it - its `html_name` - only that

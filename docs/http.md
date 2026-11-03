@@ -342,7 +342,7 @@ JSON Schema it is:
 | --- | --- | --- |
 | `InvalidArguments` | 400 | the error tree |
 | `ServiceValidationError` | 400 | its detail, as a field map |
-| `NotPermitted`, `PrincipalUnavailable` | 403 | `{"detail": message}` |
+| `PermissionCheckDenied`, `NotPermitted`, `PrincipalUnavailable` | 403 | `{"detail": message}` |
 | `ServiceNotFound` | 404 | `{"detail": message}` |
 | `ActionUnavailable` | 409 | `{"detail": message, "code": code}` |
 | `ServiceConflict` | 409 | `{"detail": message}` |

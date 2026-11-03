@@ -29,6 +29,7 @@ from django_service_specs import (
     DispatchError,
     InvalidArguments,
     NotPermitted,
+    PermissionCheckDenied,
     PrincipalUnavailable,
     SelectorKind,
     SelectorSpec,
@@ -43,6 +44,7 @@ from django_service_specs import (
 
 from django_spec_html import SpecView, UnsupportedMediaType, dispatch_request, error_response
 from docs.examples import http
+from tests.dispatch.utils import Refuse
 from tests.dispatch_app.models import Note
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -283,6 +285,7 @@ def test_the_pages_status_table_is_the_one_shipped() -> None:
     examples: list[DispatchError | ServiceError] = [
         InvalidArguments({}),
         ServiceValidationError("x"),
+        PermissionCheckDenied(check=Refuse(), spec=None),
         NotPermitted(),
         PrincipalUnavailable(),
         ServiceNotFound(),
