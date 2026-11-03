@@ -976,6 +976,26 @@ class TestValidatingARefresh:
         }
         assert list(response.context_data["form"].fields["book"].queryset) == [earthsea]
 
+    def test_a_refresh_shows_the_number_s_error_beside_the_copies_refusal(
+        self, ada: Any, author: Author, earthsea: Book
+    ) -> None:
+        # The copies fail the shape check, so the kernel never runs the form;
+        # the number's error is the page's form validated beside the refusal.
+        data = editions(
+            author=str(author.pk),
+            book=str(earthsea.pk),
+            number="1",
+            copies="many",
+            refresh="Show their books",
+        )
+        response = serve(FACTORY.post(CHECKED, data=data), ada).render()
+        assert response.status_code == 200
+        assert field_errors(response) == {
+            "number": ["Earthsea already has edition 1."],
+            "copies": ["Enter a whole number."],
+        }
+        assert Edition.objects.count() == 1
+
     def test_add_commits_as_on_the_page_that_does_not_validate(
         self, ada: Any, author: Author, earthsea: Book
     ) -> None:

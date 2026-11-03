@@ -343,6 +343,9 @@ class CheckedEditionForm(AddEditionForm):
             }
         ),
     )
+    # The form's own, and no column of the edition's: a count that does not
+    # parse is refused by the shape check, and the number's error beside it.
+    copies = forms.IntegerField(min_value=1, required=False)
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}

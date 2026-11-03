@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refuses is still a 403, never a sign-in redirect. The row is there so the
   map names every kernel refusal; the status tables in the HTTP and pages
   docs list it too.
+- **The pages docs show 0.10.0's validated refresh at work.** The
+  `editions/new/checked/` example's form has a `copies` count of its own, and
+  "Show their books" with copies that do not parse and a number the book
+  already has shows the shape check's refusal of the one beside the form's
+  `clean()` error on the other.
 
 ## [0.10.0] — 2026-11-03
 
