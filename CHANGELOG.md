@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-11-03
+
 ### Changed
 - **A validated refresh shows the form's own errors beside a shape-check
   refusal, as a refused commit does.** Under `validate_on_refresh`, a post the
@@ -600,7 +602,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Artui/django-spec-html/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Artui/django-spec-html/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Artui/django-spec-html/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Artui/django-spec-html/compare/v0.6.0...v0.7.0
