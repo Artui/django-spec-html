@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **A validated refresh shows the form's own errors beside a shape-check
+  refusal, as a refused commit does.** Under `validate_on_refresh`, a post the
+  kernel's shape check refused - a required field left blank, a number that
+  does not parse - showed that refusal alone, so a field's own request named
+  no error of its own and a refresh button showed less than the same post's
+  commit refused: a blank name and an invalid email showed the name's
+  `required` and not the email's error. The refresh now places its refusal
+  through the commit's own path, the page's form validated beside it on a
+  whole call, and `HX-Trigger-Name` keeps that field's errors from both,
+  never a `clean()`'s non-field error. This reverses 0.8.0's documented "the
+  shape check answers before the form": a field's `clean_<field>()` no
+  longer waits until the rest of the form is well formed. A partial page's
+  form is still not validated beside the refusal.
+
 ## [0.9.0] — 2026-11-02
 
 ### Changed

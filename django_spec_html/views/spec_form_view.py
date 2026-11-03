@@ -236,11 +236,14 @@ class SpecFormView(SpecPageBase):
     with the principal, the target the page found, the request's seeds and
     its call context: the shape check and the Validator, and nothing
     dispatched, no ``success_message`` sent. Its refusal is placed on the
-    form as a refused commit's is, at 200 still, with ``refreshed`` in the
-    context. Where ``HX-Trigger-Name`` names one of the form's fields, as
-    its ``html_name``, the name it posts under, only that field's errors are
-    placed and no non-field error; on every other refresh, the whole
-    refusal. **It runs no provider**, as ``bind_arguments`` runs neither
+    form as a refused commit's is, beside the page's own form validated on a
+    whole call, so a field the shape check refuses does not hide what the
+    form's own checks - ``clean_<field>()``, a length, ``clean()`` - say of
+    the rest, at 200 still, with ``refreshed`` in the context. Where
+    ``HX-Trigger-Name`` names one of the form's fields, as its
+    ``html_name``, the name it posts under, only that field's errors are
+    shown, the shape check's and the form's own alike, and no non-field
+    error; on every other refresh, every error. **It runs no provider**, as ``bind_arguments`` runs neither
     ``input_data`` nor ``kwargs``: a field the spec's ``input_data`` fills
     is judged as posted, so a required one left blank is refused by the
     refresh and accepted by the commit, which the provider fills.
@@ -491,9 +494,11 @@ class SpecFormView(SpecPageBase):
         target found, the request's seeds - so a ``form_kwargs`` naming one is
         handed it (test_a_form_whose_keywords_name_a_seed_is_bound_with_it) -
         and its one call context. Nothing is dispatched. What it refuses is
-        placed as a refused commit's is, onto an empty error state, so the
-        form's own validation adds nothing the bind did not say, and only
-        what ``HX-Trigger-Name`` asks for, as ``_triggered`` reads it.
+        placed by ``_place_refusal``, as a refused commit's is: beside the
+        page's own form validated, on a whole call, so a shape-check refusal
+        does not hide what the form's own checks would say
+        (test_a_refresh_shows_what_its_commit_refuses). Then only what
+        ``HX-Trigger-Name`` asks for is kept, as ``_triggered`` reads it.
         """
         without_errors(form)
         if not self.validate_on_refresh:
@@ -510,7 +515,48 @@ class SpecFormView(SpecPageBase):
                 call_context=served.call_context,
             )
         except InvalidArguments as refused:
-            add_argument_errors(form, _triggered(form, trigger_name(request), refused.detail))
+            self._place_refusal(form, refused, target)
+            _triggered(form, trigger_name(request))
+
+    def _place_refusal(
+        self, form: forms.BaseForm, refused: DispatchError | ServiceError, target: Any, /
+    ) -> None:
+        """Place ``refused`` on the bound form, beside the form's own errors where they are merged.
+
+        Merged, for an argument refusal of a whole call on a found target, the
+        page's form is validated first, as the Validator validates its own,
+        under the kernel's ``clean_held_to_their_columns``, and the refusal is
+        placed beside what it found, never twice. Otherwise the form's error
+        state is set to none directly, which is what Django's ``add_error``
+        needs, and the refusal is placed on it alone. A refused commit and a
+        validated refresh both place theirs here.
+        """
+        # One branch to coverage, so each condition is held by its own
+        # test: test_a_refusal_after_the_validator_took_the_form_validates_it_no_further
+        # (an argument refusal: any other is no verdict on the post's
+        # arguments, and a service's comes once the Validator's form, built
+        # as the page's is, has taken them),
+        # test_a_shape_refusal_shows_no_word_about_a_field_left_blank and
+        # test_a_partial_page_s_refresh_calls_no_blank_field_required (a
+        # whole call: a partial one's Validator takes the fields a post
+        # leaves blank off its form, and the page's form validated whole
+        # would call each one required), and
+        # test_an_update_page_s_own_unchanged_value_is_never_taken[a-refused-route]
+        # (a found target: with the route refused, the page's form is built
+        # as no row, and validated it would judge the post as a create,
+        # the row's own unique value taken by another). A refresh never
+        # reaches here without a target, since ``_page`` answers a refused
+        # route with ``BadRequest``.
+        merged = (
+            isinstance(refused, InvalidArguments)
+            and not self.served_spec().partial
+            and target is not UNSET
+        )
+        if merged:
+            clean_held_to_their_columns(form)
+        else:
+            without_errors(form)
+        add_argument_errors(form, refusal_tree(refused))
 
     def _render_page(
         self, form: forms.BaseForm, refreshed: bool, /, **context: Any
@@ -532,21 +578,14 @@ class SpecFormView(SpecPageBase):
     ) -> HttpResponse:
         """The page again, the bound form carrying ``refused``, and its own errors where merged.
 
-        Merged, for an argument refusal of a whole call on a found target, the
-        page's form is validated first, as the Validator
-        validates its own, under the kernel's ``clean_held_to_their_columns``,
-        and the refusal is placed beside what it found, never twice. So after
-        a shape-check refusal the form's own checks - a length, ``clean()``,
-        uniqueness - answer in the same post
+        ``_place_refusal`` places it. Merged, after a shape-check refusal the
+        form's own checks - a length, ``clean()``, uniqueness - answer in the
+        same post
         (test_a_blank_required_field_and_a_clean_violation_show_in_one_post).
         The guards are what validating it needs: without them it would hand a
         number no integer column holds to the database driver, and SQLite's
         raises ``OverflowError``
         (test_a_key_past_its_column_beside_a_shape_refusal_never_reaches_the_driver).
-
-        Otherwise the form carries the refusal alone: its error state is set to
-        none directly, which is what Django's ``add_error`` needs, and the
-        refusal is placed on it.
 
         Then ``asked_fields`` are held back, but for those ``requested`` asks
         for, as ``_hold_back`` reads them, and a question's
@@ -556,29 +595,7 @@ class SpecFormView(SpecPageBase):
         widget from a schema
         (test_a_key_no_field_declares_is_asked_by_its_message_alone).
         """
-        # One branch to coverage, so each condition is held by its own
-        # test: test_a_refusal_after_the_validator_took_the_form_validates_it_no_further
-        # (an argument refusal: any other is no verdict on the post's
-        # arguments, and a service's comes once the Validator's form, built
-        # as the page's is, has taken them) and
-        # test_a_shape_refusal_shows_no_word_about_a_field_left_blank (a
-        # whole call: a partial one's Validator takes the fields a post
-        # leaves blank off its form, and the page's form validated whole
-        # would call each one required), and
-        # test_an_update_page_s_own_unchanged_value_is_never_taken[a-refused-route]
-        # (a found target: with the route refused, the page's form is built
-        # as no row, and validated it would judge the post as a create,
-        # the row's own unique value taken by another).
-        merged = (
-            isinstance(refused, InvalidArguments)
-            and not self.served_spec().partial
-            and target is not UNSET
-        )
-        if merged:
-            clean_held_to_their_columns(form)
-        else:
-            without_errors(form)
-        add_argument_errors(form, refusal_tree(refused))
+        self._place_refusal(form, refused, target)
         schema: Mapping[str, Any] = {}
         # One branch to coverage, so each condition is held by its own test:
         # test_any_other_refusal_holds_it_back (no question was asked) and
@@ -678,10 +695,8 @@ def _check_asked_fields(
             )
 
 
-def _triggered(
-    form: forms.BaseForm, trigger: str | None, detail: Mapping[Any, Any]
-) -> Mapping[Any, Any]:
-    """The part of a refresh's refusal to show: one field's, where ``trigger`` names it, or all of it.
+def _triggered(form: forms.BaseForm, trigger: str | None) -> None:
+    """Keep the part of a refused refresh's errors to show: one field's, where ``trigger`` names it, or all.
 
     ``trigger`` is ``HX-Trigger-Name``, the element an htmx request was
     issued from, matched against each field's ``html_name``, the name it
@@ -689,16 +704,22 @@ def _triggered(
     ``hx-trigger="change"`` on its input, shows that field's errors and
     neither another field's nor the form's: a person has not reached the
     rest yet. Any other refresh - no header, the form's own name, a refresh
-    button - shows the whole refusal.
+    button - shows every error. The form's errors are read once the refusal
+    is placed, so what the page's own form found beside it is kept or left
+    out as the refusal is: a ``clean()``'s non-field error never shows on
+    one field's request
+    (test_a_field_s_own_request_leaves_out_the_form_s_own_non_field_error).
     """
     named = next((field.name for field in form if field.html_name == trigger), None)
     # One branch arc inside the comprehension, so each condition is held by
     # its own test: test_a_refresh_no_field_issued_shows_every_error (no
-    # field named, so every key), test_a_field_s_own_request_shows_that_field_s_errors_alone
+    # field named, so every key kept), test_a_field_s_own_request_shows_that_field_s_errors_alone
     # (a field named, so its key alone, and no non-field error), with
     # test_a_prefixed_form_s_field_is_named_as_it_posts holding the match on
     # ``html_name`` rather than ``name``.
-    return {key: value for key, value in detail.items() if named is None or key == named}
+    errors = form.errors
+    for key in [key for key in errors if named is not None and key != named]:
+        del errors[key]
 
 
 def _hold_back(form: forms.BaseForm, held: tuple[str, ...], asked: Collection[str]) -> None:

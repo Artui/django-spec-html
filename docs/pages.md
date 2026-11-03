@@ -916,11 +916,18 @@ books" shows every error the form has.
   answers 200, and an htmx request the form's fragment at 200, with
   `refreshed` in the context as on any post that does not commit.
 - **The refusal is placed on the form as a refused commit's is**, by
-  `add_argument_errors`.
+  `add_argument_errors`, beside the page's own form validated. While a field
+  fails the shape check - a required field blank, a number that does not
+  parse - the kernel never runs the Validator, but the page's form, built as
+  the Validator's is, still answers for the rest: a field's
+  `clean_<field>()`, a length, the form's `clean()`. So a refresh shows
+  every error its commit would refuse in one post, not the shape's first and
+  the form's after it. A partial page's form is not validated beside the
+  refusal, since validated whole it would call every blank field required.
 - **`HX-Trigger-Name` decides which errors.** Where it names one of the
   form's fields, as the field posts it - its `html_name` - only that
-  field's errors are placed, and no non-field error: a person has not reached
-  the rest of the form yet. Every other refresh - no header, the form's own
+  field's errors are shown, the shape check's and the form's own alike, and no
+  non-field error: a person has not reached the rest of the form yet. Every other refresh - no header, the form's own
   name, a refresh button, one part of a multi-widget field such as `when_0` -
   shows the whole refusal.
 - **No provider runs.** `bind_arguments` runs neither the spec's
@@ -929,10 +936,6 @@ books" shows every error the form has.
   required one left blank is refused by the refresh, and accepted by the
   commit, which the provider fills. What the service, an unmet affordance or a
   conflict refuses is the commit's alone, since nothing is dispatched.
-- **The shape check answers before the form.** While any field fails it - a
-  required field blank, a number that does not parse - the form's own checks
-  have not run, so a field's request shows its own shape error, or none, and
-  its `clean_<field>()` waits until the rest of the form is well formed.
 
 ## Returning where the page was opened from
 
