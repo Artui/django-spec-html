@@ -78,7 +78,9 @@ The answer:
 [`adispatch_request`][django_spec_html.http.adispatch_request.adispatch_request]
 does the same from an async view, through `adispatch` and `apresent`. It reads
 the request in an executor hop of its own, because touching `request.user` is
-a session query and Django refuses one on the event loop.
+a session query and Django refuses one on the event loop. A refusal asking for
+input is checked against the spec's parameters in a hop of its own too, because
+a Validator's `parameters` may query to declare what it takes.
 
 ## The class form
 
