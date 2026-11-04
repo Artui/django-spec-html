@@ -87,7 +87,7 @@ async def adispatch_request(
             return not_found_response()
         return success_response(spec, await apresent(spec, result), success_status)
     except (DispatchError, ServiceError) as refused:
-        check_asked_input(spec, refused, pool_seeds=pool_seeds)
+        check_asked_input(spec, refused, pool_seeds=pool_seeds, call_context=call_context)
         return error_response(refused)
 
 
@@ -117,5 +117,7 @@ def _read_request(
         server_arguments=server_arguments,
     )
     if server_arguments is not None:
-        arguments = apply_server_arguments(spec, arguments, server_arguments)
+        arguments = apply_server_arguments(
+            spec, arguments, server_arguments, call_context=call_context
+        )
     return principal, arguments

@@ -64,7 +64,14 @@ from tests.dispatch.utils import (
     note_by_pk,
 )
 from tests.dispatch_app.models import Note
-from tests.http.utils import FACTORY, HANDED_STAGES, Handed, handed_spec, signed_in
+from tests.http.utils import (
+    FACTORY,
+    HANDED_STAGES,
+    Handed,
+    handed_spec,
+    provider_read_spec,
+    signed_in,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -265,6 +272,16 @@ class TestARequiredParameterIsSupplied:
     def test_an_untyped_provider_supplies_every_read_it_reaches(self) -> None:
         spec = self.spec(Parameter("owner_name", "string", required=True), kwargs=dict)
         confirm_view(spec)
+
+    def test_a_read_a_provider_requires_itself_is_demanded(self) -> None:
+        # Handed only its seat's reads, the provider can have ``pk`` from the
+        # caller alone, which no post to a confirmation carries. Named in
+        # ``route_kwargs``, the route supplies it.
+        spec = provider_read_spec()
+        with pytest.raises(ImproperlyConfigured, match=r"requires pk, which no post") as e:
+            SpecConfirmView.as_view(spec=spec, template_name=PAGE, success_url="/")
+        assert "owner_name" not in str(e.value)
+        confirm_view(spec, route_kwargs=("pk",))
 
     @pytest.mark.parametrize(
         "read",

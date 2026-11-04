@@ -53,6 +53,7 @@ from tests.http.utils import (
     handed_spec,
     note_spec,
     notes_spec,
+    provider_read_spec,
     signed_in,
     titled_spec,
 )
@@ -525,6 +526,37 @@ class TestTheCallsDeclaration:
         assert response.status_code == 204
         assert spec.service.calls[0]["data"]["count"] == "3"
         assert validator.one_context()["request"] is request
+
+    def test_a_bound_value_is_checked_against_the_call_s_declaration(self, ada: Any) -> None:
+        # The call declares the count a string, so the server's 3 is the
+        # host's mistake. Checked against the declaration made to no call, an
+        # integer, it was laid on, and dispatch refused it as the client's 400.
+        validator = DeclaredByTheRequest()
+        spec = ServiceSpec(service=Record(), permissions=OPEN, validator=validator)
+        request = signed_in(FACTORY.post("/", data={"title": "Hi"}), ada)
+        with pytest.raises(ImproperlyConfigured, match="binds a value its parameter refuses"):
+            dispatch_request(spec, request, server_arguments=ServerArguments(values={"count": 3}))
+        assert validator.one_context()["request"] is request
+
+    def test_a_key_declared_to_the_call_alone_can_be_asked_for(self, ada: Any) -> None:
+        # Checked against the declaration made to no call, which has no
+        # ``note``, the question was the service's error rather than a 422.
+        schema = {"note": {"type": "string"}}
+        validator = DeclaredByTheRequest(routed="note")
+        request = signed_in(FACTORY.post("/", data={"title": "Hi"}), ada)
+        response = dispatch_request(asking_spec(schema, validator=validator), request)
+        assert (response.status_code, body(response)) == (
+            422,
+            {"detail": "Say which.", "schema": schema},
+        )
+        assert validator.one_context()["request"] is request
+
+
+def test_a_read_a_provider_requires_itself_left_out_is_the_clients_400(ada: Any) -> None:
+    # The kernel demands it of the caller before any provider runs, where the
+    # provider was called without it and raised ``TypeError``.
+    response = dispatch_request(provider_read_spec(), post(ada, {"owner_name": "ada"}))
+    assert (response.status_code, body(response)) == (400, {"pk": ["This field is required."]})
 
 
 class TestSources:

@@ -3123,6 +3123,43 @@ class TestTheCallsDeclaration:
         response = post(checking(spec), ada, data)
         assert (response.status_code, refused(response)) == (200, {})
 
+    def test_a_bound_value_is_checked_against_the_call_s_declaration(self, ada: Any) -> None:
+        # The call declares the count a string, so the server's 3 is the
+        # host's mistake, raised where the page reads its route. Checked
+        # against the declaration made to no call, an integer, as ``as_view()``
+        # checked it, it was laid on, and the page rendered.
+        validator = DeclaredByTheRequest()
+        binding = ServerArguments(values={"count": 3})
+        view = form_view(entry_spec(validator=validator), server_arguments=binding)
+        with pytest.raises(ImproperlyConfigured, match="binds a value its parameter refuses"):
+            get(view, ada)
+        assert validator.one_context()["request"] is not None
+
+    def test_as_view_refuses_binding_a_name_declared_to_a_call_alone(self) -> None:
+        # ``as_view()`` runs with no request, so it reads the declaration made
+        # to no call, which has no ``note``.
+        spec = entry_spec(validator=DeclaredByTheRequest(routed="note"))
+        with pytest.raises(
+            ImproperlyConfigured, match="ServerArguments names note, which the spec does not"
+        ):
+            form_view(spec, server_arguments=ServerArguments(values={"note": "x"}))
+
+    def test_a_key_declared_to_the_call_alone_can_be_asked_for(self, ada: Any) -> None:
+        # Checked against the declaration made to no call, which has no
+        # ``note``, the question was the service's error, never rendered.
+        schema = {"note": {"type": "string"}}
+
+        def ask(**pool: Any) -> None:
+            raise AdditionalInputRequired(ASK, schema=schema)
+
+        validator = DeclaredByTheRequest(routed="note")
+        spec = ServiceSpec(service=ask, permissions=OPEN, validator=validator)
+        request = signed_in(FACTORY.post("/", data={"title": "Hi"}), ada)
+        response = form_view(spec)(request)
+        assert response.status_code == 422
+        assert response.context_data["requested_input"]["schema"] == schema
+        assert validator.one_context()["request"] is request
+
 
 class TestTheRequestAndTheView:
     """The call context starts with the request and this page, so every stage naming either has it."""

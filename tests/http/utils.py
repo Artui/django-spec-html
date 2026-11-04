@@ -129,18 +129,44 @@ def titled_spec(returns: Any = None, **kwargs: Any) -> ServiceSpec:
     return ServiceSpec(service=Record(returns), **kwargs)
 
 
-def asking_spec(schema: Any) -> ServiceSpec:
+def asking_spec(schema: Any, validator: Any = None) -> ServiceSpec:
     """A write that answers every call by asking for more, under ``schema``.
 
-    It declares ``title`` and nothing else, so a schema keyed ``title`` asks for
-    a declared value and any other key asks for one the closed argument set
-    would refuse.
+    By default it declares ``title`` and nothing else, so a schema keyed
+    ``title`` asks for a declared value and any other key asks for one the
+    closed argument set would refuse.
     """
 
     def ask(**pool: Any) -> None:
         raise AdditionalInputRequired("Say which.", schema=schema)
 
-    return ServiceSpec(service=ask, permissions=OPEN, validator=Titled())
+    return ServiceSpec(
+        service=ask, permissions=OPEN, validator=Titled() if validator is None else validator
+    )
+
+
+def _owner_from_pk(*, pk: Any) -> dict[str, Any]:
+    return {"owner_name": str(pk)}
+
+
+def provider_read_spec() -> ServiceSpec:
+    """A write whose ``kwargs`` provider requires ``pk`` itself, beside the ``owner_name`` it fills.
+
+    Both reads are required. The provider is handed its seat's reads, never
+    another provider's answer, so ``pk`` can only come from the caller, and
+    the kernel demands it of the caller: refused as missing when a call leaves
+    it out, where the provider raised ``TypeError``. ``owner_name`` is one an
+    untyped provider reaches, so it is never demanded.
+    """
+    return ServiceSpec(
+        service=Record(),
+        permissions=OPEN,
+        reads=Parameters.of(
+            Parameter("owner_name", "string", required=True),
+            Parameter("pk", "integer", required=True),
+        ),
+        kwargs=_owner_from_pk,
+    )
 
 
 def asking_for_tenant_spec(schema: Any) -> ServiceSpec:

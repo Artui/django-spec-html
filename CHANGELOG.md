@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] — 2026-11-04
+
+### Changed
+- **The kernel floor is 0.26.0, and the kernel's binding and question checks
+  read the spec as it declares itself to the request.** Every per-request call
+  of `apply_server_arguments` and `check_requested_input` - in
+  `dispatch_request`, `adispatch_request` and the pages - now hands it the
+  request's call context, the dict dispatch is handed. A Validator declaring
+  `parameters(self, *, call_context=None)` differently to a request is read
+  as that request declares it:
+  - **A bound value is checked against the request's declaration.** One the
+    declaration made to no call takes and the request's refuses is the host's
+    `ImproperlyConfigured`, where it was laid over the arguments and refused as
+    the client's 400, or as a refusal on the page's form.
+  - **A service may ask for a key the spec declares to the request alone**,
+    answered 422 from the JSON views and as the page's question, where it was
+    raised as `ImproperlyConfigured`.
+
+  A spec whose parameters ignore the call context answers these two checks as
+  before. What `as_view()` checks - `route_kwargs`, `server_arguments` - still
+  runs with no request, so a bound name is declared to no call as well.
+- **The floor brings the kernel's 0.25.0 rule that a read a `kwargs` or
+  `input_data` provider requires itself is demanded of the caller.** A
+  provider is handed its seat's reads, never another provider's answer, so
+  such a read can only come from the caller:
+  - a call to the JSON views leaving it out is the client's 400 naming the
+    read, where the provider was called without it and raised `TypeError`, a
+    500;
+  - `as_view()` refuses a `server_arguments` withholding it, with the kernel's
+    `ImproperlyConfigured`, where every call raised that `TypeError`;
+  - `SpecConfirmView.as_view()` refuses a spec no source supplies it to, as
+    for any required read, since no post to a confirmation carries one: name
+    it in `route_kwargs`, or fill it from a seed or a value bound in
+    `server_arguments`.
+
+  So a URLconf serving such a spec can fail at import on this release where it
+  imported before. The floor brings 0.25.0's other breaking change too: a
+  `PydanticValidator` hands the service the model instance as `data`, where
+  it handed a dict, so a service the JSON views serve through one reads
+  `data.title` rather than `data["title"]`. The pages take a `FormValidator`
+  or no Validator, so it does not reach them.
+
 ## [0.10.1] — 2026-11-03
 
 ### Changed
@@ -619,7 +661,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/Artui/django-spec-html/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/Artui/django-spec-html/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/Artui/django-spec-html/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Artui/django-spec-html/compare/v0.8.0...v0.9.0
