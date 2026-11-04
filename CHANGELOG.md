@@ -25,9 +25,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     answered 422 from the JSON views and as the page's question, where it was
     raised as `ImproperlyConfigured`.
 
-  A spec whose parameters ignore the call context answers as before. What
-  `as_view()` checks - `route_kwargs`, `server_arguments` - still runs with no
-  request, so a bound name is declared to no call as well.
+  A spec whose parameters ignore the call context answers these two checks as
+  before. What `as_view()` checks - `route_kwargs`, `server_arguments` - still
+  runs with no request, so a bound name is declared to no call as well.
+- **The floor brings the kernel's 0.25.0 rule that a read a `kwargs` or
+  `input_data` provider requires itself is demanded of the caller.** A
+  provider is handed its seat's reads, never another provider's answer, so
+  such a read can only come from the caller:
+  - a call to the JSON views leaving it out is the client's 400 naming the
+    read, where the provider was called without it and raised `TypeError`, a
+    500;
+  - `as_view()` refuses a `server_arguments` withholding it, with the kernel's
+    `ImproperlyConfigured`, where every call raised that `TypeError`;
+  - `SpecConfirmView.as_view()` refuses a spec no source supplies it to, as
+    for any required read, since no post to a confirmation carries one: name
+    it in `route_kwargs`, or fill it from a seed or a provider of its own.
+
+  So a URLconf serving such a spec can fail at import on this release where it
+  imported before. The floor brings 0.25.0's other breaking change too: a
+  `PydanticValidator` hands the service the model instance as `data`, where
+  it handed a dict, so a service the JSON views serve through one reads
+  `data.title` rather than `data["title"]`. The pages take a `FormValidator`
+  or no Validator, so it does not reach them.
 
 ## [0.10.1] — 2026-11-03
 

@@ -30,6 +30,7 @@ from tests.http.utils import (
     DEEP_JSON,
     FACTORY,
     HANDED_STAGES,
+    DeclaredByTheRequest,
     Foreign,
     Handed,
     SeesTenant,
@@ -39,6 +40,7 @@ from tests.http.utils import (
     limited_spec,
     note_spec,
     notes_spec,
+    provider_read_spec,
     reflected_tenant_spec,
     signed_in,
     titled_spec,
@@ -475,6 +477,26 @@ class TestServerArguments:
                 route_kwargs=("limit",),
                 server_arguments=ServerArguments(withheld=frozenset({"limit"})),
             )
+
+    def test_withholding_a_read_a_provider_requires_itself_is_refused_at_as_view(self) -> None:
+        # The kernel demands such a read of the caller, so a binding
+        # withholding it leaves every call refused.
+        with pytest.raises(ImproperlyConfigured, match="withholds pk, which no call could"):
+            configured(
+                spec=provider_read_spec(),
+                server_arguments=ServerArguments(withheld=frozenset({"pk"})),
+            )
+
+    def test_binding_a_name_declared_to_a_call_alone_is_refused_at_as_view(self) -> None:
+        # ``as_view()`` runs with no request, so it reads the declaration made
+        # to no call, which has no ``note``.
+        spec = ServiceSpec(
+            service=Record(), permissions=OPEN, validator=DeclaredByTheRequest(routed="note")
+        )
+        with pytest.raises(
+            ImproperlyConfigured, match="ServerArguments names note, which the spec does not"
+        ):
+            configured(spec=spec, server_arguments=ServerArguments(values={"note": "x"}))
 
     def test_a_bound_name_the_route_drops_is_served(self, ada: Any) -> None:
         note = Note.objects.get(owner=ada)
