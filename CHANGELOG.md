@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] — 2026-11-04
+
 ### Changed
 - **The kernel floor is 0.26.0, and the kernel's binding and question checks
   read the spec as it declares itself to the request.** Every per-request call
@@ -639,7 +641,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/Artui/django-spec-html/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/Artui/django-spec-html/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/Artui/django-spec-html/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Artui/django-spec-html/compare/v0.8.0...v0.9.0
