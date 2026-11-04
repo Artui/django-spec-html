@@ -959,7 +959,9 @@ request, and read the parameters with no context.</p>
   " href="../reference/#django_spec_html.http.adispatch_request.adispatch_request"><code>adispatch_request</code></a>
 does the same from an async view, through <code>adispatch</code> and <code>apresent</code>. It reads
 the request in an executor hop of its own, because touching <code>request.user</code> is
-a session query and Django refuses one on the event loop.</p>
+a session query and Django refuses one on the event loop. A refusal asking for
+input is checked against the spec's parameters in a hop of its own too, because
+a Validator's <code>parameters</code> may query to declare what it takes.</p>
 <h2 id="the-class-form">The class form<a class="headerlink" href="#the-class-form" title="Permanent link">&para;</a></h2>
 <p><a class="autorefs autorefs-internal" title="SpecView" href="../reference/#django_spec_html.http.spec_view.SpecView"><code>SpecView</code></a> is one spec as a
 view, and every attribute can be passed to <code>as_view()</code> or set on a subclass:

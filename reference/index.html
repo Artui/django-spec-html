@@ -6940,8 +6940,11 @@ AuthenticationMiddleware leaves, and its first read is a session query,
 which Django refuses on the loop; Django 4.2, the floor, has no
 <code>request.auser()</code> to await instead. <code>spec.parameters()</code> goes in the
 same hop, because a Validator may read a model to declare what it takes,
-and so does applying <code>server_arguments</code>, which reads it again.
-Building the response does not query and stays on the loop.</p>
+and so does applying <code>server_arguments</code>, which reads it again.</p>
+<p>A refusal asking for input is checked in a hop of its own for the same
+reason: the check holds the schema against <code>spec.parameters()</code>, read
+again for that call. Building the response does not query and stays on
+the loop.</p>
 
 
     </div>
