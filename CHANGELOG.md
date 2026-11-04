@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`adispatch_request` checks a request for input off the event loop.** A
+  refusal asking for input is held against the spec's parameters before it is
+  answered 422, and that read ran on the loop. A Validator whose `parameters`
+  queries - a model-backed one, or one reading the request's tenant - raised
+  `SynchronousOnlyOperation` there, so `AsyncSpecView` answered 500 where it
+  meant 422. The check now runs in its own `sync_to_async` hop, as reading the
+  request does.
+
 ## [0.10.2] — 2026-11-04
 
 ### Changed
