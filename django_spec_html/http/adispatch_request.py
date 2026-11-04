@@ -62,7 +62,11 @@ async def adispatch_request(
     ``request.auser()`` to await instead. ``spec.parameters()`` goes in the
     same hop, because a Validator may read a model to declare what it takes,
     and so does applying ``server_arguments``, which reads it again.
-    Building the response does not query and stays on the loop.
+
+    A refusal asking for input is checked in a hop of its own for the same
+    reason: the check holds the schema against ``spec.parameters()``, read
+    again for that call. Building the response does not query and stays on
+    the loop.
     """
     # Compiled once, before anything is read, so the arguments, the answer's
     # status and the asked-input check all read the one compiled spec.
@@ -87,7 +91,9 @@ async def adispatch_request(
             return not_found_response()
         return success_response(spec, await apresent(spec, result), success_status)
     except (DispatchError, ServiceError) as refused:
-        check_asked_input(spec, refused, pool_seeds=pool_seeds)
+        await sync_to_async(check_asked_input, thread_sensitive=True)(
+            spec, refused, pool_seeds=pool_seeds, call_context=call_context
+        )
         return error_response(refused)
 
 
@@ -117,5 +123,7 @@ def _read_request(
         server_arguments=server_arguments,
     )
     if server_arguments is not None:
-        arguments = apply_server_arguments(spec, arguments, server_arguments)
+        arguments = apply_server_arguments(
+            spec, arguments, server_arguments, call_context=call_context
+        )
     return principal, arguments

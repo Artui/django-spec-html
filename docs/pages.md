@@ -585,10 +585,13 @@ the affordances, the form's `form_kwargs` and dispatch. The spec's parameters
 are read with it too, for the route's check and the post's reading, a validated
 refresh's included, so a Validator whose `parameters` declares `call_context`
 declares to the page's reading what it declares to dispatch. The kernel's own
-helpers the page calls around it - applying the server's binding, checking an
-asked question's keys - still read the parameters with no context. What
-`as_view()` checks runs
-with no request, and reads them with no context: `route_kwargs`, and a list
+helpers the page calls around it read the spec with it as well: applying the
+server's binding checks each bound value against what the spec declares to
+this request, and a bound value that declaration refuses is the host's
+`ImproperlyConfigured`; checking an asked question's keys lets a service ask
+for a key the spec declares to this request alone. What `as_view()` checks
+runs with no request, and reads them with no context: `route_kwargs`,
+`server_arguments`, so a bound name is declared to no call as well, and a list
 page's paging keys and table order field. So a check, a
 condition, `form_kwargs` or the service declaring
 [`call_context`](https://artui.github.io/django-service-specs/dispatching/)

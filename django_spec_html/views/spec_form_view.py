@@ -507,7 +507,7 @@ class SpecFormView(SpecPageBase):
             read = self._arguments(form, spec, url_kwargs, served)
             bind_arguments(
                 spec,
-                with_binding(spec, read, served.server),
+                with_binding(spec, read, served),
                 principal=principal,
                 target=target,
                 unknown_arguments=self.unknown_arguments,
