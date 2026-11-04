@@ -39,7 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `ImproperlyConfigured`, where every call raised that `TypeError`;
   - `SpecConfirmView.as_view()` refuses a spec no source supplies it to, as
     for any required read, since no post to a confirmation carries one: name
-    it in `route_kwargs`, or fill it from a seed or a provider of its own.
+    it in `route_kwargs`, or fill it from a seed or a value bound in
+    `server_arguments`.
 
   So a URLconf serving such a spec can fail at import on this release where it
   imported before. The floor brings 0.25.0's other breaking change too: a

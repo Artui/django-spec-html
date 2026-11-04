@@ -3133,7 +3133,7 @@ class TestTheCallsDeclaration:
         view = form_view(entry_spec(validator=validator), server_arguments=binding)
         with pytest.raises(ImproperlyConfigured, match="binds a value its parameter refuses"):
             get(view, ada)
-        validator.one_context()
+        assert validator.one_context()["request"] is not None
 
     def test_as_view_refuses_binding_a_name_declared_to_a_call_alone(self) -> None:
         # ``as_view()`` runs with no request, so it reads the declaration made
