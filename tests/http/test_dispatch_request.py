@@ -526,6 +526,26 @@ class TestTheCallsDeclaration:
         assert spec.service.calls[0]["data"]["count"] == "3"
         assert validator.one_context()["request"] is request
 
+    def test_a_bound_value_is_checked_against_the_call_s_declaration(self, ada: Any) -> None:
+        # The call declares the count a string, so the server's 3 is the
+        # host's mistake. Checked against the declaration made to no call, an
+        # integer, it was laid on, and dispatch refused it as the client's 400.
+        spec = ServiceSpec(service=Record(), permissions=OPEN, validator=DeclaredByTheRequest())
+        request = signed_in(FACTORY.post("/", data={"title": "Hi"}), ada)
+        with pytest.raises(ImproperlyConfigured, match="count"):
+            dispatch_request(spec, request, server_arguments=ServerArguments(values={"count": 3}))
+
+    def test_a_key_declared_to_the_call_alone_can_be_asked_for(self, ada: Any) -> None:
+        # Checked against the declaration made to no call, which has no
+        # ``note``, the question was the service's error rather than a 422.
+        schema = {"note": {"type": "string"}}
+        spec = asking_spec(schema, validator=DeclaredByTheRequest(routed="note"))
+        response = dispatch_request(spec, signed_in(FACTORY.post("/", data={"title": "Hi"}), ada))
+        assert (response.status_code, body(response)) == (
+            422,
+            {"detail": "Say which.", "schema": schema},
+        )
+
 
 class TestSources:
     # The shape of a host serving another library's declarations: the object

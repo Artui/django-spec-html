@@ -134,7 +134,11 @@ def field_map(detail: Any) -> Mapping[Any, Any]:
 
 
 def check_asked_input(
-    spec: ServiceSpec | SelectorSpec | SpecSource, refused: Exception, *, pool_seeds: PoolSeeds
+    spec: ServiceSpec | SelectorSpec | SpecSource,
+    refused: Exception,
+    *,
+    pool_seeds: PoolSeeds,
+    call_context: dict[str, Any],
 ) -> None:
     """Refuse, as the service's own error, a request for input no route could hear answered.
 
@@ -152,9 +156,19 @@ def check_asked_input(
     against none. The tests holding it are
     ``test_a_schema_naming_a_key_the_requests_seeds_fill_is_the_services_error``,
     in ``test_dispatch_request`` and ``test_adispatch_request``.
+
+    ``call_context`` is the call's dict, the one dispatch was handed, so the
+    schema is read against what the spec declared to that call: a key a
+    Validator declares to a call alone may be asked for. It is required for
+    the reason ``pool_seeds`` is: left out, the kernel would read the
+    declaration made to no call. Held by
+    ``test_a_key_declared_to_the_call_alone_can_be_asked_for``, in the same
+    two modules.
     """
     if isinstance(refused, AdditionalInputRequired):
-        check_requested_input(spec, refused.schema, pool_seeds=pool_seeds)
+        check_requested_input(
+            spec, refused.schema, pool_seeds=pool_seeds, call_context=call_context
+        )
 
 
 def not_found_response() -> JsonResponse:

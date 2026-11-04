@@ -50,9 +50,12 @@ so a spec callable naming either is handed it
 `AsyncSpecView` pass themselves. The spec's parameters are read with that same
 dict, so a Validator whose `parameters` declares `call_context` declares to
 the request's reader what it declares to dispatch. The kernel's own helpers
-called around the read, `apply_server_arguments` and the asked-input check,
-still read the parameters with no context, and so does the views' `as_view()`
-check of `route_kwargs`, which runs with no request.
+called around the read take that dict too: `apply_server_arguments` checks
+each bound value against what the spec declares to this call, so a value that
+declaration refuses is the host's `ImproperlyConfigured`, and the asked-input
+check lets a service ask for a key the spec declares to this call alone. The
+views' `as_view()` checks of `route_kwargs` and `server_arguments` run with no
+request, and read the parameters with no context.
 
 The answer:
 

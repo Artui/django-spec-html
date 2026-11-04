@@ -3123,6 +3123,31 @@ class TestTheCallsDeclaration:
         response = post(checking(spec), ada, data)
         assert (response.status_code, refused(response)) == (200, {})
 
+    def test_a_bound_value_is_checked_against_the_call_s_declaration(self, ada: Any) -> None:
+        # The call declares the count a string, so the server's 3 is the
+        # host's mistake, raised where the page reads its route. Checked
+        # against the declaration made to no call, an integer, as ``as_view()``
+        # checked it, it was laid on, and the page rendered.
+        binding = ServerArguments(values={"count": 3})
+        view = form_view(entry_spec(validator=DeclaredByTheRequest()), server_arguments=binding)
+        with pytest.raises(ImproperlyConfigured, match="count"):
+            get(view, ada)
+
+    def test_a_key_declared_to_the_call_alone_can_be_asked_for(self, ada: Any) -> None:
+        # Checked against the declaration made to no call, which has no
+        # ``note``, the question was the service's error, never rendered.
+        schema = {"note": {"type": "string"}}
+
+        def ask(**pool: Any) -> None:
+            raise AdditionalInputRequired(ASK, schema=schema)
+
+        spec = ServiceSpec(
+            service=ask, permissions=OPEN, validator=DeclaredByTheRequest(routed="note")
+        )
+        response = post(form_view(spec), ada, {"title": "Hi"})
+        assert response.status_code == 422
+        assert response.context_data["requested_input"]["schema"] == schema
+
 
 class TestTheRequestAndTheView:
     """The call context starts with the request and this page, so every stage naming either has it."""

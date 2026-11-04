@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The kernel floor is 0.26.0, and the kernel's binding and question checks
+  read the spec as it declares itself to the request.** Every per-request call
+  of `apply_server_arguments` and `check_requested_input` - in
+  `dispatch_request`, `adispatch_request` and the pages - now hands it the
+  request's call context, the dict dispatch is handed. A Validator declaring
+  `parameters(self, *, call_context=None)` differently to a request is read
+  as that request declares it:
+  - **A bound value is checked against the request's declaration.** One the
+    declaration made to no call takes and the request's refuses is the host's
+    `ImproperlyConfigured`, where it was laid over the arguments and refused as
+    the client's 400, or as a refusal on the page's form.
+  - **A service may ask for a key the spec declares to the request alone**,
+    answered 422 from the JSON views and as the page's question, where it was
+    raised as `ImproperlyConfigured`.
+
+  A spec whose parameters ignore the call context answers as before. What
+  `as_view()` checks - `route_kwargs`, `server_arguments` - still runs with no
+  request, so a bound name is declared to no call as well.
+
 ## [0.10.1] — 2026-11-03
 
 ### Changed

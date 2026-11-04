@@ -40,7 +40,10 @@ dependencies = [
     # kernel's specs, so this package cannot support a Django the kernel does
     # not.
     "django>=4.2",
-    # The status map needs 0.24.0: it names ``PermissionCheckDenied``, the
+    # Every request needs 0.26.0: it hands the call's context to
+    # ``apply_server_arguments`` and ``check_requested_input``, which take
+    # ``call_context=`` from it; below it a bound or asked call raises
+    # ``TypeError``. The status map needs 0.24.0: it names ``PermissionCheckDenied``, the
     # refusal a declared check's denial raises, importable from the kernel's
     # root; below it the package fails at import. Every page needs 0.23.0: it resolves the seeds its spec's checks name
     # once with ``resolve_seeds`` and holds them as a ``CallSeeds``, both
@@ -77,7 +80,7 @@ dependencies = [
     # the kernel's root also exported its own copy of the ten JSON names, so
     # one process held two ``SpecView`` classes. Every other name the moved
     # code reads at the kernel's root is public from 0.10.0.
-    "django-service-specs>=0.24.0",
+    "django-service-specs>=0.26.0",
 ]
 
 [project.urls]

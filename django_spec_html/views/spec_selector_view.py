@@ -322,7 +322,7 @@ class SpecSelectorView(SpecRequestBase):
             result = dispatch(
                 spec,
                 principal=principal,
-                arguments=with_binding(spec, arguments, served.server),
+                arguments=with_binding(spec, arguments, served),
                 grant=grant,
                 # The seeds ``admitted`` resolved for the class-level check,
                 # so the selector and the checks dispatch asks see the values

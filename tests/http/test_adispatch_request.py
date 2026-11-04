@@ -96,6 +96,33 @@ async def test_the_arguments_are_read_as_the_call_declares_them(ada: Any) -> Non
     assert validator.one_context()["request"] is request
 
 
+async def test_a_bound_value_is_checked_against_the_call_s_declaration(ada: Any) -> None:
+    # The call declares the count a string, so the server's 3 is the host's
+    # mistake. Checked against the declaration made to no call, an integer,
+    # it was laid on, and dispatch refused it as the client's 400.
+    spec = ServiceSpec(service=Record(), permissions=OPEN, validator=DeclaredByTheRequest())
+    request = ASYNC_FACTORY.post("/", data={"title": "Hi"})
+    request.user = lazy(ada)
+    with pytest.raises(ImproperlyConfigured, match="count"):
+        await adispatch_request(
+            spec, request, server_arguments=ServerArguments(values={"count": 3})
+        )
+
+
+async def test_a_key_declared_to_the_call_alone_can_be_asked_for(ada: Any) -> None:
+    # Checked against the declaration made to no call, which has no ``note``,
+    # the question was the service's error rather than a 422.
+    schema = {"note": {"type": "string"}}
+    spec = asking_spec(schema, validator=DeclaredByTheRequest(routed="note"))
+    request = ASYNC_FACTORY.post("/", data={"title": "Hi"})
+    request.user = lazy(ada)
+    response = await adispatch_request(spec, request)
+    assert (response.status_code, body(response)) == (
+        422,
+        {"detail": "Say which.", "schema": schema},
+    )
+
+
 class Querying(Titled):
     """Declares its parameters from a query, as a model-backed Validator may."""
 

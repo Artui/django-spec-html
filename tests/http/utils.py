@@ -129,18 +129,20 @@ def titled_spec(returns: Any = None, **kwargs: Any) -> ServiceSpec:
     return ServiceSpec(service=Record(returns), **kwargs)
 
 
-def asking_spec(schema: Any) -> ServiceSpec:
+def asking_spec(schema: Any, validator: Any = None) -> ServiceSpec:
     """A write that answers every call by asking for more, under ``schema``.
 
-    It declares ``title`` and nothing else, so a schema keyed ``title`` asks for
-    a declared value and any other key asks for one the closed argument set
-    would refuse.
+    By default it declares ``title`` and nothing else, so a schema keyed
+    ``title`` asks for a declared value and any other key asks for one the
+    closed argument set would refuse.
     """
 
     def ask(**pool: Any) -> None:
         raise AdditionalInputRequired("Say which.", schema=schema)
 
-    return ServiceSpec(service=ask, permissions=OPEN, validator=Titled())
+    return ServiceSpec(
+        service=ask, permissions=OPEN, validator=Titled() if validator is None else validator
+    )
 
 
 def asking_for_tenant_spec(schema: Any) -> ServiceSpec:

@@ -455,7 +455,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
             result = dispatch(
                 spec,
                 principal=principal,
-                arguments=with_binding(spec, read, served.server),
+                arguments=with_binding(spec, read, served),
                 grant=grant,
                 seeds=seeds,
                 pool_seeds=served.seeds,
@@ -510,7 +510,12 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
             requested: AdditionalInputRequired | None = None
             if outcome is Outcome.NEEDS_INPUT:
                 requested = cast("AdditionalInputRequired", refused)
-                check_requested_input(spec, requested.schema, pool_seeds=served.seeds)
+                check_requested_input(
+                    spec,
+                    requested.schema,
+                    pool_seeds=served.seeds,
+                    call_context=served.call_context,
+                )
             # A page answering the refusal with something other than itself
             # answers here, once the outcome and the question are decided and
             # before the target is shown again, so a set is not counted and
@@ -1222,7 +1227,7 @@ def _found(
     """
     parameters = spec.parameters(call_context=served.call_context)
     route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
-    arguments = with_binding(spec, coerce_flat(parameters, route), served.server)
+    arguments = with_binding(spec, coerce_flat(parameters, route), served)
     try:
         if spec.many:
             if ask_scope:
@@ -1258,12 +1263,20 @@ def _found(
 
 
 def with_binding(
-    spec: ServiceSpec | SelectorSpec, arguments: Mapping[str, Any], server: ServerArguments | None
+    spec: ServiceSpec | SelectorSpec, arguments: Mapping[str, Any], served: Served
 ) -> Mapping[str, Any]:
-    """``arguments`` under ``server``, by the kernel's ``apply_server_arguments``, or as they are with no binding."""
-    if server is None:
+    """``arguments`` under the request's binding, by the kernel's ``apply_server_arguments``, or as they are with no binding.
+
+    It takes ``served`` whole, so the binding is checked against what the spec
+    declares to the call that binding is the request's for, through
+    ``served.call_context``: a bound value the call's declaration refuses is
+    the host's error, even where the declaration made to no call, which
+    ``as_view()`` checked, takes it
+    (test_a_bound_value_is_checked_against_the_call_s_declaration).
+    """
+    if served.server is None:
         return arguments
-    return apply_server_arguments(spec, arguments, server)
+    return apply_server_arguments(spec, arguments, served.server, call_context=served.call_context)
 
 
 def call_pool(principal: Any, served: Served) -> dict[str, Any]:
