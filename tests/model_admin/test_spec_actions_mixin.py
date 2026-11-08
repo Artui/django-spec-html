@@ -596,6 +596,7 @@ class TestThePage:
         # The offer's context is stamped as the page's own call is, so a
         # listing of the entry and the call it links to read one value.
         assert [each["transport"] for each in stamped] == ["html"]
+        assert [(each["format"], each["action"]) for each in stamped] == [(None, None)]
 
 
 class TestTheChangelistAction:

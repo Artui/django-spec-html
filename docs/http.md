@@ -351,9 +351,14 @@ docs/examples/http.py:transport
 --8<--
 ```
 
+The `as_view()` checks read a spec's declaration with no context at all, so
+`call_transport` is `None` there and `"html"` on every request, as `request`
+is ([what the request carries](#what-the-request-carries)).
+
 The context also holds `format` and `action`, both `None` here: this package
-has neither, and a callable naming either is handed `None` as it was when the
-keys were missing. **The value has no seam on this package.** What a host
+has neither. They are no call seeds, so a callable naming either is handed
+nothing from the context, as before; one reading `call_context` finds them as
+`None` where it found no key. **The value has no seam on this package.** What a host
 chooses is `view=`, which `dispatch_request` and `adispatch_request` take (a
 page passes itself), beside the request it reads; `get_pool_seeds` and
 `get_server_arguments` add seeds and bound values, never an entry of the

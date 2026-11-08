@@ -23,11 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [what a callable reads](https://artui.github.io/django-spec-html/http/#what-a-callable-reads-about-the-transport).
 
 ### Changed
-- **The kernel floor is 0.29.0**, the release that adds `build_call_context`
-  and `TRANSPORT_KEY`; below it the package fails at import. The context now
-  also holds `format` and `action`, both `None` (this package has neither): a
-  callable naming either is handed `None`, as it was when the keys were
-  missing, so no binding changes.
+- **The kernel floor is 0.29.0**, the release that adds `build_call_context`;
+  below it the package fails at import. The context now also holds `format`
+  and `action`, both `None` (this package has neither). They are no call
+  seeds, so a callable naming either is handed nothing from the context, as
+  before; one reading `call_context` finds them as `None` where it found no
+  key, and `"format" in call_context` is now true.
 
 ## [0.10.3] — 2026-11-04
 

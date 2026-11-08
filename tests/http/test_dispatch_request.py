@@ -484,6 +484,19 @@ class TestTheRequestAndTheView:
         assert handed.one_view(request) is view
         assert handed.one_transport() == "html"
 
+    def test_a_callable_naming_format_or_action_keeps_its_own_default(self, ada: Any) -> None:
+        # The builder fills both entries with None, and neither is a call
+        # seed: a selector naming them is handed nothing from the context.
+        handed: list[Any] = []
+
+        def rows(*, format: str = "default", action: str = "default") -> Any:
+            handed.append((format, action))
+            return Note.objects.all()
+
+        spec = dataclasses.replace(notes_spec(), selector=rows)
+        assert dispatch_request(spec, signed_in(FACTORY.get("/"), ada)).status_code == 200
+        assert handed == [("default", "default")]
+
     def test_a_seed_resolver_reading_the_request_binds(self, ada: Any) -> None:
         spec = titled_spec({"id": 1})
         request = post(ada, {"title": "x"})

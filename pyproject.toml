@@ -42,8 +42,8 @@ dependencies = [
     "django>=4.2",
     # The stamp needs 0.29.0: ``build_call_context`` builds every call context
     # with the standard entries present and this package's transport written
-    # last under ``TRANSPORT_KEY``, which the kernel exports from that release
-    # and which ``call_transport`` reads back.
+    # last under ``TRANSPORT_KEY``, which ``call_transport`` reads back; below
+    # it the package fails at import on ``build_call_context``.
     # Every request needs 0.26.0: it hands the call's context to
     # ``apply_server_arguments`` and ``check_requested_input``, which take
     # ``call_context=`` from it; below it a bound or asked call raises

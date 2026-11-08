@@ -121,8 +121,10 @@ def html_call_context(request: HttpRequest, view: Any) -> dict[str, Any]:
     (this package has neither), and ``HTML_TRANSPORT`` under the kernel's
     ``TRANSPORT_KEY``, written last. A callable naming ``request`` or ``view``
     is handed ``None`` for a ``None`` entry exactly as for a missing one
-    (test_every_stage_is_handed_the_request_and_no_view), so the standard
-    entries change no binding.
+    (test_every_stage_is_handed_the_request_and_no_view); ``format`` and
+    ``action`` are no call seeds, so a callable naming either is handed
+    nothing from the context, with or without the entries
+    (test_a_callable_naming_format_or_action_keeps_its_own_default).
 
     One dict per call, handed to everything the call asks: the spec's
     parameters, the checks, the affordances, the form's keywords, the service
