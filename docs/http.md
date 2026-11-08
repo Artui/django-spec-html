@@ -332,6 +332,40 @@ own view passes the same values to `dispatch_request` as `pool_seeds=` and
 `server_arguments=`, and calls `check_server_arguments` once, when it is
 built.
 
+### What a callable reads about the transport
+
+**Every context this package builds carries `"html"` under the kernel's
+`TRANSPORT_KEY`**, and `HTML_TRANSPORT`, exported from the package root, is
+that plain string. The JSON views, `dispatch_request`, `adispatch_request`,
+the pages and the admin's offer of an action all build their context through
+the kernel's `build_call_context`, which writes the stamp last, so one call
+reads one value in every stage: the spec's parameters, the checks, the
+affordances, the form's keywords, the service and the presenter, and what asks
+the same callables ahead of the call (a list page's rows, the admin's offer of
+an action). A callable reads it with the kernel's `call_transport`, whose
+`None` is a call no transport made:
+
+```python
+--8<--
+docs/examples/http.py:transport
+--8<--
+```
+
+The `as_view()` checks read a spec's declaration with no context at all, so
+`call_transport` is `None` there and `"html"` on every request, as `request`
+is ([what the request carries](#what-the-request-carries)).
+
+The context also holds `format` and `action`, both `None` here: this package
+has neither. They are no call seeds, so a callable naming either is handed
+nothing from the context, as before; one reading `call_context` finds them as
+`None` where it found no key. **The value has no seam on this package.** What a host
+chooses is `view=`, which `dispatch_request` and `adispatch_request` take (a
+page passes itself), beside the request it reads; `get_pool_seeds` and
+`get_server_arguments` add seeds and bound values, never an entry of the
+context. A host that wants another value builds its own context through the
+kernel's [`build_call_context`](https://artui.github.io/django-service-specs/dispatching/)
+and calls the kernel's `dispatch`.
+
 ## Refusals
 
 [`error_response`][django_spec_html.http.error_response.error_response]

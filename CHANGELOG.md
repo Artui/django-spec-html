@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-11-08
+
+### Added
+- **Every call context this package builds is stamped `"html"`.**
+  `HTML_TRANSPORT`, exported from the package root, is that plain string, and
+  a callable reads it under the kernel's `TRANSPORT_KEY` with the kernel's
+  `call_transport`. The JSON views, `dispatch_request`, `adispatch_request`,
+  the four pages and the admin's offer of an action build their context
+  through the kernel's `build_call_context`, which writes the stamp last, so a
+  check, the validator, the service, the presenter and what asks them ahead of
+  the call (a list page's rows, an affordance, the admin's offer, the spec's
+  `parameters(call_context=...)`) read one value. The value has no seam here:
+  a host passes `request` and `view` and nothing else. See
+  [what a callable reads](https://artui.github.io/django-spec-html/http/#what-a-callable-reads-about-the-transport).
+
+### Changed
+- **The kernel floor is 0.29.0**, the release that adds `build_call_context`;
+  below it the package fails at import. The context now also holds `format`
+  and `action`, both `None` (this package has neither). They are no call
+  seeds, so a callable naming either is handed nothing from the context, as
+  before; one reading `call_context` finds them as `None` where it found no
+  key, and `"format" in call_context` is now true.
+
 ## [0.10.3] — 2026-11-04
 
 ### Fixed
@@ -672,7 +695,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.10.3...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Artui/django-spec-html/compare/v0.10.3...v0.11.0
 [0.10.3]: https://github.com/Artui/django-spec-html/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/Artui/django-spec-html/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/Artui/django-spec-html/compare/v0.10.0...v0.10.1

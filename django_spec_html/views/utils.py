@@ -100,6 +100,7 @@ from django_spec_html.http.utils import (
     checked_binding,
     checked_seeds,
     field_map,
+    html_call_context,
     refusal_outcome,
     refusal_status,
     refuse_server_owned,
@@ -287,7 +288,7 @@ class SpecRequestBase(TemplateResponseMixin, ContextMixin, View):
             route_kwargs=self.route_kwargs,
             server=server,
             seeds=seeds,
-            call_context={"request": request, "view": self},
+            call_context=html_call_context(request, self),
         )
 
     def _rendered(self, context: dict[str, Any], *, status: int) -> HttpResponse:

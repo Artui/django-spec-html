@@ -316,6 +316,7 @@ async def test_every_stage_is_handed_the_request_and_the_view(ada: Any) -> None:
     served = handed.one_view(request)
     assert isinstance(served, AsyncSpecView)
     assert served.request is request
+    assert handed.one_transport() == "html"
 
 
 async def test_a_seed_resolver_reading_the_request_binds(ada: Any) -> None:

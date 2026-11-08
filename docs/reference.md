@@ -116,6 +116,10 @@ package, so a template reads which package it loads.
 ::: django_spec_html.http.request_principal.request_principal
 ::: django_spec_html.http.add_argument_errors.add_argument_errors
 
+## Transport
+
+::: django_spec_html.types.html_transport.HTML_TRANSPORT
+
 ## Refusals
 
 ::: django_spec_html.http.unsupported_media_type.UnsupportedMediaType

@@ -558,12 +558,21 @@ class TestThePage:
         self, editor: Any, note: Note
     ) -> None:
         handed: list[tuple[Any, Any, Any]] = []
+        stamped: list[Any] = []
 
         class Seeded(PermissionCheck):
             def has_permission(
-                self, principal: Any, spec: Any, *, desk: str, request: Any, view: Any
+                self,
+                principal: Any,
+                spec: Any,
+                *,
+                desk: str,
+                request: Any,
+                view: Any,
+                call_context: Any,
             ) -> bool:
                 handed.append((desk, request, view))
+                stamped.append(call_context)
                 return True
 
         spec = ServiceSpec(
@@ -584,6 +593,10 @@ class TestThePage:
         assert (desk, asked_with) == ("desk-of-editor", request)
         assert isinstance(view, SpecPageBase)
         assert view.request is request
+        # The offer's context is stamped as the page's own call is, so a
+        # listing of the entry and the call it links to read one value.
+        assert [each["transport"] for each in stamped] == ["html"]
+        assert [(each["format"], each["action"]) for each in stamped] == [(None, None)]
 
 
 class TestTheChangelistAction:

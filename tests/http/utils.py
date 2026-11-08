@@ -286,6 +286,9 @@ class DeclaredByTheRequest(FormValidator):
         """The one dict every ask of a call's declaration was handed."""
         assert self.contexts
         assert len({id(context) for context in self.contexts}) == 1, self.contexts
+        # Every ask of the declaration reads the one stamp, whichever entry
+        # point asked (the literal, as ``Handed`` reads it).
+        assert self.contexts[0]["transport"] == "html"
         return self.contexts[0]
 
 
@@ -293,15 +296,44 @@ class DeclaredByTheRequest(FormValidator):
 class Handed:
     """The ``request`` and ``view`` each stage of one call was handed, in the order the stages ran.
 
-    Each stage of ``handed_spec`` names both, so a stage the transport left
+    Each stage of ``handed_spec`` names both, and ``call_context`` with them
+    (``one_transport`` reads the transport each saw), so a stage the transport left
     them out of is handed ``None`` by the kernel, and one it never reached is
     missing from ``stages()``.
     """
 
     seen: list[tuple[str, Any, Any]] = field(default_factory=list)
+    transports: list[tuple[str, str | None]] = field(default_factory=list)
+    standard: list[tuple[str, Any]] = field(default_factory=list)
 
-    def record(self, stage: str, request: Any, view: Any) -> None:
+    def record(self, stage: str, request: Any, view: Any, call_context: Any = None) -> None:
         self.seen.append((stage, request, view))
+        # The literal key, read as the kernel's ``call_transport`` reads it, so
+        # a rename of either constant is caught here rather than followed.
+        self.transports.append((stage, (call_context or {}).get("transport")))
+        # The standard entries the kernel's builder leaves present as None.
+        self.standard.append(
+            (
+                stage,
+                {each: (call_context or {}).get(each, "missing") for each in ("format", "action")},
+            )
+        )
+
+    def reset(self) -> None:
+        """Forget what was recorded, between a test's two requests."""
+        self.seen.clear()
+        self.transports.clear()
+        self.standard.clear()
+
+    def one_transport(self) -> str | None:
+        """The one transport every stage read from its context, each stage having read one."""
+        assert self.seen
+        assert [stage for stage, _ in self.transports] == [stage for stage, _, _ in self.seen]
+        assert len({transport for _, transport in self.transports}) == 1, self.transports
+        assert all(entries == {"format": None, "action": None} for _, entries in self.standard), (
+            self.standard
+        )
+        return self.transports[0][1]
 
     def stages(self) -> set[str]:
         return {stage for stage, _, _ in self.seen}
@@ -321,14 +353,16 @@ class HandedCheck(PermissionCheck):
     def __init__(self, handed: Handed) -> None:
         self.handed = handed
 
-    def has_permission(self, principal: Any, spec: Any, *, request: Any, view: Any) -> bool:
-        self.handed.record("class", request, view)
+    def has_permission(
+        self, principal: Any, spec: Any, *, request: Any, view: Any, call_context: Any
+    ) -> bool:
+        self.handed.record("class", request, view, call_context)
         return True
 
     def has_object_permission(
-        self, principal: Any, spec: Any, obj: Any, *, request: Any, view: Any
+        self, principal: Any, spec: Any, obj: Any, *, request: Any, view: Any, call_context: Any
     ) -> bool:
-        self.handed.record("object", request, view)
+        self.handed.record("object", request, view, call_context)
         return True
 
 
@@ -340,20 +374,20 @@ def handed_spec(handed: Handed, **kwargs: Any) -> ServiceSpec:
     record what they are handed in ``handed``. ``kwargs`` replace any of them.
     """
 
-    def row(*, pk: int, request: Any, view: Any) -> QuerySet[Note]:
-        handed.record("selector", request, view)
+    def row(*, pk: int, request: Any, view: Any, call_context: Any) -> QuerySet[Note]:
+        handed.record("selector", request, view, call_context)
         return note_by_pk(pk=pk)
 
-    def open_now(*, request: Any, view: Any) -> bool:
-        handed.record("affordance", request, view)
+    def open_now(*, request: Any, view: Any, call_context: Any) -> bool:
+        handed.record("affordance", request, view, call_context)
         return True
 
-    def keywords(*, request: Any, view: Any) -> dict[str, Any]:
-        handed.record("form", request, view)
+    def keywords(*, request: Any, view: Any, call_context: Any) -> dict[str, Any]:
+        handed.record("form", request, view, call_context)
         return {}
 
-    def service(*, data: Any, request: Any, view: Any) -> None:
-        handed.record("service", request, view)
+    def service(*, data: Any, request: Any, view: Any, call_context: Any) -> None:
+        handed.record("service", request, view, call_context)
 
     kwargs.setdefault("service", service)
     kwargs.setdefault("permissions", [HandedCheck(handed)])

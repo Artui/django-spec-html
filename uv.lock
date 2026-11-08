@@ -461,16 +461,16 @@ wheels = [
 
 [[package]]
 name = "django-service-specs"
-version = "0.26.1"
+version = "0.29.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "django", version = "5.2.18", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "django", version = "6.1.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/65/30/87dc70c57842ca9560319843a051f4ad6631af42f81c35f2329736540fbf/django_service_specs-0.26.1.tar.gz", hash = "sha256:c451fe217ae1a67844f828aab24b9d3a4b320e52cc790c1c0d8c252fd69be641", size = 1176183, upload-time = "2026-11-04T13:15:49.11Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/af/9a86718a101b110bc5a6357a63f71d28c5eef967397d9c2881d47997161c/django_service_specs-0.29.0.tar.gz", hash = "sha256:2cd1d5d6f9c0742066b4e056caec2a9f65e5ab51fadf7991aeafbcfd78bf8d81", size = 1194660, upload-time = "2026-11-08T13:51:19.835Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2d/42/3d7f01196a6329e0682e56bba769fb080fad8c46aaab099a7f5f79b1040f/django_service_specs-0.26.1-py3-none-any.whl", hash = "sha256:b88a71204277fd16ac4c5cbaf86d57a4263fd6dba402df74cf52e2523c3fb6f5", size = 515442, upload-time = "2026-11-04T13:15:47.309Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/a7/c5f1c06e841e97675f47f37fc36f2381c068fc89cc740623e7bd851238ac/django_service_specs-0.29.0-py3-none-any.whl", hash = "sha256:e7b10e280bf10fe2ecd7ee5472526f83dca3c81814220aec0ef9633f858e47f0", size = 523250, upload-time = "2026-11-08T13:51:17.74Z" },
 ]
 
 [package.optional-dependencies]
@@ -518,7 +518,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=4.2" },
-    { name = "django-service-specs", specifier = ">=0.26.0" },
+    { name = "django-service-specs", specifier = ">=0.29.0" },
 ]
 
 [package.metadata.requires-dev]

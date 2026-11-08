@@ -968,13 +968,15 @@ def test_every_stage_is_handed_the_request_and_the_page(ada: Any) -> None:
     page = handed.one_view(request)
     assert isinstance(page, SpecFormSetView)
     assert page.request is request
-    handed.seen.clear()
+    assert handed.one_transport() == "html"
+    handed.reset()
     request = signed_in(FACTORY.post("/", data=posted({"title": "One"})), ada)
     assert view(request).status_code == 302
     assert handed.stages() == {"class", "affordance", "form", "service"}
     page = handed.one_view(request)
     assert isinstance(page, SpecFormSetView)
     assert page.request is request
+    assert handed.one_transport() == "html"
 
 
 class TestTheCallsDeclaration:

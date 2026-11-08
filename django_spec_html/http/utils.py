@@ -52,6 +52,7 @@ from django_service_specs import (
     ServiceValidationError,
     SpecSource,
     UnknownArguments,
+    build_call_context,
     check_requested_input,
     check_server_arguments,
     kernel_spec,
@@ -59,6 +60,7 @@ from django_service_specs import (
 
 from django_spec_html.http.route_arguments import route_arguments
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
+from django_spec_html.types.html_transport import HTML_TRANSPORT
 from django_spec_html.types.outcome import Outcome
 
 ANSWERABLE: Final = ("get", "head", "post", "put", "patch", "delete")
@@ -109,6 +111,28 @@ own by ``test_every_refusal_has_its_outcome``.
 
 The dispatch rows sit above the service rows, so a refusal deriving from one
 of each answers at its dispatch row's status, on both halves alike."""
+
+
+def html_call_context(request: HttpRequest, view: Any) -> dict[str, Any]:
+    """Return the call context every call this package makes is handed, stamped ``html``.
+
+    Built through the kernel's ``build_call_context``, so it holds ``request``
+    and ``view``, the standard ``format`` and ``action`` entries as ``None``
+    (this package has neither), and ``HTML_TRANSPORT`` under the kernel's
+    ``TRANSPORT_KEY``, written last. A callable naming ``request`` or ``view``
+    is handed ``None`` for a ``None`` entry exactly as for a missing one
+    (test_every_stage_is_handed_the_request_and_no_view); ``format`` and
+    ``action`` are no call seeds, so a callable naming either is handed
+    nothing from the context, with or without the entries
+    (test_a_callable_naming_format_or_action_keeps_its_own_default).
+
+    One dict per call, handed to everything the call asks: the spec's
+    parameters, the checks, the affordances, the form's keywords, the service
+    and the presenter, and what asks the same callables ahead of the call (a
+    page's listing, the admin's offer of an action), so all of them read one
+    value.
+    """
+    return build_call_context(HTML_TRANSPORT, request=request, view=view)
 
 
 def refusal_status(refused: DispatchError | ServiceError) -> int:

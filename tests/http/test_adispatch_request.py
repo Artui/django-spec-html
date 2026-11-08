@@ -335,6 +335,7 @@ async def test_every_stage_is_handed_the_request_and_no_view(ada: Any) -> None:
     assert response.status_code == 204
     assert handed.stages() == HANDED_STAGES
     assert handed.one_view(request) is None
+    assert handed.one_transport() == "html"
 
 
 async def test_the_view_passed_is_the_one_every_stage_is_handed(ada: Any) -> None:
@@ -348,6 +349,7 @@ async def test_the_view_passed_is_the_one_every_stage_is_handed(ada: Any) -> Non
     assert response.status_code == 204
     assert handed.stages() == HANDED_STAGES
     assert handed.one_view(request) is view
+    assert handed.one_transport() == "html"
 
 
 async def test_a_seed_resolver_reading_the_request_binds(ada: Any) -> None:
