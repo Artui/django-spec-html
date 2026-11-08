@@ -3,8 +3,9 @@
 ``views`` serves a spec as the page its form is, or a read as its rows, ``model_admin`` serves those
 pages as a ``ModelAdmin``'s actions, and ``http`` serves a spec as JSON with
 nothing between the request and the kernel's ``dispatch``. ``types`` holds
-``Outcome``, the vocabulary a page's post ends in, and ``SpecAction``, the
-declaration of an admin action. Every public name of the four is here; read
+``Outcome``, the vocabulary a page's post ends in, ``SpecAction``, the
+declaration of an admin action, and ``HTML_TRANSPORT``, the value this
+package stamps on every call context it builds. Every public name of the four is here; read
 them from the root.
 """
 
@@ -19,6 +20,7 @@ from django_spec_html.http.route_arguments import route_arguments
 from django_spec_html.http.spec_view import SpecView
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 from django_spec_html.model_admin.spec_actions_mixin import SpecActionsMixin
+from django_spec_html.types.html_transport import HTML_TRANSPORT
 from django_spec_html.types.outcome import Outcome
 from django_spec_html.types.spec_action import SpecAction
 from django_spec_html.version import __version__
@@ -28,6 +30,7 @@ from django_spec_html.views.spec_form_view import SpecFormView
 from django_spec_html.views.spec_selector_view import SpecSelectorView
 
 __all__ = [
+    "HTML_TRANSPORT",
     "AsyncSpecView",
     "Outcome",
     "SpecAction",

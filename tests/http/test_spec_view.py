@@ -648,6 +648,7 @@ class TestTheRequestAndTheView:
         served = handed.one_view(request)
         assert isinstance(served, SpecView)
         assert served.request is request
+        assert handed.one_transport() == "html"
 
     def test_a_seed_resolver_reading_the_request_binds(self, ada: Any) -> None:
         class Seeded(SpecView):

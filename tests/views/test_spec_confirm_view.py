@@ -644,8 +644,8 @@ def test_every_stage_is_handed_the_request_and_the_page(ada: Any, note: Note) ->
     # checks, the affordance and the service are what name the two here.
     handed = Handed()
 
-    def service(*, request: Any, view: Any) -> None:
-        handed.record("service", request, view)
+    def service(*, request: Any, view: Any, call_context: Any) -> None:
+        handed.record("service", request, view, call_context)
 
     view = confirm_view(handed_spec(handed, validator=None, service=service))
     request = signed_in(FACTORY.get("/"), ada)
@@ -654,13 +654,15 @@ def test_every_stage_is_handed_the_request_and_the_page(ada: Any, note: Note) ->
     page = handed.one_view(request)
     assert isinstance(page, SpecConfirmView)
     assert page.request is request
-    handed.seen.clear()
+    assert handed.one_transport() == "html"
+    handed.reset()
     request = signed_in(FACTORY.post("/", data=PRESSED), ada)
     assert view(request, pk=note.pk).status_code == 302
     assert handed.stages() == HANDED_STAGES - {"form"}
     page = handed.one_view(request)
     assert isinstance(page, SpecConfirmView)
     assert page.request is request
+    assert handed.one_transport() == "html"
 
 
 class ReturnsToTheList(SpecConfirmView):

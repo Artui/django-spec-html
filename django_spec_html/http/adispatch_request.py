@@ -29,6 +29,7 @@ from django_spec_html.http.request_arguments import request_arguments
 from django_spec_html.http.request_principal import request_principal
 from django_spec_html.http.utils import (
     check_asked_input,
+    html_call_context,
     not_found_response,
     success_response,
 )
@@ -73,7 +74,7 @@ async def adispatch_request(
     spec = kernel_spec(spec)
     # One dict for the call, made before the request is read, so the spec's
     # parameters are declared to the reader as dispatch then declares them.
-    call_context = {"request": request, "view": view}
+    call_context = html_call_context(request, view)
     try:
         principal, arguments = await sync_to_async(_read_request, thread_sensitive=True)(
             spec, request, url_kwargs, route_kwargs, server_arguments, call_context

@@ -469,6 +469,7 @@ class TestTheRequestAndTheView:
         assert response.status_code == 204
         assert handed.stages() == HANDED_STAGES
         assert handed.one_view(request) is None
+        assert handed.one_transport() == "html"
 
     def test_the_view_passed_is_the_one_every_stage_is_handed(self, ada: Any) -> None:
         handed = Handed()
@@ -481,6 +482,7 @@ class TestTheRequestAndTheView:
         assert response.status_code == 204
         assert handed.stages() == HANDED_STAGES
         assert handed.one_view(request) is view
+        assert handed.one_transport() == "html"
 
     def test_a_seed_resolver_reading_the_request_binds(self, ada: Any) -> None:
         spec = titled_spec({"id": 1})

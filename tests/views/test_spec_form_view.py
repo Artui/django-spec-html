@@ -3175,13 +3175,15 @@ class TestTheRequestAndTheView:
         page = handed.one_view(request)
         assert isinstance(page, SpecFormView)
         assert page.request is request
-        handed.seen.clear()
+        assert handed.one_transport() == "html"
+        handed.reset()
         request = signed_in(FACTORY.post("/", data={"title": "Hi"}), ada)
         assert view(request, pk=note.pk).status_code == 302
         assert handed.stages() == HANDED_STAGES
         page = handed.one_view(request)
         assert isinstance(page, SpecFormView)
         assert page.request is request
+        assert handed.one_transport() == "html"
 
     def test_a_seed_resolver_reading_the_request_binds(self, ada: Any, note: Note) -> None:
         # A GET builds the pool its affordances and display read, and a
@@ -3682,6 +3684,7 @@ class TestTheTargetDisplay:
         assert presented.principal == ada
         assert presented.target.pk == note.pk
         assert presented.call_context is call_context
+        assert presented.call_context["transport"] == "html"
         assert presented.ambient["tenant"] == "tenant-of-ada"
         assert presented.ambient["user"] == ada
 

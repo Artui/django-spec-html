@@ -359,6 +359,7 @@ class TestTheRowsDisplay:
         (context,) = seen
         assert context.principal == ada
         assert context.call_context["view"].__class__ is SpecSelectorView
+        assert context.call_context["transport"] == "html"
 
 
 class TestTheListPage:
@@ -586,6 +587,46 @@ class TestTheRequest:
         ((seen_request, seen_view),) = handed
         assert seen_request is request
         assert isinstance(seen_view, SpecSelectorView)
+
+    def test_the_listing_s_checks_and_its_run_read_one_transport(
+        self, ada: Any, notes: list[Note]
+    ) -> None:
+        asked: list[tuple[str, Any]] = []
+
+        class Asked(Refuse):
+            def has_permission(self, principal: Any, spec: Any, *, call_context: Any) -> bool:
+                asked.append(("class", call_context))
+                return True
+
+        def recorded(*, user: Any, call_context: Any) -> QuerySet[Note]:
+            asked.append(("selector", call_context))
+            return Note.objects.filter(owner=user)
+
+        def open_now(*, call_context: Any) -> bool:
+            asked.append(("affordance", call_context))
+            return True
+
+        spec = listing(
+            selector=recorded,
+            permissions=[Asked()],
+            affordances={
+                "open": ServiceSpec(
+                    service=Record(),
+                    permissions=OPEN,
+                    affordances=[Affordance(code="open", reason="Open.", when=open_now)],
+                )
+            },
+        )
+
+        shown(spec, user=ada)
+
+        assert {name for name, _ in asked} == {"class", "selector", "affordance"}
+        assert len({id(context) for _, context in asked}) == 1
+        context = asked[0][1]
+        assert context["transport"] == "html"
+        # The standard entries the builder fills are there, and none: a
+        # callable naming neither is handed what it was before.
+        assert (context["format"], context["action"]) == (None, None)
 
     def test_a_seed_the_request_adds_reaches_the_selector(
         self, ada: Any, notes: list[Note]

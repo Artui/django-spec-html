@@ -65,6 +65,7 @@ def test_the_root_names_nothing_it_does_not_define() -> None:
 def test_the_root_serves_the_two_halves_the_admin_face_and_the_version() -> None:
     assert sorted(django_spec_html.__all__) == [
         "AsyncSpecView",
+        "HTML_TRANSPORT",
         "Outcome",
         "SpecAction",
         "SpecActionsMixin",

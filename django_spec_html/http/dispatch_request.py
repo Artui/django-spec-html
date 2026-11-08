@@ -28,6 +28,7 @@ from django_spec_html.http.request_arguments import request_arguments
 from django_spec_html.http.request_principal import request_principal
 from django_spec_html.http.utils import (
     check_asked_input,
+    html_call_context,
     not_found_response,
     success_response,
 )
@@ -100,7 +101,7 @@ def dispatch_request(
     spec = kernel_spec(spec)
     # One dict for the call, made before the request is read, so the spec's
     # parameters are declared to the reader as dispatch then declares them.
-    call_context = {"request": request, "view": view}
+    call_context = html_call_context(request, view)
     try:
         # The principal first, as ``adispatch`` resolves a ``principal_id``
         # and ``dispatch`` refuses a deactivated principal before its shape

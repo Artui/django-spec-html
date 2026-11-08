@@ -27,10 +27,12 @@ from django_service_specs import (
     SelectorSpec,
     ServerArguments,
     ServiceSpec,
+    call_transport,
     coerce_flat,
 )
 
 from django_spec_html import (
+    HTML_TRANSPORT,
     AsyncSpecView,
     SpecView,
     adispatch_request,
@@ -189,6 +191,26 @@ class MyNotes(View):
 
 
 # --8<-- [end:call_context]
+
+
+# --8<-- [start:transport]
+def notes_only_on_this_transport(*, call_context: Mapping[str, Any] | None) -> QuerySet[Note]:
+    # Every context this package builds is stamped ``"html"``, for the JSON
+    # views, the pages and the admin's offer alike. Another transport stamps
+    # its own name, and a caller that built no context stamps none, so the
+    # kernel's ``call_transport`` answers ``None`` there.
+    if call_transport(call_context) != HTML_TRANSPORT:
+        return Note.objects.none()
+    return Note.objects.order_by("title")
+
+
+transport_notes_spec = SelectorSpec(
+    kind=SelectorKind.LIST,
+    selector=notes_only_on_this_transport,
+    permissions=[IsSignedIn()],
+    presenter=DataclassPresenter(NoteOut),
+)
+# --8<-- [end:transport]
 
 
 # --8<-- [start:urls]

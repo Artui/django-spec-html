@@ -42,7 +42,13 @@ from django_service_specs import (
     dispatch,
 )
 
-from django_spec_html import SpecView, UnsupportedMediaType, dispatch_request, error_response
+from django_spec_html import (
+    HTML_TRANSPORT,
+    SpecView,
+    UnsupportedMediaType,
+    dispatch_request,
+    error_response,
+)
 from docs.examples import http
 from tests.dispatch.utils import Refuse
 from tests.dispatch_app.models import Note
@@ -239,6 +245,23 @@ class TestWhatTheRequestCarries:
         # other transports call it, hands the same callable ``None``.
         result = dispatch(http.my_notes_spec, principal=member, arguments={})
         assert list(result.value) == []
+
+    def test_a_callable_reads_html_as_the_transport_of_a_call_made_here(self, member: Any) -> None:
+        assert HTML_TRANSPORT == "html"
+        request = FACTORY.get("/")
+        request.user = member
+        response = dispatch_request(http.transport_notes_spec, request)
+        assert [row["title"] for row in body(response)] == ["A", "B", "C"]
+        # The kernel's own ``dispatch``, as another transport calls it with a
+        # context of its own: the same callable reads that transport's name.
+        for call_context in (None, {"transport": "rest"}):
+            result = dispatch(
+                http.transport_notes_spec,
+                principal=member,
+                arguments={},
+                call_context=call_context,
+            )
+            assert list(result.value) == []
 
     def test_a_host_view_passing_itself_is_the_view_a_callable_is_handed(self, member: Any) -> None:
         handed: list[Any] = []

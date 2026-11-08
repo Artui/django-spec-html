@@ -36,6 +36,7 @@ from django_service_specs import (
 )
 
 from django_spec_html.http.request_principal import request_principal
+from django_spec_html.http.utils import html_call_context
 from django_spec_html.types.spec_action import SpecAction
 from django_spec_html.views.spec_confirm_view import SpecConfirmView
 from django_spec_html.views.spec_form_view import SpecFormView
@@ -555,7 +556,7 @@ def _offered(page: _Page, request: HttpRequest) -> bool:
             page.action.spec,
             request_principal(request),
             pool_seeds=built.get_pool_seeds(request),
-            call_context={"request": request, "view": built},
+            call_context=html_call_context(request, built),
         )
     # Both held: NotPermitted by test_a_refused_principal_is_offered_no_entry,
     # PrincipalUnavailable by test_a_deactivated_account_is_offered_nothing.

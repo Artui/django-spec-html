@@ -596,7 +596,11 @@ page's paging keys and table order field. So a check, a
 condition, `form_kwargs` or the service declaring
 [`call_context`](https://artui.github.io/django-service-specs/dispatching/)
 reads what an earlier stage of the same request put there, and each request
-gets a dict of its own. A selector, a check, a condition, a seed's resolver,
+gets a dict of its own. The dict is stamped `"html"` under the kernel's
+`TRANSPORT_KEY`, as [the JSON views'](http.md#what-a-callable-reads-about-the-transport)
+is, so a callable reading it sees one value in the check, the validator, the
+service and the presenter, and in the affordances a list page and a
+form page ask ahead of a post. A selector, a check, a condition, a seed's resolver,
 `form_kwargs` or the service naming `request` or `view` is handed the one in
 it, as on [the JSON views](http.md#what-the-request-carries), and the
 display's presenter reads the page's seeds as its ambient, never the
