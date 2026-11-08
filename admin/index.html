@@ -953,7 +953,8 @@ it.</p>
 <p><strong>Only a principal the spec and the admin both admit.</strong> The object-tools link
 and the dropdown entry are shown where the kernel's <code>authorize</code>, the spec's
 class-level check, admits the signed-in principal, asked with the page's own
-seeds and call context, and the admin's <code>has_view_or_change_permission()</code>
+seeds and call context, stamped <code>"html"</code> as the page's call is
+(<a href="../http/#what-a-callable-reads-about-the-transport">what a callable reads</a>), and the admin's <code>has_view_or_change_permission()</code>
 does too. The admin's model permissions are not the whole gate: Django
 offers an action that declares no <code>allowed_permissions</code> to anyone who can
 view the changelist, and a spec's checks say what its operation needs

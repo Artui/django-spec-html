@@ -566,6 +566,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="What the request carries">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-a-callable-reads-about-the-transport" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a callable reads about the transport
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -769,6 +786,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="What the request carries">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-a-callable-reads-about-the-transport" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a callable reads about the transport
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1275,6 +1309,47 @@ loop. A host's
 own view passes the same values to <code>dispatch_request</code> as <code>pool_seeds=</code> and
 <code>server_arguments=</code>, and calls <code>check_server_arguments</code> once, when it is
 built.</p>
+<h3 id="what-a-callable-reads-about-the-transport">What a callable reads about the transport<a class="headerlink" href="#what-a-callable-reads-about-the-transport" title="Permanent link">&para;</a></h3>
+<p><strong>Every context this package builds carries <code>"html"</code> under the kernel's
+<code>TRANSPORT_KEY</code></strong>, and <code>HTML_TRANSPORT</code>, exported from the package root, is
+that plain string. The JSON views, <code>dispatch_request</code>, <code>adispatch_request</code>,
+the pages and the admin's offer of an action all build their context through
+the kernel's <code>build_call_context</code>, which writes the stamp last, so one call
+reads one value in every stage: the spec's parameters, the checks, the
+affordances, the form's keywords, the service and the presenter, and what asks
+the same callables ahead of the call (a list page's rows, the admin's offer of
+an action). A callable reads it with the kernel's <code>call_transport</code>, whose
+<code>None</code> is a call no transport made:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">notes_only_on_this_transport</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">call_context</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QuerySet</span><span class="p">[</span><span class="n">Note</span><span class="p">]:</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="c1"># Every context this package builds is stamped ``"html"``, for the JSON</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="c1"># views, the pages and the admin's offer alike. Another transport stamps</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="c1"># its own name, and a caller that built no context stamps none, so the</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="c1"># kernel's ``call_transport`` answers ``None`` there.</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="k">if</span> <span class="n">call_transport</span><span class="p">(</span><span class="n">call_context</span><span class="p">)</span> <span class="o">!=</span> <span class="n">HTML_TRANSPORT</span><span class="p">:</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>        <span class="k">return</span> <span class="n">Note</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">none</span><span class="p">()</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>    <span class="k">return</span> <span class="n">Note</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s2">"title"</span><span class="p">)</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="n">transport_notes_spec</span> <span class="o">=</span> <span class="n">SelectorSpec</span><span class="p">(</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>    <span class="n">kind</span><span class="o">=</span><span class="n">SelectorKind</span><span class="o">.</span><span class="n">LIST</span><span class="p">,</span>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>    <span class="n">selector</span><span class="o">=</span><span class="n">notes_only_on_this_transport</span><span class="p">,</span>
+</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a>    <span class="n">permissions</span><span class="o">=</span><span class="p">[</span><span class="n">IsSignedIn</span><span class="p">()],</span>
+</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a>    <span class="n">presenter</span><span class="o">=</span><span class="n">DataclassPresenter</span><span class="p">(</span><span class="n">NoteOut</span><span class="p">),</span>
+</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="p">)</span>
+</span></code></pre></div>
+<p>The <code>as_view()</code> checks read a spec's declaration with no context at all, so
+<code>call_transport</code> is <code>None</code> there and <code>"html"</code> on every request, as <code>request</code>
+is (<a href="#what-the-request-carries">what the request carries</a>).</p>
+<p>The context also holds <code>format</code> and <code>action</code>, both <code>None</code> here: this package
+has neither. They are no call seeds, so a callable naming either is handed
+nothing from the context, as before; one reading <code>call_context</code> finds them as
+<code>None</code> where it found no key. <strong>The value has no seam on this package.</strong> What a host
+chooses is <code>view=</code>, which <code>dispatch_request</code> and <code>adispatch_request</code> take (a
+page passes itself), beside the request it reads; <code>get_pool_seeds</code> and
+<code>get_server_arguments</code> add seeds and bound values, never an entry of the
+context. A host that wants another value builds its own context through the
+kernel's <a href="https://artui.github.io/django-service-specs/dispatching/"><code>build_call_context</code></a>
+and calls the kernel's <code>dispatch</code>.</p>
 <h2 id="refusals">Refusals<a class="headerlink" href="#refusals" title="Permanent link">&para;</a></h2>
 <p><a class="autorefs autorefs-internal" title="error_response" href="../reference/#django_spec_html.http.error_response.error_response"><code>error_response</code></a>
 answers both <a href="https://artui.github.io/django-service-specs/arguments/#two-families-of-error">families</a>, with the statuses
@@ -1369,12 +1444,12 @@ package is exempted: a POST from a session-authenticated browser carries the
 token, in the <code>X-CSRFToken</code> header for a <code>fetch()</code> or in the form for an HTML
 form, and <code>CsrfViewMiddleware</code> refuses one that does not. A route that needs no
 token is the host's decision, and one line:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># A route a script calls, authenticated by the host's own middleware rather than</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="c1"># a session cookie, so it has no CSRF token to send. Exempting it is the host's</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1"># decision, and one line.</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">urlpatterns</span> <span class="o">+=</span> <span class="p">[</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"hooks/notes/&lt;int:pk&gt;/rename/"</span><span class="p">,</span> <span class="n">csrf_exempt</span><span class="p">(</span><span class="n">SpecView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="n">rename_note_spec</span><span class="p">))),</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="p">]</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># A route a script calls, authenticated by the host's own middleware rather than</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="c1"># a session cookie, so it has no CSRF token to send. Exempting it is the host's</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="c1"># decision, and one line.</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">urlpatterns</span> <span class="o">+=</span> <span class="p">[</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"hooks/notes/&lt;int:pk&gt;/rename/"</span><span class="p">,</span> <span class="n">csrf_exempt</span><span class="p">(</span><span class="n">SpecView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="n">rename_note_spec</span><span class="p">))),</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="p">]</span>
 </span></code></pre></div>
 <h2 id="a-refusal-placed-on-a-form">A refusal, placed on a form<a class="headerlink" href="#a-refusal-placed-on-a-form" title="Permanent link">&para;</a></h2>
 <p><a class="autorefs autorefs-internal" title="add_argument_errors" href="../reference/#django_spec_html.http.add_argument_errors.add_argument_errors"><code>add_argument_errors</code></a>

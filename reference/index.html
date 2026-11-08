@@ -1576,6 +1576,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#transport" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transport
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_spec_html.types.html_transport.HTML_TRANSPORT" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTML_TRANSPORT
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#refusals" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2663,6 +2685,28 @@
     <span class="md-ellipsis">
       
         add_argument_errors
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transport" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transport
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_spec_html.types.html_transport.HTML_TRANSPORT" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTML_TRANSPORT
       
     </span>
   </a>
@@ -7430,6 +7474,37 @@ already validated is compared as it stands.</p>
 is not a <code>str</code>, and is never taken apart into characters), or a list of
 either. The form must be bound, as Django's <code>add_error</code> requires.</p>
 
+
+    </div>
+
+</div><h2 id="transport">Transport<a class="headerlink" href="#transport" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="django_spec_html.types.html_transport.HTML_TRANSPORT" class="doc doc-heading">
+            <span class="doc doc-object-name doc-attribute-name">HTML_TRANSPORT</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-module-attribute"><code>module-attribute</code></small>
+  </span>
+
+<a href="#django_spec_html.types.html_transport.HTML_TRANSPORT" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">HTML_TRANSPORT</span><span class="p">:</span> <span class="n">Final</span> <span class="o">=</span> <span class="s1">'html'</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p>What a callable reads under the kernel's <code>TRANSPORT_KEY</code> when this package made the call.</p>
+<p>A plain string, not a member of a kernel type: the kernel names no transport,
+and each package owns and exports its own value. A callable compares it as
+<code>call_transport(call_context) == HTML_TRANSPORT</code>, or to the literal
+<code>"html"</code>; both read one value. It covers the JSON views, the pages and the
+admin's offer of an action, since all of them build their context through
+<code>html_call_context</code>.</p>
 
     </div>
 
