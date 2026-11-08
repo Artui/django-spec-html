@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-11-08
+
 ### Added
 - **Every call context this package builds is stamped `"html"`.**
   `HTML_TRANSPORT`, exported from the package root, is that plain string, and
@@ -692,7 +694,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.10.3...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Artui/django-spec-html/compare/v0.10.3...v0.11.0
 [0.10.3]: https://github.com/Artui/django-spec-html/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/Artui/django-spec-html/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/Artui/django-spec-html/compare/v0.10.0...v0.10.1

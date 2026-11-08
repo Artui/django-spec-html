@@ -195,7 +195,7 @@ skip-magic-trailing-comma = false
 root = ["./django_spec_html"]
 
 [tool.bumpversion]
-current_version = "0.10.3"
+current_version = "0.11.0"
 allow_dirty = false
 commit = false
 tag = false
