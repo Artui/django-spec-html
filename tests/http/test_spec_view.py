@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import uuid
 from typing import Any
 
 import pytest
@@ -24,7 +25,7 @@ from django_service_specs import (
 )
 
 from django_spec_html.http.spec_view import SpecView
-from tests.dispatch.utils import OPEN, TENANT_SEEDS, Record, make_user
+from tests.dispatch.utils import OPEN, TENANT_SEEDS, Record, Titles, make_user
 from tests.dispatch_app.models import Note
 from tests.http.utils import (
     DEEP_JSON,
@@ -109,6 +110,28 @@ class TestServing:
         note = Note.objects.get(owner=ada)
         response = send(SpecView.as_view(spec=note_spec()), "GET", ada, pk=str(note.pk))
         assert (response.status_code, body(response)) == (200, {"title": "One"})
+
+    def test_a_uuid_route_capture_reaches_a_string_parameter_as_its_string(self, ada: Any) -> None:
+        # Django's <uuid:pk> converter hands the view a uuid.UUID. The kernel's
+        # coerce_flat spells it as its string where the parameter declares
+        # string, from 0.31.0; before, it answered "Expected a string.".
+        captured = uuid.uuid4()
+        seen: list[Any] = []
+
+        def note_by_key(*, pk: str, user: Any) -> Any:
+            seen.append(pk)
+            return Note.objects.filter(owner=user)
+
+        spec = SelectorSpec(
+            kind=SelectorKind.RETRIEVE,
+            selector=note_by_key,
+            reads=Parameters.of(Parameter("pk", "string", required=True)),
+            permissions=OPEN,
+            presenter=Titles(),
+        )
+        response = send(SpecView.as_view(spec=spec), "GET", ada, pk=captured)
+        assert (response.status_code, body(response)) == (200, {"title": "One"})
+        assert seen == [str(captured)]
 
     @pytest.mark.parametrize("policy", list(UnknownArguments))
     def test_every_url_kwarg_is_an_argument_the_spec_must_declare(
