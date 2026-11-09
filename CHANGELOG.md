@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-11-09
+
+### Changed
+- **The kernel floor is 0.31.0**, the release that exports `seeded_pool`;
+  below it the package fails at import. The page's pool, which its
+  affordances and its display read, is now built by the kernel's
+  `seeded_pool` from the call's own seeds and context, where this package
+  built it from the kernel's base pool and removed the context key itself.
+  The pool is the same, so nothing a page answers changes.
+
+### Fixed
+- **A `<uuid:pk>` route on a `string` parameter is accepted.** Django's
+  `uuid` converter hands the view a `uuid.UUID`, and a parameter declared
+  `string` answered `Expected a string.` (a 400). The kernel's `coerce_flat`,
+  which reads every route capture here, now spells a `UUID` as its string
+  where the parameter declares `string`, so the service is handed the string.
+  The fix is the kernel's, from this floor.
+
 ## [0.11.0] — 2026-11-08
 
 ### Added

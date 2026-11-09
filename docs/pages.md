@@ -635,7 +635,7 @@ asks them on GET**, after it has found the target, so it never offers a form
 whose post the spec would refuse at 409:
 
 - **The callable conditions are asked always**, through the kernel's
-  `unmet_operation_affordance`, on a pool `base_pool` builds from the call's
+  `unmet_operation_affordance`, on a pool `seeded_pool` builds from the call's
   own seeds. So a condition reading a seed `get_pool_seeds` adds, as
   `branch_open` above reads `branch`, is asked with it.
 - **When the target is a row and every callable condition is met, the
