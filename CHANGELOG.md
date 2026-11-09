@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which reads every route capture here, now spells a `UUID` as its string
   where the parameter declares `string`, so the service is handed the string.
   The fix is the kernel's, from this floor.
+- **A filter's choice group held in a mapping offers its values.** A
+  `ChoiceFilter` whose choices name a group in a mapping, `{"Open": {"draft":
+  "Draft"}}`, `{"Open": [("draft", "Draft")]}` or `[("Open", {"draft":
+  "Draft"})]`, offered the group's name as a value and refused `draft`, a 400
+  on the list page and on the JSON view. From Django 5.0 it offers `draft`;
+  Django 4.2 reads only a list or tuple as a group, so there the behaviour is
+  as before. The fix is the kernel's, from this floor.
 
 ## [0.11.0] — 2026-11-08
 
@@ -713,7 +720,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Artui/django-spec-html/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Artui/django-spec-html/compare/v0.10.3...v0.11.0
 [0.10.3]: https://github.com/Artui/django-spec-html/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/Artui/django-spec-html/compare/v0.10.1...v0.10.2

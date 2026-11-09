@@ -7,6 +7,8 @@ import json
 import uuid
 from typing import Any
 
+import django
+import django_filters
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 from django.middleware.csrf import CsrfViewMiddleware
@@ -132,6 +134,23 @@ class TestServing:
         response = send(SpecView.as_view(spec=spec), "GET", ada, pk=captured)
         assert (response.status_code, body(response)) == (200, {"title": "One"})
         assert seen == [str(captured)]
+
+    @pytest.mark.skipif(
+        django.VERSION < (5, 0), reason="Django 4.2 reads only a list or tuple as a choice group"
+    )
+    def test_a_choice_group_held_in_a_mapping_offers_its_values(self, ada: Any) -> None:
+        # The kernel's fix, from 0.31.0: the group's name was offered as a
+        # value and "One" refused, a 400.
+        class Grouped(django_filters.FilterSet):
+            title = django_filters.ChoiceFilter(choices={"Open": {"One": "First"}})
+
+            class Meta:
+                model = Note
+                fields: list[str] = []
+
+        request = FACTORY.get("/?title=One")
+        response = SpecView.as_view(spec=notes_spec(filter_set=Grouped))(signed_in(request, ada))
+        assert (response.status_code, body(response)) == (200, [{"title": "One"}])
 
     @pytest.mark.parametrize("policy", list(UnknownArguments))
     def test_every_url_kwarg_is_an_argument_the_spec_must_declare(
