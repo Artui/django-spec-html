@@ -81,7 +81,6 @@ from django_service_specs import (
     audience_projection_for_spec,
     authorize,
     authorize_scope,
-    base_pool,
     check_requested_input,
     coerce_flat,
     dispatch,
@@ -90,6 +89,7 @@ from django_service_specs import (
     resolve_seeds,
     resolve_target,
     row_affordance_answers,
+    seeded_pool,
     unmet_operation_affordance,
 )
 
@@ -1290,11 +1290,8 @@ def call_pool(principal: Any, served: Served) -> dict[str, Any]:
     post that shows its target again). The context then leaves the pool, as
     it leaves dispatch's: it is no seed, and a presenter's ambient is this
     pool (test_the_displays_ambient_holds_the_seeds_and_never_the_call_context).
-    The key is the kernel's reserved name, which its root does not export.
     """
-    pool = base_pool(user=principal, seeds=served.seeds, call_context=served.call_context)
-    del pool["call_context"]
-    return pool
+    return seeded_pool(user=principal, seeds=served.seeds, call_context=served.call_context)
 
 
 def _unavailable(
@@ -1304,7 +1301,7 @@ def _unavailable(
 
     Asked as the kernel says a transport offering an operation asks: the
     callable conditions through ``unmet_operation_affordance``, on ``pool``,
-    the one ``base_pool`` built for the page from the call's own seeds, with ``reserved`` from
+    the one ``seeded_pool`` built for the page from the call's own seeds, with ``reserved`` from
     the same ones, so a condition reading a seed ``get_pool_seeds`` added
     sees it. Then, with none of those unmet and a row to ask about, the
     conditions on the row, by the kernel's ``enforce_affordances``, which

@@ -40,6 +40,8 @@ dependencies = [
     # kernel's specs, so this package cannot support a Django the kernel does
     # not.
     "django>=4.2",
+    # The page's pool needs 0.31.0: ``seeded_pool``, which ``call_pool``
+    # imports from the kernel's root, so below it the package fails at import.
     # The stamp needs 0.29.0: ``build_call_context`` builds every call context
     # with the standard entries present and this package's transport written
     # last under ``TRANSPORT_KEY``, which ``call_transport`` reads back; below
@@ -84,7 +86,7 @@ dependencies = [
     # the kernel's root also exported its own copy of the ten JSON names, so
     # one process held two ``SpecView`` classes. Every other name the moved
     # code reads at the kernel's root is public from 0.10.0.
-    "django-service-specs>=0.29.0",
+    "django-service-specs>=0.31.0",
 ]
 
 [project.urls]
@@ -195,7 +197,7 @@ skip-magic-trailing-comma = false
 root = ["./django_spec_html"]
 
 [tool.bumpversion]
-current_version = "0.11.0"
+current_version = "0.12.0"
 allow_dirty = false
 commit = false
 tag = false

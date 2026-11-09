@@ -12,6 +12,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Annotated, Any
 
+import django
 import django_filters
 import django_tables2 as tables
 import pytest
@@ -755,6 +756,26 @@ class TestFilters:
         assert titles(response) == ["note 3"]
         body = response.content.decode()
         assert 'name="title" value="3"' in body
+
+    @pytest.mark.skipif(
+        django.VERSION < (5, 0), reason="Django 4.2 reads only a list or tuple as a choice group"
+    )
+    def test_a_choice_group_held_in_a_mapping_offers_its_values(
+        self, ada: Any, notes: list[Note]
+    ) -> None:
+        # The kernel's fix, from 0.31.0: the group's name was offered as a
+        # value and "note 3" refused, a 400 on the page.
+        class Grouped(django_filters.FilterSet):
+            title = django_filters.ChoiceFilter(choices={"Open": {"note 3": "Third"}})
+
+            class Meta:
+                model = Note
+                fields: list[str] = []
+
+        response = shown(listing(filter_set=Grouped), "title=note+3", user=ada)
+
+        assert response.status_code == 200
+        assert titles(response) == ["note 3"]
 
     def test_no_filter_set_puts_no_filter_in_the_context(self, ada: Any, notes: list[Note]) -> None:
         response = shown(listing(), user=ada)
