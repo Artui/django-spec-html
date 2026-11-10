@@ -1,5 +1,3 @@
-"""Serving an operation from a Django view, with nothing between the request and dispatch."""
-
 from django_spec_html.http.add_argument_errors import add_argument_errors
 from django_spec_html.http.adispatch_request import adispatch_request
 from django_spec_html.http.async_spec_view import AsyncSpecView
