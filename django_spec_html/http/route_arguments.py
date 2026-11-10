@@ -52,7 +52,7 @@ def _mapped(
     declared: frozenset[str],
     route_kwargs: Mapping[str, str | None],
 ) -> dict[str, Any]:
-    """``captured`` under the names ``route_kwargs`` maps them to, the rest held to the strict rule."""
+    """``captured`` under the names ``route_kwargs`` maps, the rest held to the strict rule."""
     targets = sorted({target for target in route_kwargs.values() if target is not None} - declared)
     if targets:
         raise ImproperlyConfigured(

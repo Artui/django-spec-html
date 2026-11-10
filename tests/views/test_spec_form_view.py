@@ -2027,7 +2027,7 @@ class TestConfiguration:
 
 
 def paged(spec: ServiceSpec, name: str = "Paged", **attributes: Any) -> Any:
-    """A subclass setting ``attributes``, as a host's does, so an attribute no view reads is a red."""
+    """A subclass setting ``attributes`` as a host's does, so an unread attribute is a red."""
     attributes = {"spec": spec, "template_name": TEMPLATE, "success_url": "/done/", **attributes}
     return type(name, (SpecFormView,), attributes)
 
@@ -2717,7 +2717,7 @@ def keyed_entry_spec(keywords: Keywords, *, row: bool) -> ServiceSpec:
 
 
 def keyed_note_spec(keywords: Keywords, service: Any = None) -> ServiceSpec:
-    """An update of the note the route names, validated by ``OwnersNoteForm`` through ``keywords``."""
+    """An update of the route's note, validated by ``OwnersNoteForm`` through ``keywords``."""
     return ServiceSpec(
         service=service or Record(),
         permissions=OPEN,
@@ -2729,7 +2729,7 @@ def keyed_note_spec(keywords: Keywords, service: Any = None) -> ServiceSpec:
 
 
 class TestTheFormsKeywords:
-    """The page's form is built with what the Validator's ``form_kwargs`` answers, as dispatch's is."""
+    """The page's form is built with what the Validator's ``form_kwargs`` answers, as dispatch's."""
 
     @pytest.mark.parametrize("row", [False, True], ids=["a-create", "a-plain-form-on-a-row"])
     def test_a_form_whose_init_needs_a_keyword_is_served(
@@ -2836,7 +2836,7 @@ def partial_spec() -> ServiceSpec:
 
 
 class TestAPartialPage:
-    """A ``partial`` spec's page: every field optional to the browser, and a blank one left alone."""
+    """A ``partial`` spec's page: every field optional to the browser, a blank one left alone."""
 
     def test_a_partial_page_renders_no_required_attribute(self, ada: Any) -> None:
         response = get(form_view(partial_spec()), ada).render()
@@ -3162,7 +3162,7 @@ class TestTheCallsDeclaration:
 
 
 class TestTheRequestAndTheView:
-    """The call context starts with the request and this page, so every stage naming either has it."""
+    """The call context starts with the request and this page; every stage naming either has it."""
 
     def test_every_stage_is_handed_the_request_and_the_page(self, ada: Any, note: Note) -> None:
         handed = Handed()
@@ -3317,7 +3317,7 @@ def notes_of(principal: Any) -> Any:
 
 
 def set_spec(selector: Any = None, **kwargs: Any) -> ServiceSpec:
-    """``entry_spec`` on the set of notes ``selector`` resolves: the signed-in principal's by default."""
+    """``entry_spec`` on the notes ``selector`` resolves: the signed-in principal's by default."""
     return entry_spec(
         collection_selector_spec=SelectorSpec(
             kind=SelectorKind.LIST,
@@ -3380,7 +3380,7 @@ class TestTheTargetInTheContext:
 
 
 class TestABulkPage:
-    """A ``collection_selector_spec``'s page shows how many rows its set holds, and when it counted."""
+    """A ``collection_selector_spec``'s page shows how many rows it holds, and when it counted."""
 
     def test_the_set_and_its_count_and_when_it_was_counted(self, ada: Any) -> None:
         notes(ada, 3)
@@ -3791,7 +3791,8 @@ class TestTheDisplayLimit:
     def test_anything_but_a_positive_int_is_refused(self, limit: Any) -> None:
         with pytest.raises(
             ImproperlyConfigured,
-            match=rf"^SpecFormView.target_display_limit must be a positive int; got {re.escape(repr(limit))}\.$",
+            match=rf"^SpecFormView.target_display_limit must be a positive int; "
+            rf"got {re.escape(repr(limit))}\.$",
         ):
             form_view(entry_spec(), target_display_limit=limit)
 
@@ -3854,7 +3855,7 @@ def confirm_view(spec: ServiceSpec, **attributes: Any) -> Any:
 
 
 def shows(response: Any, name: str) -> bool:
-    """Whether the rendered page carries the field ``name``: its input, and its place in the form."""
+    """Whether the page carries the field ``name``: its input, and its place in the form."""
     response.render()
     rendered = f'name="{name}"'.encode() in response.content
     assert rendered == (name in response.context_data["form"].fields)
@@ -3862,7 +3863,7 @@ def shows(response: Any, name: str) -> bool:
 
 
 class TestTheConfirmationPage:
-    """``AdditionalInputRequired`` rendered: the bound form again, the fields it asks for revealed."""
+    """``AdditionalInputRequired`` rendered: the bound form again, the fields it asks for shown."""
 
     def test_get_holds_the_asked_field_back(self, ada: Any) -> None:
         response = get(confirm_view(confirm_spec()), ada)
@@ -4107,7 +4108,8 @@ class TestAskedFields:
             ),
             (
                 ["confirmed"],
-                "Confirm.asked_fields must be a tuple of the form's field names; got ['confirmed'].",
+                "Confirm.asked_fields must be a tuple of the form's field names; "
+                "got ['confirmed'].",
             ),
             (
                 ("confirm",),

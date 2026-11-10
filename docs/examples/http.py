@@ -1,4 +1,4 @@
-"""Serving operations from Django views: the specs, a function view, the class form, and their URLconf.
+"""Serving operations from Django views: the specs, a function view, the class form, their URLconf.
 
 ``tests/docs/test_http_examples.py`` resolves these routes with Django's own
 resolver and sends each a request, so the page cannot describe a route, a

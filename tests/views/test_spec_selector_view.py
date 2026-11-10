@@ -1282,7 +1282,7 @@ class Remembered(SpecSelectorView):
 
 
 def remembered(spec: Any, query: str, *, user: Any, saved: str, **initkwargs: Any) -> Any:
-    """``spec`` served by ``Remembered`` for ``query``, the session holding ``saved``, and the session after."""
+    """``spec`` served by ``Remembered`` for ``query``, the session holding ``saved``, and later."""
     request = signed_in(FACTORY.get(f"/notes/?{query}"), user)
     request.session = {"notes_query": saved}
     response = Remembered.as_view(spec=spec, **initkwargs)(request)

@@ -8,7 +8,7 @@ from django_service_specs import PermissionCheck
 
 
 class SeesTenantAtEachQuestion(PermissionCheck):
-    """Admits every principal, row and scope, recording the ``tenant`` each question was asked with."""
+    """Admits every principal, row and scope, recording the ``tenant`` each question carried."""
 
     def __init__(self) -> None:
         self.asked: list[tuple[str, Any]] = []

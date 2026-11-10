@@ -109,7 +109,7 @@ _SPEC_RESULT: Final = "spec-result"
 """The fragment a success is answered with in place, where the fragment template defines one."""
 
 SPEC_RESULTS: Final = "spec-results"
-"""The fragment a selector page's results are, addressed as ``<template_name>#spec-results`` by default."""
+"""The fragment a selector page's results are, at ``<template_name>#spec-results`` by default."""
 
 _SHIPPED_FRAGMENTS: Final = MappingProxyType(
     {
@@ -119,7 +119,7 @@ _SHIPPED_FRAGMENTS: Final = MappingProxyType(
         "django_spec_html/spec_selector.html": "django_spec_html/spec_selector_fragment.html",
     }
 )
-"""Each page this package ships, a view's ``template_name`` by default, and the file its fragment is.
+"""Each page this package ships, a view's ``template_name`` by default, and its fragment's file.
 
 A file of its own rather than a ``spec-form`` ``{% partialdef %}`` inside
 the page, because below Django 6.0 a page using that tag fails to parse
@@ -512,7 +512,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
 
 @dataclasses.dataclass(frozen=True)
 class Served:
-    """What a request's hooks answered, read once and handed to every step that reads the route or a seed."""
+    """What a request's hooks answered, read once, handed to each step using the route or a seed."""
 
     route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None
     server: ServerArguments | None
@@ -821,7 +821,7 @@ def _without_handles(payload: Any, projection: AudienceProjection) -> Any:
 
 
 def refusal_code(refused: DispatchError | ServiceError) -> dict[str, str]:
-    """The refusal's ``code`` under that name, for a refusal carrying one, as ``error_response`` puts it in the body."""
+    """The refusal's ``code`` under that name, as ``error_response`` puts it in the body."""
     if isinstance(refused, ActionUnavailable):
         return {"code": refused.code}
     return {}
@@ -906,7 +906,7 @@ def row_answers(row: Any) -> dict[str, dict[str, Any]] | None:
 
 
 def refusal_tree(refused: DispatchError | ServiceError) -> Mapping[Any, Any]:
-    """The refusal a re-rendered form carries: an argument refusal in place, any other as its message."""
+    """The refusal a re-rendered form carries: an argument refusal in place, others as messages."""
     if isinstance(refused, InvalidArguments):
         return refused.detail
     if isinstance(refused, ServiceValidationError):

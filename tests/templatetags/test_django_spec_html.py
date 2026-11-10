@@ -154,7 +154,8 @@ def test_a_template_cannot_change_the_answers_the_row_carries() -> None:
     row = answered(SPEC, dict(ARCHIVED))
 
     cleared = rendered(
-        '{% with why=row|unavailable:"rename" %}{{ why.clear }}{{ why.popitem }}{% if why %}held{% endif %}'
+        '{% with why=row|unavailable:"rename" %}{{ why.clear }}{{ why.popitem }}'
+        "{% if why %}held{% endif %}"
         "{% endwith %}",
         row,
     )

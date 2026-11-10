@@ -143,7 +143,7 @@ class SpecActionsMixin(admin.ModelAdmin):
 
 @dataclasses.dataclass(frozen=True)
 class _Page:
-    """An action's page as the mixin built it: the class and keywords, and the view its URL serves."""
+    """An action's page as built: the class and keywords, and the view its URL serves."""
 
     action: SpecAction
     selection: Parameter | None
@@ -187,7 +187,7 @@ class _AdminPage(SpecPageBase):
         }
 
     def get_success_url(self, result: DispatchResult) -> str:
-        """The row's change page after an object action, the changelist after a changelist action."""
+        """The row's change page after an object action, the changelist after a changelist one."""
         opts = self.model_admin.opts
         info = f"admin:{opts.app_label}_{opts.model_name}"
         current = self.model_admin.admin_site.name
@@ -325,7 +325,7 @@ def _built(
 
 
 def _redirect(model_admin: SpecActionsMixin, action: SpecAction) -> Callable[..., HttpResponse]:
-    """The changelist action: a redirect to the action's page, the selected rows' keys in its query string."""
+    """The changelist action: a redirect to its page, the selected keys in its query string."""
     opts = model_admin.opts
 
     def redirect(modeladmin: Any, request: HttpRequest, queryset: QuerySet[Any]) -> HttpResponse:
