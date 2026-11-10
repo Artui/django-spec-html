@@ -1,5 +1,3 @@
-"""Requests, principals and specs the HTTP transport's tests share."""
-
 from __future__ import annotations
 
 import json
@@ -52,13 +50,7 @@ levels is past each, at 2 MB, under the 2.5 MB body Django reads by default.
 
 @dataclass(frozen=True)
 class Foreign:
-    """A stand-in for djangorestframework-services' spec: a declaration compiling to a kernel one.
-
-    Shaped as the real one is where the compile seam reads it: a frozen
-    dataclass, so it compares by its fields, holding a list, so it has no hash.
-    It counts its compiles, so a test can tell a cached spec from a recompiled
-    one.
-    """
+    """A stand-in for djangorestframework-services' spec, compiling to a kernel one."""
 
     compiled: ServiceSpec | SelectorSpec
     labels: list[str] = field(default_factory=list)
@@ -130,12 +122,7 @@ def titled_spec(returns: Any = None, **kwargs: Any) -> ServiceSpec:
 
 
 def asking_spec(schema: Any, validator: Any = None) -> ServiceSpec:
-    """A write that answers every call by asking for more, under ``schema``.
-
-    By default it declares ``title`` and nothing else, so a schema keyed
-    ``title`` asks for a declared value and any other key asks for one the
-    closed argument set would refuse.
-    """
+    """A write that answers every call by asking for more, under ``schema``."""
 
     def ask(**pool: Any) -> None:
         raise AdditionalInputRequired("Say which.", schema=schema)
@@ -150,14 +137,7 @@ def _owner_from_pk(*, pk: Any) -> dict[str, Any]:
 
 
 def provider_read_spec() -> ServiceSpec:
-    """A write whose ``kwargs`` provider requires ``pk`` itself, beside the ``owner_name`` it fills.
-
-    Both reads are required. The provider is handed its seat's reads, never
-    another provider's answer, so ``pk`` can only come from the caller, and
-    the kernel demands it of the caller: refused as missing when a call leaves
-    it out, where the provider raised ``TypeError``. ``owner_name`` is one an
-    untyped provider reaches, so it is never demanded.
-    """
+    """A write whose kwargs provider requires pk itself, beside the owner_name it fills."""
     return ServiceSpec(
         service=Record(),
         permissions=OPEN,
@@ -170,16 +150,7 @@ def provider_read_spec() -> ServiceSpec:
 
 
 def asking_for_tenant_spec(schema: Any) -> ServiceSpec:
-    """A write that asks under ``schema``, declaring ``title`` and a ``tenant`` read.
-
-    ``tenant`` is declared outside the Validator, which is what makes a ``tenant``
-    seed the server's: a Validator field named like a seed is left to the caller
-    (``server_owned_keys``). Without that seed, ``tenant`` is an ordinary optional
-    read the caller may answer, so one schema is askable on a request that
-    carries no seed and refused on one that does. It is ``reflected`` because
-    dispatch refuses a plain parameter a registered seed occupies, before the
-    service can ask anything.
-    """
+    """A write that asks under ``schema``, declaring ``title`` and a ``tenant`` read."""
 
     def ask(**pool: Any) -> None:
         raise AdditionalInputRequired("Say which.", schema=schema)
@@ -251,17 +222,7 @@ class CountForm(forms.Form):
 
 
 class DeclaredByTheRequest(FormValidator):
-    """A Validator declaring one thing to a call carrying a request, another to every other reader.
-
-    Asked with a call context holding a ``request``, it declares what its
-    form does, ``count`` a string, and ``routed``, where given, as a
-    parameter a route fills; asked with none, as at ``as_view()``, ``count``
-    an integer. The form cleans a count either way, so the shape check is
-    what tells them apart: a reader that asked without the call's context
-    coerces a posted ``"3"`` to ``3``, which the call's declaration refuses
-    as no string, and refuses the route's kwarg as one the spec does not
-    declare. Each context it is asked with is recorded.
-    """
+    """A Validator declaring one thing to a call with a request, another to every other reader."""
 
     def __init__(self, form_class: type[forms.BaseForm] = CountForm, routed: str = "") -> None:
         super().__init__(form_class)
@@ -286,21 +247,13 @@ class DeclaredByTheRequest(FormValidator):
         """The one dict every ask of a call's declaration was handed."""
         assert self.contexts
         assert len({id(context) for context in self.contexts}) == 1, self.contexts
-        # Every ask of the declaration reads the one stamp, whichever entry
-        # point asked (the literal, as ``Handed`` reads it).
         assert self.contexts[0]["transport"] == "html"
         return self.contexts[0]
 
 
 @dataclass
 class Handed:
-    """The ``request`` and ``view`` each stage of one call was handed, in the order the stages ran.
-
-    Each stage of ``handed_spec`` names both, and ``call_context`` with them
-    (``one_transport`` reads the transport each saw), so a stage the transport left
-    them out of is handed ``None`` by the kernel, and one it never reached is
-    missing from ``stages()``.
-    """
+    """The request and view each stage of one call was handed, in the order the stages ran."""
 
     seen: list[tuple[str, Any, Any]] = field(default_factory=list)
     transports: list[tuple[str, str | None]] = field(default_factory=list)
@@ -308,10 +261,8 @@ class Handed:
 
     def record(self, stage: str, request: Any, view: Any, call_context: Any = None) -> None:
         self.seen.append((stage, request, view))
-        # The literal key, read as the kernel's ``call_transport`` reads it, so
-        # a rename of either constant is caught here rather than followed.
+        # The literal key, as the kernel's call_transport reads it: a rename is caught here.
         self.transports.append((stage, (call_context or {}).get("transport")))
-        # The standard entries the kernel's builder leaves present as None.
         self.standard.append(
             (
                 stage,
@@ -367,12 +318,7 @@ class HandedCheck(PermissionCheck):
 
 
 def handed_spec(handed: Handed, **kwargs: Any) -> ServiceSpec:
-    """A write on the note ``pk`` names, every stage of which names ``request`` and ``view``.
-
-    The target's selector, both permission questions, an affordance
-    condition, the ``FormValidator``'s ``form_kwargs`` and the service each
-    record what they are handed in ``handed``. ``kwargs`` replace any of them.
-    """
+    """A write on the note ``pk`` names, every stage of which names ``request`` and ``view``."""
 
     def row(*, pk: int, request: Any, view: Any, call_context: Any) -> QuerySet[Note]:
         handed.record("selector", request, view, call_context)

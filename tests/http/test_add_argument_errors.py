@@ -1,12 +1,3 @@
-"""``add_argument_errors``: a refusal tree placed on a bound form, beside its own errors, once.
-
-Every form here but one is bound and never validated before the call, as a
-view hands one over: the form's own errors are whatever its validation finds when the
-placement validates it, with the guards a ``FormValidator``'s form is
-validated with, which is what the placement reads to know what the form
-already says.
-"""
-
 from __future__ import annotations
 
 from decimal import Decimal
@@ -57,15 +48,13 @@ class TestPlacement:
         assert form.non_field_errors() == ["Closed today."]
 
     def test_djangos_own_non_field_key_is_read_the_same(self) -> None:
-        # What a service re-raising a model's ``message_dict`` carries, since
-        # Django keeps a model's form-wide messages under ``"__all__"``.
+        # A service re-raising message_dict: Django keeps form-wide messages under "__all__".
         form = bound(title="Hi")
         add_argument_errors(form, {"__all__": ["Closed today."]})
         assert form.non_field_errors() == ["Closed today."]
 
     def test_a_key_the_form_has_no_field_for_is_prefixed_with_it(self) -> None:
-        # A URL kwarg, or a key a service chose: the form has nowhere to show
-        # it but its own errors, and the prefix says what it is about.
+        # A URL kwarg or a service's key: the form has nowhere to show it but its own errors.
         form = bound(title="Hi")
         add_argument_errors(form, {"pk": ["Enter a whole number."]})
         assert errors(form) == {"__all__": ["pk: Enter a whole number."]}
@@ -89,8 +78,7 @@ class TestPlacement:
 
 class TestNeverADuplicate:
     def test_a_fields_message_the_form_already_carries_is_not_added(self) -> None:
-        # FormValidator refuses with the form's own messages, so a view's
-        # bound form carries each of them before the tree is placed.
+        # FormValidator refuses with the form's own messages, which the view's bound form carries.
         form = bound(title="")
         add_argument_errors(form, {"title": [REQUIRED]})
         assert errors(form) == {"title": [REQUIRED]}
@@ -106,9 +94,7 @@ class TestNeverADuplicate:
         assert errors(form) == {"title": ["Taken."], "__all__": ["pk: Gone."]}
 
     def test_an_array_elements_refusal_goes_on_its_field_once(self) -> None:
-        # The shape check refuses a multi-select's element at its index, in the
-        # words the form uses for the same value. The index is dropped on a
-        # field, which a person reads as one control, so the two are one message.
+        # The shape check refuses a multi-select's element at its index, in the form's own words.
         refused = "Select a valid choice. c is not one of the available choices."
         form = bound(title="Hi", tags=["a", "c"])
         add_argument_errors(form, {"tags": {1: [refused]}})
@@ -117,9 +103,7 @@ class TestNeverADuplicate:
 
 class TestAFormAlreadyValidated:
     def test_a_form_already_validated_is_compared_as_it_stands(self) -> None:
-        # A view that validated its form and placed a message of its own hands
-        # over a form whose errors are its state. Validating it again would
-        # start that state over and drop the view's message.
+        # A validated form and a message of the view's own: the form's errors are its state.
         form = bound(title="Hi")
         assert form.is_valid()
         form.add_error(None, "Added by the view.")
@@ -134,8 +118,7 @@ class TestMessages:
         assert errors(form) == {"title": ["Taken."], "__all__": ["Closed today."]}
 
     def test_a_lazy_message_is_one_message_not_its_characters(self) -> None:
-        # A lazy translation is not a ``str``, so a ladder asking "is it a
-        # string?" and iterating the rest would take it apart.
+        # A lazy translation is not a str, so a ladder asking "is it a string?" would iterate it.
         form = bound(title="Hi")
         add_argument_errors(form, {"non_field_errors": gettext_lazy("Closed today.")})
         assert form.non_field_errors() == ["Closed today."]
@@ -157,19 +140,13 @@ class EditionForm(forms.ModelForm):
 
 @pytest.mark.django_db
 class TestAValuePastItsColumn:
-    """A form whose own validation would hand the driver a number no column holds.
-
-    The form's own errors are found with the guards ``FormValidator`` cleans
-    its form with, so the value is refused in the field's words, which the
-    kernel's refusal of it repeats, rather than raising ``OverflowError``.
-    """
+    """A form whose own validation would hand the driver a number no column holds."""
 
     PAST_KEY = f"Select a valid choice. {2**63} is not one of the available choices."
 
     @pytest.mark.parametrize("prefix", [None, "assign"], ids=["unprefixed", "prefixed"])
     def test_a_list_s_key_past_its_column_is_refused_once(self, prefix: str | None) -> None:
-        # Bound as a view binds ``request.POST``: a ``QueryDict``, whose item
-        # is only the last of a key's values, and here that one is in range.
+        # Bound as a view binds request.POST, a QueryDict whose item is its key's last value.
         name = "assignees" if prefix is None else f"{prefix}-assignees"
         data = QueryDict(f"{name}={2**63}&{name}=1")
         form = AssigneesForm(data=data, prefix=prefix)

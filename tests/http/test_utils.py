@@ -1,5 +1,3 @@
-"""The helpers the HTTP transport's functions and views share."""
-
 from __future__ import annotations
 
 import json
@@ -59,9 +57,7 @@ def test_the_methods_a_spec_answers(spec: Any, methods: Any, expected: Any) -> N
 def test_a_service_presenting_nothing_answers_an_empty_body_at_the_callers_status(
     status: int,
 ) -> None:
-    # As djangorestframework-services answers it: DRF renders ``None`` as no
-    # bytes and then drops the Content-Type, which would describe nothing. The
-    # status stays the caller's rather than becoming 204.
+    # As djangorestframework-services answers: DRF drops Content-Type for None.
     response = success_response(titled_spec(), None, status)
     assert (response.status_code, response.content) == (status, b"")
     assert "Content-Type" not in response
@@ -84,8 +80,7 @@ def _nothing_left(*, result: Any) -> Any:
 
 @pytest.mark.django_db
 def test_an_empty_re_read_keeps_the_callers_status() -> None:
-    # djangorestframework-services answers 204 here whatever status was named;
-    # the kernel keeps the caller's, since an empty re-read is the value None.
+    # The kernel keeps the caller's status; djangorestframework-services answers 204.
     spec = titled_spec(
         "done",
         output_selector_spec=SelectorSpec(kind=SelectorKind.RETRIEVE, selector=_nothing_left),
@@ -108,8 +103,7 @@ def _posted(factory: Any) -> Any:
 
 @pytest.mark.django_db(transaction=True)
 async def test_both_entry_points_answer_through_success_response() -> None:
-    # Each entry point builds its success answer here and nowhere else, so
-    # both answer a service presenting nothing with the same empty body.
+    # Each entry point builds its success answer here, so both answer an empty body alike.
     synced = await sync_to_async(dispatch_request)(
         titled_spec(None), _posted(FACTORY), success_status=201
     )
@@ -120,24 +114,19 @@ async def test_both_entry_points_answer_through_success_response() -> None:
 
 
 def test_the_status_map_answers_every_kernel_refusal() -> None:
-    # Its gaps, a base the map never answers bare, and a row a base above it
-    # shadows: each would leave a refusal answered by the wrong row, or none.
-    # The kernel's check reads two-column rows, so each column is read in turn.
+    # A gap in the map answers a refusal with the wrong row, or none.
     assert unanswered_refusals([(kind, status) for kind, status, _ in REFUSAL_STATUSES]) == ()
     assert unanswered_refusals([(kind, outcome) for kind, _, outcome in REFUSAL_STATUSES]) == ()
 
 
 def test_every_refusal_has_a_row_of_its_own() -> None:
-    # Three rows share their base's status - InvalidArguments, ActionUnavailable
-    # and AdditionalInputRequired - so no status tells their row was deleted,
-    # and the kernel's check, satisfied by the base, reports nothing either.
+    # Three rows share their base's status, so no status tells their row was deleted.
     rows = [kind for kind, _, _ in REFUSAL_STATUSES]
     assert sorted(rows, key=str) == sorted({*REFUSALS, UnsupportedMediaType}, key=str)
 
 
 def test_unsupported_media_type_is_415() -> None:
-    # This package's own refusal, which the kernel's check does not ask about:
-    # without its row the DispatchError row would answer it 400.
+    # This package's own refusal, which the kernel's check does not ask about.
     assert refusal_status(UnsupportedMediaType()) == 415
 
 
@@ -162,7 +151,5 @@ def test_unsupported_media_type_is_415() -> None:
 def test_every_refusal_has_its_outcome(
     refused: DispatchError | ServiceError, outcome: Outcome
 ) -> None:
-    # Every row of the outcome column, held on its own: the fragment answers
-    # invalid, needs input and failed alike, so no response would tell one
-    # wrong outcome from another, and the page reads only the denied rows.
+    # Each outcome row is held on its own, as no status tells two wrong outcomes apart.
     assert refusal_outcome(refused) is outcome

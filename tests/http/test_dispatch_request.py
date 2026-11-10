@@ -1,5 +1,3 @@
-"""``dispatch_request``: one request, dispatched and answered as JSON."""
-
 from __future__ import annotations
 
 import dataclasses
@@ -72,10 +70,7 @@ class NumberCsvRangeFilter(django_filters.BaseRangeFilter, django_filters.Number
 
 
 class NoteFilters(django_filters.FilterSet):
-    """The two comma-separated spellings, as real django-filter classes rather than stand-ins.
-
-    The reading is checked against what django-filter itself reads.
-    """
+    """The two comma-separated spellings, as real django-filter classes rather than stand-ins."""
 
     pks = NumberInFilter(field_name="pk", lookup_expr="in")
     pk_between = NumberCsvRangeFilter(field_name="pk", lookup_expr="range")
@@ -112,9 +107,7 @@ class TestSuccess:
     def test_a_csv_filter_reads_the_comma_separated_spelling_its_help_advertises(
         self, ada: Any
     ) -> None:
-        # ``?pks=1,2`` is what django-filter's help text promises for a CSV
-        # filter, so it must narrow the rows over the wire and not only as
-        # the list a JSON caller sends.
+        # ?pks=1,2 is what a CSV filter's help promises, so it must narrow the rows on the wire.
         keys = [Note.objects.create(owner=ada, title=name).pk for name in ("One", "Two", "Three")]
         spec = notes_spec(filter_set=NoteFilters)
 
@@ -134,9 +127,7 @@ class TestSuccess:
     def test_a_csv_filter_refuses_a_list_past_the_default_maximum_as_the_client_s_mistake(
         self, ada: Any
     ) -> None:
-        # One key and a comma per value is the spelling that passes Django's
-        # DATA_UPLOAD_MAX_NUMBER_FIELDS; past the database's variable limit an
-        # ``in`` lookup answered a 500. A 400 at the filter's name instead.
+        # One key and commas: past the database's variable limit, an in lookup answered 500.
         spec = notes_spec(filter_set=NoteFilters)
         at_the_bound = ",".join(map(str, range(1, 1001)))
         past_it = f"{at_the_bound},1001"
@@ -179,15 +170,12 @@ class TestSuccess:
 
     @SPEC_OR_SOURCE
     def test_a_service_with_nothing_to_present_is_204(self, ada: Any, served: Any) -> None:
-        # Read off a source itself, a service would not be one and would
-        # answer ``null`` at 200.
+        # Read off a source itself, a service would not be one and would answer ``null`` at 200.
         response = dispatch_request(served(titled_spec(None)), post(ada, {"title": "Final"}))
         assert (response.status_code, response.content) == (204, b"")
 
     def test_a_selector_that_allows_none_answers_null_at_200(self, ada: Any) -> None:
-        # Holds ``isinstance(spec, ServiceSpec)`` in the 204 rule: a read that
-        # found nothing it was allowed to find answers ``null``, which is its
-        # value, where a write with nothing to say has no body at all.
+        # A read with nothing it may find answers null, its value; a write answers no body.
         response = dispatch_request(
             note_spec(allow_none=True), signed_in(FACTORY.get("/?pk=404"), ada)
         )
@@ -221,9 +209,7 @@ class TestSuccess:
 
 class TestPrincipal:
     def test_anonymous_reaches_the_permission_check(self) -> None:
-        # Holds ``is_authenticated`` in the deactivated guard: AnonymousUser's
-        # ``is_active`` is False, so without it every anonymous request would
-        # be refused before a check that admits anonymous could say so.
+        # AnonymousUser's is_active is False, so the guard must hold is_authenticated.
         seen = Seen()
         response = dispatch_request(
             titled_spec({"id": 1}, permissions=[seen]), post(None, {"title": "x"})
@@ -239,8 +225,7 @@ class TestPrincipal:
         assert seen.principals == [ada]
 
     def test_a_deactivated_user_is_refused_before_anything_runs(self, ada: Any) -> None:
-        # A backend other than ModelBackend hands one through; the kernel's
-        # rule is that a deactivated principal never acts.
+        # A backend other than ModelBackend hands one through; a deactivated principal never acts.
         ada.is_active = False
         seen = Seen()
         spec = titled_spec({"id": 1}, permissions=[seen])
@@ -250,8 +235,7 @@ class TestPrincipal:
         assert spec.service.calls == []
 
     def test_a_deactivated_user_is_refused_ahead_of_a_malformed_body(self, ada: Any) -> None:
-        # The principal is read first, as adispatch resolves one before its
-        # shape check: a caller who may not act learns nothing about the call.
+        # The principal is read first, as adispatch resolves one before its shape check.
         ada.is_active = False
         request = signed_in(FACTORY.post("/", data=b"{", content_type="application/json"), ada)
         response = dispatch_request(titled_spec(), request)
@@ -284,8 +268,7 @@ class TestRefusals:
         )
 
     def test_a_number_the_decoder_reads_as_infinity_is_400_at_its_address(self, ada: Any) -> None:
-        # 1e400 is well-formed JSON, and Python's decoder reads it as infinity:
-        # the constants are refused by name, and this is refused as a number.
+        # 1e400 is valid JSON, which Python decodes as infinity: refused as a number.
         spec = ServiceSpec(
             service=lambda **pool: None, permissions=OPEN, validator=DataclassValidator(Measured)
         )
@@ -323,8 +306,7 @@ class TestRefusals:
         )
 
     def test_a_configuration_error_is_not_answered(self, ada: Any) -> None:
-        # Wrong for every caller, so it propagates to the host's 500 rather
-        # than reading to one client as something about its request.
+        # Wrong for every caller, so it propagates to the host's 500, not a client's answer.
         with pytest.raises(ImproperlyConfigured):
             dispatch_request(titled_spec(permissions=None), post(ada, {"title": "x"}))
 
@@ -399,8 +381,7 @@ class TestPassedThrough:
 
 
 class TestAskedInput:
-    # The schema a service asks under is checked before it is written to the
-    # body: a schema the route could not hear answered is the raiser's error.
+    # A service's schema is checked before it is written to the body: the raiser's error.
     @SPEC_OR_SOURCE
     def test_a_schema_naming_a_declared_key_is_written_as_the_422_body(
         self, ada: Any, served: Any
@@ -420,12 +401,7 @@ class TestAskedInput:
         with pytest.raises(ImproperlyConfigured, match="colour"):
             dispatch_request(asking, post(ada, {"title": "x"}))
 
-    # Two cases size the seed rule to be the one that answers: ``tenant`` is
-    # declared, so the "no parameter declares it" rule has nothing to say, and
-    # it is a well-formed string question, so no shape rule does either. Only
-    # the request's seeds differ. ``check_asked_input`` reading ``pool_seeds``
-    # is held by the first; the second shows the seed, not the key, is what
-    # refuses.
+    # tenant is declared and well formed, so the seed rule is the one that answers.
     @SPEC_OR_SOURCE
     def test_a_schema_naming_a_key_the_requests_seeds_fill_is_the_services_error(
         self, ada: Any, served: Any
@@ -485,8 +461,7 @@ class TestTheRequestAndTheView:
         assert handed.one_transport() == "html"
 
     def test_a_callable_naming_format_or_action_keeps_its_own_default(self, ada: Any) -> None:
-        # The builder fills both entries with None, and neither is a call
-        # seed: a selector naming them is handed nothing from the context.
+        # Both entries are None, not call seeds: a selector naming them gets nothing.
         handed: list[Any] = []
 
         def rows(*, format: str = "default", action: str = "default") -> Any:
@@ -531,9 +506,7 @@ class TestTheCallsDeclaration:
     """The request is read with the call's own context, the dict dispatch is then handed."""
 
     def test_the_arguments_are_read_as_the_call_declares_them(self, ada: Any) -> None:
-        # Posted as a form, so the reader types the count by its
-        # declaration: read without the context, as an integer, which the
-        # call refused as no string.
+        # Without the context the count is read as an integer, which the call refuses as no string.
         validator = DeclaredByTheRequest()
         spec = ServiceSpec(service=Record(), permissions=OPEN, validator=validator)
         request = signed_in(FACTORY.post("/", data={"title": "Hi", "count": "3"}), ada)
@@ -543,9 +516,7 @@ class TestTheCallsDeclaration:
         assert validator.one_context()["request"] is request
 
     def test_a_bound_value_is_checked_against_the_call_s_declaration(self, ada: Any) -> None:
-        # The call declares the count a string, so the server's 3 is the
-        # host's mistake. Checked against the declaration made to no call, an
-        # integer, it was laid on, and dispatch refused it as the client's 400.
+        # The call declares the count a string, so the server's 3 is the host's mistake.
         validator = DeclaredByTheRequest()
         spec = ServiceSpec(service=Record(), permissions=OPEN, validator=validator)
         request = signed_in(FACTORY.post("/", data={"title": "Hi"}), ada)
@@ -554,8 +525,7 @@ class TestTheCallsDeclaration:
         assert validator.one_context()["request"] is request
 
     def test_a_key_declared_to_the_call_alone_can_be_asked_for(self, ada: Any) -> None:
-        # Checked against the declaration made to no call, which has no
-        # ``note``, the question was the service's error rather than a 422.
+        # Checked against a declaration made to no call, the question was the service's error.
         schema = {"note": {"type": "string"}}
         validator = DeclaredByTheRequest(routed="note")
         request = signed_in(FACTORY.post("/", data={"title": "Hi"}), ada)
@@ -568,15 +538,13 @@ class TestTheCallsDeclaration:
 
 
 def test_a_read_a_provider_requires_itself_left_out_is_the_clients_400(ada: Any) -> None:
-    # The kernel demands it of the caller before any provider runs, where the
-    # provider was called without it and raised ``TypeError``.
+    # The kernel demands it of the caller before any provider runs, not as a TypeError.
     response = dispatch_request(provider_read_spec(), post(ada, {"owner_name": "ada"}))
     assert (response.status_code, body(response)) == (400, {"pk": ["This field is required."]})
 
 
 class TestSources:
-    # The shape of a host serving another library's declarations: the object
-    # it holds is handed in as it is.
+    # A host serving another library's declarations hands its object in as it is.
     def test_a_list_source_answers_its_presented_rows(self, ada: Any) -> None:
         Note.objects.create(owner=ada, title="One")
         response = dispatch_request(Foreign(notes_spec()), signed_in(FACTORY.get("/"), ada))
@@ -584,8 +552,7 @@ class TestSources:
 
 
 def test_a_list_level_refusal_beside_a_row_s_is_one_400_body(ada: Any) -> None:
-    """A many call's list node holds row indices beside ``non_field_errors``,
-    and the body carries both, rows first, as the refusal tree orders them."""
+    """A many call's list node holds row indices beside non_field_errors, rows first."""
     spec = ServiceSpec(service=print, permissions=OPEN, many=True, validator=Listed(most=1))
     payload = {"items": [{"title": 3}, {"title": "a"}, {"title": "b"}]}
 

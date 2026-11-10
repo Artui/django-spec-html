@@ -1,10 +1,3 @@
-"""``error_response``: each refusal as JSON, at the status djangorestframework-services answers.
-
-Bodies are read back with ``json.loads`` from the response's own bytes, so what
-is asserted is what a client receives, integer row keys and rendered lazy
-translations included.
-"""
-
 from __future__ import annotations
 
 import json
@@ -70,16 +63,12 @@ def answered(exc: DispatchError | ServiceError) -> tuple[int, Any]:
     ids=lambda value: type(value).__name__ if isinstance(value, Exception) else str(value),
 )
 def test_a_message_refusal_is_its_status_and_a_detail(exc: Any, status: int) -> None:
-    # Each row holds one entry of the status map: ServiceNotFound and
-    # ServiceConflict are ServiceErrors too, so answering either 422 means the
-    # base matched before the subclass; and an unknown DispatchError is 400
-    # because it is still a refusal of the call, never a service's verdict.
+    # Subclasses precede their bases: ServiceNotFound is a ServiceError too.
     assert answered(exc) == (status, {"detail": exc.message})
 
 
 def test_invalid_arguments_is_400_with_the_tree_as_the_body() -> None:
-    # Row keys are ints in the tree and strings on the wire, as the tree's
-    # own docstring says json.dumps writes them.
+    # Row keys are ints in the tree and strings on the wire, as json.dumps writes them.
     tree = {"title": ["Required."], "books": {1: {"non_field_errors": ["Expected an object."]}}}
     assert answered(InvalidArguments(tree)) == (
         400,
@@ -105,14 +94,8 @@ class TestActionUnavailable:
 class TestAdditionalInputRequired:
     """A 422 like any other service error, with what is missing beside the sentence."""
 
-    # The guard is ``isinstance(exc, AdditionalInputRequired) and exc.schema
-    # is not None``. The first test holds the pair; the second holds the
-    # second half (without it, a missing schema would be written as null);
-    # the parametrized ``Postponed`` row above holds the first half, since a
-    # plain service error has no ``schema`` to read.
+    # The guard is ``isinstance(exc, AdditionalInputRequired) and exc.schema is not None``.
     def test_a_schema_of_any_mapping_is_written_at_any_depth(self) -> None:
-        # A frozen mapping at the top, in a property, in a list and in a tuple:
-        # each is an object on the wire, where the encoder alone would refuse it.
         frozen = MappingProxyType
         schema = frozen(
             {
@@ -174,8 +157,7 @@ class TestServiceValidationError:
         )
 
     def test_a_lazy_string_is_one_message_not_its_characters(self) -> None:
-        # A lazy translation is not a ``str``, so a reading that asks "is it a
-        # string?" before "is it a list?" iterates it into characters.
+        # A lazy translation is not a str, so a reader asking "is it a string?" first iterates it.
         detail: Any = gettext_lazy("This field is required.")
         with translation.override("de"):
             assert answered(ServiceValidationError(detail)) == (
@@ -184,8 +166,7 @@ class TestServiceValidationError:
             )
 
     def test_it_is_answered_before_its_base(self) -> None:
-        # Its base is 422; a map matching ServiceError first would answer
-        # this one 422 with a ``detail`` and lose the field map.
+        # Matched as ServiceError first, it would answer 422 and lose the field map.
         status, body = answered(ServiceValidationError({"title": ["Too dull."]}))
         assert status == 400
         assert "detail" not in body
@@ -201,8 +182,7 @@ def test_a_lazy_message_renders_in_the_active_language() -> None:
 
 
 def test_no_refusal_is_ever_a_401() -> None:
-    # A 401 tells a client to start an authentication flow, and a session has
-    # no challenge to answer: an anonymous caller a check refuses is a 403.
+    # A 401 starts an auth flow a session cannot answer, so anonymous refusals are 403.
     refusals: list[DispatchError | ServiceError] = [
         PermissionCheckDenied(check=Refuse(), spec=None),
         NotPermitted(),
@@ -221,8 +201,7 @@ def test_no_refusal_is_ever_a_401() -> None:
 
 
 def test_a_refusal_s_codes_never_reach_the_body() -> None:
-    # The codes are for an adapter in the same process; the body a client reads
-    # is the plain messages, byte for byte what it was before they existed.
+    # The codes are for an adapter in the same process; the client reads the plain messages.
     params = Parameters.of(Parameter("title", "string", required=True))
     with pytest.raises(InvalidArguments) as refused:
         check_arguments(params, {"colour": "red"})

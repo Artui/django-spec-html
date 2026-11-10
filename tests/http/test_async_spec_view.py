@@ -1,5 +1,3 @@
-"""``AsyncSpecView``: ``SpecView`` with every handler async, served under ASGI."""
-
 from __future__ import annotations
 
 import json
@@ -52,8 +50,7 @@ async def send(view: Any, method: str, user: Any, payload: Any = None, **url_kwa
 
 
 def test_every_handler_is_async() -> None:
-    # Django serves a view async only when all of its handlers are, and
-    # refuses a class that mixes the two at as_view.
+    # Django serves a view async only when all its handlers are, and refuses a mixed class.
     assert AsyncSpecView.view_is_async is True
     AsyncSpecView.as_view(spec=notes_spec())
 
@@ -109,11 +106,7 @@ async def test_a_seed_reaches_the_service(ada: Any) -> None:
 
 
 async def test_a_body_nested_past_the_decoder_is_the_clients_400(ada: Any) -> None:
-    # Decoded off the loop, in the executor hop, where the RecursionError
-    # would otherwise reach the host as surely as on the sync path. That
-    # thread can have a deeper stack than the loop's, so the body is checked
-    # against the decoder there: one it decodes would be refused as "Expected
-    # an object." and never reach the refusal this names.
+    # Decoded off the loop, in the executor hop, as the sync path decodes it.
     with pytest.raises(RecursionError):
         await sync_to_async(json.loads, thread_sensitive=True)(DEEP_JSON)
     spec = titled_spec({"id": 1})
@@ -128,8 +121,7 @@ async def test_a_body_nested_past_the_decoder_is_the_clients_400(ada: Any) -> No
 
 
 async def test_an_undeclared_url_kwarg_propagates_from_the_executor_hop(ada: Any) -> None:
-    # The route is read beside the principal, off the loop, and a refusal
-    # raised there must reach the host rather than be answered as a client's.
+    # Read beside the principal, off the loop: a refusal raised there must reach the host.
     with pytest.raises(ImproperlyConfigured, match="The route captures org,"):
         await send(AsyncSpecView.as_view(spec=notes_spec()), "GET", ada, org="acme")
 
@@ -173,8 +165,7 @@ async def test_route_kwargs_reach_the_route(ada: Any) -> None:
 async def test_a_seed_the_hook_reads_off_the_request_reaches_the_check_off_the_loop(
     ada: Any,
 ) -> None:
-    # The hook reads the lazy user eagerly, which is a query: on the loop it
-    # would raise SynchronousOnlyOperation.
+    # The hook reads the lazy user eagerly, a query that raises on the loop.
     check = SeesTenant()
 
     class Tenanted(AsyncSpecView):
@@ -248,8 +239,7 @@ async def test_a_per_call_binding_with_other_names_is_refused(ada: Any) -> None:
 
 
 async def test_a_hook_on_the_loop_would_be_refused(ada: Any) -> None:
-    # What the executor hop is for: the same read the hook makes, made on the
-    # loop, is refused by Django.
+    # The executor hop exists for the read the hook makes, which Django refuses on the loop.
     with pytest.raises(SynchronousOnlyOperation):
         Note.objects.get(owner=ada)
 
