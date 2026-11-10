@@ -1,14 +1,3 @@
-"""A django-service-specs spec as a server-rendered page, plus the plain-Django JSON views.
-
-``views`` serves a spec as the page its form is, or a read as its rows, ``model_admin`` serves those
-pages as a ``ModelAdmin``'s actions, and ``http`` serves a spec as JSON with
-nothing between the request and the kernel's ``dispatch``. ``types`` holds
-``Outcome``, the vocabulary a page's post ends in, ``SpecAction``, the
-declaration of an admin action, and ``HTML_TRANSPORT``, the value this
-package stamps on every call context it builds. Every public name of the four is here; read
-them from the root.
-"""
-
 from django_spec_html.http.add_argument_errors import add_argument_errors
 from django_spec_html.http.adispatch_request import adispatch_request
 from django_spec_html.http.async_spec_view import AsyncSpecView
