@@ -1,15 +1,3 @@
-"""Tests for the package's translation catalog, ``django_spec_html/locale/``.
-
-``UnsupportedMediaType``'s default message is a msgid in the shipped source
-catalog, marked for extraction where the class is defined and looked up in the
-active language when the refusal is built. These tests translate through a real
-compiled catalog rather than a patched ``gettext``: a patch would agree with any
-lookup, including one made once at import. The catalog is written for a
-language Django ships none for (``xx``), so nothing but the test's own catalog
-can answer, and it is compiled by ``_write_mo`` below rather than ``msgfmt``,
-which not every machine running the suite has.
-"""
-
 from __future__ import annotations
 
 import array
@@ -46,9 +34,7 @@ MEDIA_TYPE_MSGID = "The request body is in a format this transport does not read
 
 
 def _refusal_classes() -> list[type[Exception]]:
-    # Read off the class tree rather than listed, so a refusal added later is
-    # held to the catalog without anyone remembering to add it here. Subclasses
-    # a test declares are not the package's and carry no msgid.
+    # Read off the class tree, so a refusal added later is held to the catalog unprompted.
     found: list[type[Exception]] = []
     pending: list[type[Exception]] = [ServiceError, DispatchError]
     while pending:
@@ -66,13 +52,7 @@ def _default_messages() -> set[str]:
 
 
 def _write_mo(path: Path, messages: dict[str, str]) -> None:
-    """Compile ``messages`` into a GNU ``.mo`` file, as ``msgfmt`` would.
-
-    The format is a header, a table of (length, offset) pairs for the sorted
-    msgids, one for their translations, then the NUL-terminated strings. The
-    empty msgid is the catalog's header, and its charset is what makes the
-    stdlib reader decode the strings as UTF-8 rather than ASCII.
-    """
+    """Compile ``messages`` into a GNU ``.mo`` file, as ``msgfmt`` would."""
     catalog = {"": "Content-Type: text/plain; charset=UTF-8\n", **messages}
     keys = sorted(catalog)
     ids = strs = b""
@@ -106,8 +86,7 @@ def _write_test_catalog(locale_dir: Path) -> None:
 
 
 def _msgids(po: Path) -> set[str]:
-    # A msgid may run over several quoted lines, which the reader joins; the
-    # header's empty msgid and obsolete (``#~``) entries are not messages.
+    # A msgid may run over several quoted lines, which the reader joins.
     msgids: set[str] = set()
     current: list[str] | None = None
     for line in [*po.read_text(encoding="utf-8").splitlines(), ""]:
@@ -170,17 +149,14 @@ def _unmarked_default_messages() -> list[str]:
 
 @pytest.fixture
 def locale_paths(tmp_path: Path) -> Iterator[None]:
-    # Changing LOCALE_PATHS fires Django's own setting_changed receiver, which
-    # empties the translation cache on the way in and on the way out, so the
-    # test catalog is read fresh and leaves nothing behind.
+    # Changing LOCALE_PATHS fires Django's setting_changed receiver, which clears the cache.
     _write_test_catalog(tmp_path)
     with override_settings(LOCALE_PATHS=[str(tmp_path)]):
         yield
 
 
 def test_the_refusal_declares_its_msgid() -> None:
-    # Ties the literal above to the class, and lists every refusal in the
-    # package that declares one, so a new member is added here rather than missed.
+    # Lists every refusal in the package that declares one, so a new member is not missed.
     assert vars(UnsupportedMediaType)["default_message"] == MEDIA_TYPE_MSGID
     assert [c.__name__ for c in _refusal_classes() if "default_message" in vars(c)] == [
         "UnsupportedMediaType"
@@ -188,12 +164,7 @@ def test_the_refusal_declares_its_msgid() -> None:
 
 
 def test_every_default_message_is_marked_for_extraction() -> None:
-    # A bare string is a msgid no extraction finds, so the refusal would read
-    # in English in every language and appear in no catalog. Marked with the
-    # package's own ``gettext_noop`` because xgettext matches the call by name
-    # (a differently named wrapper is not extracted), and because Django's reads
-    # a setting each time it is called, which test_marking_a_msgid_reads_no_setting
-    # holds a class body to.
+    # A bare string is a msgid no extraction finds, so it would appear in no catalog.
     assert _unmarked_default_messages() == []
 
 
@@ -209,8 +180,7 @@ def test_a_default_message_is_read_in_the_active_language() -> None:
 
 @pytest.mark.usefixtures("locale_paths")
 def test_nothing_is_frozen_at_import_or_at_the_last_call() -> None:
-    # The class keeps the msgid, and each construction looks it up again: a
-    # refusal built in another language before this one does not decide its words.
+    # The class keeps the msgid, and each construction looks it up again.
     with translation.override(LANGUAGE):
         UnsupportedMediaType()
         assert vars(UnsupportedMediaType)["default_message"] == MEDIA_TYPE_MSGID
@@ -219,8 +189,7 @@ def test_nothing_is_frozen_at_import_or_at_the_last_call() -> None:
 
 @pytest.mark.usefixtures("locale_paths")
 def test_a_message_the_caller_passes_is_used_as_given() -> None:
-    # Passed the string the test catalog does translate, so a lookup on the
-    # caller's message would show.
+    # Passed the string the test catalog does translate, so a lookup on the message would show.
     with translation.override(LANGUAGE):
         error = UnsupportedMediaType(MEDIA_TYPE_MSGID)
     assert error.message == MEDIA_TYPE_MSGID
@@ -229,10 +198,7 @@ def test_a_message_the_caller_passes_is_used_as_given() -> None:
 def test_listing_the_app_loads_a_catalog_beside_the_package(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The route the docs give: Django reads ``<app path>/locale`` for every
-    # installed app, which is where the shipped catalog sits. The app's path is
-    # pointed at a copy holding a compiled test language, so the package's own
-    # tree is never written to.
+    # The route the docs give: Django reads <app path>/locale for every installed app.
     config = apps.get_app_config("django_spec_html")
     assert SOURCE_CATALOG.is_relative_to(Path(config.path) / "locale")
     _write_test_catalog(tmp_path / "locale")
@@ -250,9 +216,7 @@ def test_the_source_catalog_lists_every_default_message_and_gettext_literal() ->
 
 
 def test_the_source_catalog_lists_every_translate_tag_in_the_templates() -> None:
-    # ``blocktranslate`` bodies span lines and take variables, so the catalog
-    # check in CI (make messages-check) is what holds those; the single-line
-    # tag is read here.
+    # blocktranslate bodies span lines and are held by CI's messages-check.
     tags = {
         match
         for template in (PACKAGE_ROOT / "templates").rglob("*.html")
@@ -273,12 +237,7 @@ def test_the_catalog_reader_joins_a_wrapped_msgid_and_skips_the_header(tmp_path:
 
 
 def test_marking_a_msgid_reads_no_setting() -> None:
-    # Each default is marked when its class is defined, at import, and the
-    # package imports before a project's settings are configured. Only the
-    # lookup, made when a refusal is built with no message, reads them; one the
-    # caller words needs none. A fresh interpreter with no settings module,
-    # because this one is configured. Django's own ``gettext_noop`` reads
-    # ``USE_I18N`` when called, so swapping it in for the package's fails here.
+    # Each default is marked at import, before a project's settings are configured.
     probe = """
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 print(UnsupportedMediaType("Ask the owner.").message)
@@ -292,6 +251,5 @@ print(UnsupportedMediaType("Ask the owner.").message)
 
 
 def test_the_package_ships_the_source_language_and_no_translation() -> None:
-    # A translated language is a contribution someone can review; until one is
-    # reviewed and added, ``locale/`` holds the source catalog alone.
+    # Until a translation is reviewed and added, locale/ holds the source catalog alone.
     assert sorted(path.name for path in (PACKAGE_ROOT / "locale").iterdir()) == ["en"]
