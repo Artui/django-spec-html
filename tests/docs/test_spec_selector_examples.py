@@ -1,13 +1,3 @@
-"""The selector example, served as its own URLconf and requested as a browser requests it.
-
-``docs/selectors.md`` includes its specs, table and URLconf from
-``docs/examples/spec_selector.py``. Each test requests a page through the test
-client with that URLconf and the shipped templates, and follows the links the
-page renders, so the page cannot describe a page, a link, a refusal or a query
-count the view does not make. Where the page states an outcome, the
-assertion here is that statement.
-"""
-
 from __future__ import annotations
 
 import re
@@ -229,8 +219,7 @@ def test_seed_makes_every_third_book_a_draft() -> None:
 
 @pytest.mark.parametrize("view", [SpecFormView, SpecFormSetView, SpecConfirmView, SpecSelectorView])
 def test_every_page_view_is_sync(view: Any) -> None:
-    # ``docs/pages.md`` says the four pages are sync views, which Django runs
-    # on a thread under ASGI.
+    # The four pages are sync views, which Django runs on a thread under ASGI.
     assert view.view_is_async is False
 
 
@@ -239,15 +228,9 @@ def test_the_page_is_a_sync_view() -> None:
     assert not iscoroutinefunction(resolve("/books/").func)
 
 
-# ``transaction=True`` for isolation: the seed below commits on a worker
-# thread, outside the ordinary test transaction, and this flushes it after.
+# transaction=True: the seed below commits on a worker thread, outside the test transaction.
 @pytest.mark.django_db(transaction=True)
 async def test_a_sync_page_answers_200_when_requested_through_the_async_client() -> None:
-    # ``AsyncClient`` builds an ASGI request and runs it through Django's async
-    # handler, which adapts a sync view to a thread as ``ASGIHandler`` does.
-    # Django renders the template response on a thread itself; what would
-    # raise ``SynchronousOnlyOperation`` on the loop is the page's own queries
-    # before it renders, the target's lookup and the list's COUNT among them.
     await sync_to_async(seed)()
     response = await AsyncClient().get("/books/")
     assert response.status_code == 200
@@ -255,11 +238,7 @@ async def test_a_sync_page_answers_200_when_requested_through_the_async_client()
 
 
 def selectors_snippet(containing: str) -> str:
-    """The one template block of ``docs/selectors.md`` that contains ``containing``.
-
-    Picked by what it says rather than where it stands, so a block another
-    section adds moves no test onto the wrong snippet.
-    """
+    """The one template block of ``docs/selectors.md`` that contains ``containing``."""
     page = Path(__file__).parents[2].joinpath("docs", "selectors.md").read_text()
     (block,) = [
         each for each in re.findall(r"```django\n(.*?)```", page, re.DOTALL) if containing in each
@@ -290,10 +269,7 @@ def test_reading_available_through_with_draws_the_notice_on_each_draft(
 def test_unavailable_says_why_each_row_has_no_button(
     paused: bool, monkeypatch: pytest.MonkeyPatch, django_assert_num_queries: Any
 ) -> None:
-    # The first condition a row does not meet is its reason, in declaration
-    # order: a draft says it is not published whether or not withdrawals are
-    # paused, and a published book says withdrawals are paused only then.
-    # Asking costs no query: the answers were read with the page's rows.
+    # A row's reason is its first unmet condition, in declaration order.
     monkeypatch.setattr(spec_selector, "WITHDRAWALS_PAUSED", paused)
     why = Template(selectors_snippet("{% with why=row|unavailable:"))
     rows = served_books(6)
@@ -358,6 +334,5 @@ def test_reset_forgets_a_remembered_query_the_spec_refuses() -> None:
 
     assert "Page 1 of 3" in reset
     assert bare == reset
-    # Forgotten rather than saved as a query of its own, which a list
-    # ignoring undeclared keys would serve just as well.
+    # Forgotten rather than saved, as a list ignoring undeclared keys would serve just as well.
     assert link(bare, "next") == "?page=2"

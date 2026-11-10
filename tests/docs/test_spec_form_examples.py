@@ -1,13 +1,3 @@
-"""The page example, posted to as a browser posts, and as htmx posts.
-
-``docs/pages.md`` includes its spec and URLconf from ``docs/examples/spec_form.py`` and
-its template from the suite's own, and its htmx template and 403 and 404 handlers from
-``tests/templates/spec_form_htmx.html`` and ``docs/examples/htmx.py``. Each test
-resolves a path against that URLconf, as Django's handler would, and posts what the
-rendered page sends - the CSRF token and the named submit button included - so the page
-cannot describe a reading, a redirect or a refusal the view does not make. Where the
-page states an outcome, the assertion here is that statement."""
-
 from __future__ import annotations
 
 import copy
@@ -126,14 +116,12 @@ class TestGet:
         assert response.content.startswith(b'<form method="post">')
 
     def test_anonymous_is_never_offered_the_page(self) -> None:
-        # The class-level check the post would run, run first: Django's own
-        # PermissionDenied, which the host's 403 page answers.
+        # The class-level check runs first, raising Django's PermissionDenied for the 403 page.
         with pytest.raises(PermissionDenied, match=r"^Sign in to add a book\.$"):
             serve(FACTORY.get("/books/new/"))
 
     def test_anonymous_is_never_shown_the_page_for_a_malformed_post(self, author: Author) -> None:
-        # Refused before the post is read, as the page is: re-rendered, a
-        # malformed post would list every author the choice field offers.
+        # Refused before the post is read, so a malformed post never re-lists the choices.
         data = {**posted(author, title=""), "author": "99999"}
         with pytest.raises(PermissionDenied, match=r"^Sign in to add a book\.$"):
             serve(FACTORY.post("/books/new/", data=data))
@@ -214,8 +202,7 @@ class TestReturningToTheList:
 
 class TestPost:
     def test_a_book_is_created_and_the_post_redirected(self, ada: Any, author: Author) -> None:
-        # The date is in the form's input format rather than ISO, and the
-        # multi-select sends a list, as a browser posts both.
+        # The date is in the form's input format; the multi-select posts a list, as a browser does.
         data = posted(author, published_on="10/25/1974", shelves=["fiction", "poetry"])
         response = serve(FACTORY.post("/books/new/", data=data), ada)
         assert (response.status_code, response.url) == (302, "/books/")
@@ -240,8 +227,7 @@ class TestPost:
         assert not Book.objects.exists()
 
     def test_every_error_shows_in_one_post(self, ada: Any, author: Author) -> None:
-        # The blank title is the shape check's, so the form's own rule about
-        # a published book's date answers beside it rather than next time.
+        # The blank title is the shape check's; the form's date rule answers beside it.
         data = posted(author, title="", status=Status.PUBLISHED)
         response = serve(FACTORY.post("/books/new/", data=data), ada).render()
         assert response.status_code == 400
@@ -356,7 +342,6 @@ class TestThePageShowsItsTarget:
         # In the current time zone, as the template's ``time`` filter reads it.
         at = time(timezone.localtime(context["target_counted_at"]), "H:i")
         assert f"5 books selected, counted at {at}." in content
-        # The first three, by title, which is the set's own order.
         assert (
             "<ul><li>Always Coming Home</li><li>Changing Planes</li><li>Earthsea</li></ul>"
             in content
@@ -372,8 +357,7 @@ class TestThePageShowsItsTarget:
     def test_the_confirming_post_acts_on_the_set_as_it_is_then(
         self, ada: Any, author: Author
     ) -> None:
-        # The page counted two; a third draft arrives before the post, and the
-        # post re-runs the service on the set it finds, never the one counted.
+        # The page counted two; a third draft arrives before the post, which counts the set anew.
         drafts(author, "Earthsea", "Lavinia")
         assert serve(FACTORY.get("/books/publish-drafts/"), ada).context_data["target_count"] == 2
         drafts(author, "Searoad")
@@ -485,7 +469,6 @@ def _answer(exc: Exception, ada: Any, headers: Mapping[str, str]) -> str:
     spec = ServiceSpec(
         service=service, permissions=[Unrestricted()], validator=FormValidator(Anything)
     )
-    # A fragment in a file of its own, so the column is held on every Django.
     view = SpecFormView.as_view(
         spec=spec,
         template_name="spec_form.html",
@@ -505,9 +488,7 @@ def _answer(exc: Exception, ada: Any, headers: Mapping[str, str]) -> str:
 
 
 def test_the_pages_outcome_table_is_the_one_shipped(ada: Any) -> None:
-    # The service raises each, after a form every post is valid for, so every
-    # refusal reaches the view the same way and each row is read against what
-    # the view does with it, as a page and as a fragment.
+    # Each refusal is raised after a valid form, so each reaches the view the same way.
     examples: list[Any] = [
         InvalidArguments({}),
         ServiceValidationError("x"),
@@ -553,8 +534,7 @@ class TestHandler403:
 
     @classmethod
     def refused(cls, request: Any, user: Any, view: Any = None) -> Any:
-        # A spec refusing the principal, so the view raises the PermissionDenied
-        # the handler then answers, as Django's handler would hand it over.
+        # The spec refuses the principal: the view raises PermissionDenied for the handler.
         request.user = AnonymousUser() if user is None else user
         try:
             (view or cls.view())(request)
@@ -569,8 +549,7 @@ class TestHandler403:
         assert response["Vary"] == "HX-Request"
 
     def test_an_anonymous_browser_is_sent_to_sign_in_and_back(self) -> None:
-        # The full path, query string included, is what comes back after
-        # signing in; not the 403 page an anonymous visitor cannot act on.
+        # The full path with its query string is what comes back after sign-in, not the 403 page.
         response = self.refused(FACTORY.get("/books/new/?isbn=1"), None)
         assert response.status_code == 302
         assert response["Location"] == "/accounts/login/?next=/books/new/%3Fisbn%3D1"
@@ -593,15 +572,13 @@ class TestHandler403:
         assert response["Vary"] == "HX-Request"
 
     def test_a_page_refusing_on_get_answers_the_reload_with_its_403(self, ada: Any) -> None:
-        # The class-level check refuses the page itself, so the reload the
-        # handler asked for is refused again, and the browser gets the 403 page.
+        # The class-level check refuses the reload too, so the browser gets the 403 page.
         reload = self.refused(FACTORY.get("/books/new/"), ada)
         assert reload.status_code == 403
         assert "HX-Refresh" not in reload
 
     def test_a_denial_only_the_operation_raises_reloads_an_empty_form(self, ada: Any) -> None:
-        # Raised by the service, so it does not recur on GET: the reload is
-        # the form again, and what was typed is gone.
+        # Raised by the service, so it does not recur on GET: the reload is the form again.
         def refuses(**pool: Any) -> None:
             raise NotPermitted("Not this one.")
 
@@ -639,9 +616,7 @@ class TestHandler404:
     def test_an_htmx_request_refreshes_the_page_it_came_from(
         self, ada: Any, signed_in: bool
     ) -> None:
-        # A stale row's action: htmx swaps no 4xx body, so the refresh is what
-        # shows the visitor the row is gone. A missing row says nothing about
-        # who asked, so an anonymous visitor is not sent to sign in.
+        # htmx swaps no 4xx body, so the refresh is what shows the visitor the row is gone.
         response = self.missing(FACTORY.post("/books/9/", **HTMX), ada if signed_in else None)
         assert response.status_code == 404
         assert response["HX-Refresh"] == "true"
@@ -657,12 +632,7 @@ class NeverPermitted(PermissionCheck):
 
 
 class TestTurningHtmxOn:
-    """The page's own template with its form as a ``spec-form`` fragment, and a ``spec-result``.
-
-    From Django 6.0 under the suite's own settings, which name nothing of
-    django-template-partials; below it, under the ``TEMPLATES`` the page tells
-    a project on an older Django to add, and nothing else.
-    """
+    """The page's own template with its form as a ``spec-form`` fragment, and a ``spec-result``."""
 
     @pytest.fixture(autouse=True)
     def urlconf(self, settings: Any) -> None:
@@ -704,8 +674,7 @@ class TestTurningHtmxOn:
 
     @pytest.mark.skipif(django.VERSION >= (6, 0), reason="the tag is Django's own from 6.0")
     def test_below_6_the_builtin_is_what_parses_the_tag(self, settings: Any) -> None:
-        # The loader alone, as installing the app sets it up: the address
-        # resolves, and the page's template fails at its first partialdef.
+        # The loader alone: the address resolves, and the template fails at its first partialdef.
         engine = copy.deepcopy(htmx_example.TEMPLATES)
         del engine[0]["OPTIONS"]["builtins"]
         settings.TEMPLATES = engine
@@ -826,7 +795,6 @@ class TestAConfirmationInADialog:
         assert b'name="confirmed"' not in form
         assert b'<dialog id="confirm-discard" hx-swap-oob="true" open>' in rest
         assert ASKED.format(count=2).encode() in rest
-        # Outside the form, so each control names the form it posts with.
         assert b'name="confirmed" form="discard-drafts"' in rest
         assert b'name="save" form="discard-drafts"' in rest
         assert b'name="reason" value="Tidy"' in form
@@ -870,8 +838,7 @@ class TestAPostThatDoesNotCommit:
     def test_the_page_offers_no_book_until_an_author_is_chosen(self, ada: Any) -> None:
         response = serve(FACTORY.get("/editions/new/"), ada).render()
         assert list(response.context_data["form"].fields["book"].queryset) == []
-        # The picker posts the form itself, and the button Enter presses,
-        # the first, is the one that commits.
+        # The picker posts the form itself; Enter presses the first button, which commits.
         assert b'hx-trigger="change"' in response.content
         assert response.content.index(b'name="add"') < response.content.index(b'name="refresh"')
 
@@ -890,8 +857,7 @@ class TestAPostThatDoesNotCommit:
     def test_the_picker_under_htmx_is_the_form_alone(
         self, ada: Any, author: Author, shelved: tuple[Book, Book]
     ) -> None:
-        # What htmx sends for the select's own request: the form's values,
-        # no button, and the select's name as ``HX-Trigger-Name``.
+        # htmx sends the form's values and the select's name as HX-Trigger-Name, with no button.
         headers = {**HTMX, "HTTP_HX_TRIGGER_NAME": "author"}
         request = FACTORY.post("/editions/new/", data=editions(author=str(author.pk)), **headers)
         response = serve(request, ada).render()
@@ -980,11 +946,7 @@ class TestValidatingARefresh:
     def test_a_refresh_shows_the_number_s_error_beside_the_copies_refusal(
         self, ada: Any, author: Author, earthsea: Book
     ) -> None:
-        # The copies fail the shape check, so the kernel never runs the form;
-        # the number's error is the page's form validated beside the refusal.
-        # Both checks spell the copies' error alike, so the kernel's own
-        # refusal is read first: without it, copies the shape check admits
-        # would pass here with the form's error alone.
+        # The shape check refuses the copies, so the form never runs.
         fields = {"author": author.pk, "book": earthsea.pk, "number": "1", "copies": "many"}
         with pytest.raises(InvalidArguments) as refused:
             bind_arguments(check_edition_spec, fields, principal=ada)
