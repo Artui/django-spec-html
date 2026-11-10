@@ -1,11 +1,3 @@
-"""Models for the adapter_app tests.
-
-Rows a Presenter reads by attribute rather than dataclass instances, so the
-adapter is shown rendering what a selector actually returns: a foreign key
-that is a row, a reverse relation that is a manager, a decimal column, and a
-choice column that holds a plain ``str``.
-"""
-
 from __future__ import annotations
 
 from django.db import models
@@ -36,11 +28,7 @@ class Book(models.Model):
 
 
 class Document(models.Model):
-    """A row with an optional file and a required one.
-
-    The optional one is what a ``ClearableFileInput`` can clear, and the
-    required one is what it never offers to.
-    """
+    """A row with an optional file and a required one."""
 
     title = models.CharField(max_length=100)
     attachment = models.FileField(upload_to="documents", blank=True)
@@ -51,12 +39,7 @@ class Document(models.Model):
 
 
 class Edition(models.Model):
-    """A printing of a book, one per number, held by a ``UniqueConstraint``.
-
-    The constraint rather than ``unique_together``, because a ModelForm checks
-    the two by different calls, and an update that sends one of the pair must
-    be refused by either.
-    """
+    """A printing of a book, one per number, held by a ``UniqueConstraint``."""
 
     book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="editions")
     number = models.PositiveIntegerField()
