@@ -166,11 +166,11 @@ class SpecSelectorView(SpecRequestBase):
         return super().get_context_data(**kwargs)
 
     def served_spec(self) -> SelectorSpec:
-        """``spec``, compiled: ``as_view`` refused to build a view whose spec does not compile to a ``SelectorSpec``."""
+        """``spec``, compiled: ``as_view`` refused a view whose spec is not a ``SelectorSpec``."""
         return cast("SelectorSpec", kernel_spec(cast("SelectorSpec | SpecSource", self.spec)))
 
     def _query(self, request: HttpRequest) -> QueryDict:
-        """``get_query(request)``, refused unless it is a ``QueryDict``, which the paging copies and pops lists off."""
+        """``get_query(request)``, refused unless a ``QueryDict``; the paging copies and pops it."""
         query = self.get_query(request)
         if not isinstance(query, QueryDict):
             raise TypeError(

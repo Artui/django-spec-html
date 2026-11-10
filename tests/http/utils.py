@@ -226,7 +226,7 @@ def first_notes(*, user: Any, limit: int | None = None) -> QuerySet[Note]:
 
 
 def limited_spec(**kwargs: Any) -> SelectorSpec:
-    """The principal's notes as titles, reading an optional integer ``limit`` its selector defaults."""
+    """The principal's notes as titles, reading an optional ``limit`` its selector defaults."""
     kwargs.setdefault("permissions", OPEN)
     kwargs.setdefault("presenter", Titles())
     return SelectorSpec(
@@ -251,7 +251,7 @@ class CountForm(forms.Form):
 
 
 class DeclaredByTheRequest(FormValidator):
-    """A Validator declaring one thing to a call that carries a request and another to every other reader.
+    """A Validator declaring one thing to a call carrying a request, another to every other reader.
 
     Asked with a call context holding a ``request``, it declares what its
     form does, ``count`` a string, and ``routed``, where given, as a

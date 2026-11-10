@@ -242,7 +242,7 @@ class TestConfiguration:
 
 
 def configured(**attributes: Any) -> Any:
-    """A view of a ``SpecView`` subclass setting ``attributes``, which a tree without them ignores."""
+    """A ``SpecView`` subclass setting ``attributes``, which a tree without them ignores."""
     return type("Configured", (SpecView,), attributes).as_view()
 
 

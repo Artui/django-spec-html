@@ -57,7 +57,7 @@ def serve(request: Any, user: Any = None) -> Any:
 
 
 def posted(*rows: Mapping[str, str], button: str = "save", total: int = 3) -> dict[str, str]:
-    """What the rendered page sends: the token, the management form, each row, the button pressed."""
+    """What the page sends: the token, the management form, each row, the button pressed."""
     data = {
         "csrfmiddlewaretoken": "token",
         "form-TOTAL_FORMS": str(total),

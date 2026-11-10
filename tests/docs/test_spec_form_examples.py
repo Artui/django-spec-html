@@ -1,13 +1,12 @@
 """The page example, posted to as a browser posts, and as htmx posts.
 
-``docs/pages.md`` includes its spec and URLconf from ``docs/examples/spec_form.py``
-and its template from the suite's own, and its htmx template and 403 and 404 handlers
-from ``tests/templates/spec_form_htmx.html`` and ``docs/examples/htmx.py``. Each test resolves a path against that
-URLconf, as Django's handler would, and posts what the rendered page sends -
-the CSRF token and the named submit button included - so the page cannot
-describe a reading, a redirect or a refusal the view does not make. Where the
-page states an outcome, the assertion here is that statement.
-"""
+``docs/pages.md`` includes its spec and URLconf from ``docs/examples/spec_form.py`` and
+its template from the suite's own, and its htmx template and 403 and 404 handlers from
+``tests/templates/spec_form_htmx.html`` and ``docs/examples/htmx.py``. Each test
+resolves a path against that URLconf, as Django's handler would, and posts what the
+rendered page sends - the CSRF token and the named submit button included - so the page
+cannot describe a reading, a redirect or a refusal the view does not make. Where the
+page states an outcome, the assertion here is that statement."""
 
 from __future__ import annotations
 
@@ -171,7 +170,7 @@ class TestAnUpdatePage:
 
 
 class TestReturningToTheList:
-    """The edit page names ``next``, so a save returns to the page of the list it was opened from."""
+    """The edit page names ``next``, so a save returns to the list it was opened from."""
 
     @pytest.fixture
     def book(self, author: Author) -> Book:
@@ -803,7 +802,7 @@ class TestTheConfirmationPage:
 
 
 class TestAConfirmationInADialog:
-    """``spec_confirm_dialog.html``: the question swapped out of band, into a dialog outside the form."""
+    """``spec_confirm_dialog.html``: the question swapped out of band, into a dialog outside it."""
 
     @pytest.fixture(autouse=True)
     def shelf(self, author: Author, settings: Any) -> None:

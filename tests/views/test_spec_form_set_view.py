@@ -109,7 +109,7 @@ class Cleaned(forms.Form):
 
 
 class Watched(FormValidator):
-    """``FormValidator``, recording each list of rows the kernel hands it: what the page sent, checked."""
+    """``FormValidator``, recording each row list it is handed: what the page sent, checked."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -165,7 +165,7 @@ class BookOut:
 
 
 def many_spec(form_class: type[forms.BaseForm] = BookRow, **kwargs: Any) -> ServiceSpec:
-    """A batch write validated row by row by ``form_class``, whose service records what it received."""
+    """A batch write validated row by row by ``form_class``, whose service records its input."""
     kwargs.setdefault("permissions", OPEN)
     kwargs.setdefault("validator", Watched(form_class))
     return ServiceSpec(service=Record(), many=True, **kwargs)
@@ -178,7 +178,7 @@ def formset_view(spec: ServiceSpec, **initkwargs: Any) -> Any:
 
 
 def adding(spec: ServiceSpec, **attributes: Any) -> Any:
-    """A page committing only from ``save``, and adding a form from ``add``, set as a host's subclass sets them."""
+    """A page committing only from ``save``, adding from ``add``, set as a subclass sets them."""
     attributes = {
         "template_name": TEMPLATE,
         "success_url": "/done/",
@@ -190,7 +190,7 @@ def adding(spec: ServiceSpec, **attributes: Any) -> Any:
 
 
 def posted(*rows: Mapping[str, Any], total: int | None = None, **extra: str) -> dict[str, Any]:
-    """What a browser posts for ``rows``: the management form, then each row's fields under its prefix."""
+    """What a browser posts for ``rows``: the management form, then each row's fields by prefix."""
     data: dict[str, Any] = {
         "form-TOTAL_FORMS": str(len(rows) if total is None else total),
         "form-INITIAL_FORMS": "0",
@@ -213,7 +213,7 @@ def post(view: Any, user: Any, data: Mapping[str, Any], **headers: Any) -> Any:
 
 
 def rows(spec: ServiceSpec) -> list[dict[str, Any]]:
-    """The rows the page sent, once, as the kernel handed them to the Validator, and the call ran."""
+    """The rows the page sent, once, as the kernel handed them to the Validator; the call ran."""
     assert len(spec.service.calls) == 1
     [sent] = spec.validator.lists
     return sent

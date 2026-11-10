@@ -68,7 +68,7 @@ class SpecFormView(SpecPageBase):
 
     @classmethod
     def _check_page(cls, label: str, spec: ServiceSpec, initkwargs: Mapping[str, Any]) -> None:
-        """Refuse ``asked_fields``, and a ``commit_button`` or ``redirect_field_name`` that is one of the form's fields."""
+        """Refuse ``asked_fields``, or a ``commit_button`` or ``redirect_field_name`` as a field."""
         _check_asked_fields(
             label,
             spec,
@@ -142,7 +142,7 @@ class SpecFormView(SpecPageBase):
     def _render_page(
         self, form: forms.BaseForm, refreshed: bool, /, **context: Any
     ) -> HttpResponse:
-        """The page GET renders, ``asked_fields`` held back; a refreshed form's errors are ``_refreshed``'s."""
+        """The page GET renders, ``asked_fields`` held back; errors are ``_refreshed``'s."""
         _hold_back(form, self.asked_fields, ())
         return self._rendered(self.get_context_data(form=form, **context), status=200)
 

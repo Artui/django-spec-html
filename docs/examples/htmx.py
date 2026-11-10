@@ -70,7 +70,7 @@ urlpatterns = [
 
 # --8<-- [start:denials]
 def handler403(request: HttpRequest, exception: Exception | None = None) -> HttpResponse:
-    """The host's 403: sign in for a visitor who is not, and for htmx a header saying where to go."""
+    """The host's 403: sign in a visitor who is not; for htmx, a header saying where to go."""
     if request.headers.get("HX-Request") != "true":
         if request.user.is_authenticated:
             response = permission_denied(request, exception)

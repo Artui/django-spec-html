@@ -93,7 +93,7 @@ class SpecConfirmView(SpecPageBase):
         return coerce_flat(parameters, route)
 
     def _render_page(self, form: None, refreshed: bool, /, **context: Any) -> HttpResponse:
-        """The page GET renders, and a post that does not commit, at 200: the base's context, and no form."""
+        """The page GET renders, and an uncommitted post, at 200: the base's context, no form."""
         return self._rendered(self.get_context_data(**context), status=200)
 
     def _render_refused(
@@ -137,7 +137,7 @@ class SpecConfirmView(SpecPageBase):
 
 
 def _errors(refused: DispatchError | ServiceError) -> list[str]:
-    """Every message of the refusal's tree, in its order, one at a parameter prefixed with its path."""
+    """Every message of the refusal's tree, in order, one at a parameter prefixed with its path."""
     return [
         f"{'.'.join(where)}: {message}" if where else message
         for where, message in refusal_messages(refusal_tree(refused))

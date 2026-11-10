@@ -44,11 +44,12 @@ class SpecFormSetView(SpecPageBase):
 
     @classmethod
     def _check_spec(cls, label: str, spec: ServiceSpec) -> None:
-        """Refuse a spec whose Validator is not a ``FormValidator``, and a spec that is not ``many``."""
+        """Refuse a spec whose Validator is not a ``FormValidator``, and a spec not ``many``."""
         if not isinstance(spec.validator, FormValidator):
             raise ImproperlyConfigured(
                 f"{label} renders a formset of the form its spec validates each row with, so "
-                f"the spec's validator must be a FormValidator; got {type(spec.validator).__name__}."
+                f"the spec's validator must be a FormValidator; "
+                f"got {type(spec.validator).__name__}."
             )
         if not spec.many:
             raise ImproperlyConfigured(
@@ -213,7 +214,7 @@ def _one_more_form(formset_class: type[BaseFormSet], data: Any) -> Any:
 
 
 def _rows_parameters(spec: ServiceSpec, parameters: Parameters) -> Parameters:
-    """The list's rows, as the kernel checks each: the items of the parameter ``many_argument`` names."""
+    """The list's rows, as the kernel checks each: the items of the ``many_argument`` parameter."""
     the_list = parameters.get(spec.many_argument)
     return cast(Parameters, cast(Any, the_list).items)
 

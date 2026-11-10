@@ -584,7 +584,7 @@ def refused_post(
     query: str = "",
     **attributes: Any,
 ) -> str:
-    """``view_class``'s refused post, rendered, with ``attributes`` set as a host's subclass sets them."""
+    """``view_class``'s refused post, rendered, with ``attributes`` set as a subclass sets them."""
     page = type(view_class.__name__, (view_class,), attributes)
     served = spec()
     url_kwargs = {"pk": pk} if "pk" in served.parameters().names() else {}

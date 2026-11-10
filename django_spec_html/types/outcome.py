@@ -7,7 +7,7 @@ class Outcome(str, Enum):
     """How a post to a page ended, decided once and then wrapped for whoever asked."""
 
     OK = "ok"
-    """Dispatch returned: the page redirects, and the fragment answers ``HX-Redirect`` or ``spec-result``."""
+    """Dispatch returned a redirect, or a fragment answering ``HX-Redirect`` or ``spec-result``."""
 
     INVALID = "invalid"
     """The arguments were refused: the form re-rendered with the refusal placed on its fields."""

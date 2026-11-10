@@ -45,7 +45,7 @@ def test_merged_last_and_typed_with_the_rest_one_refusal_carries_every_problem()
 
 
 UNDECLARED = "The route captures"
-"""How the strict rule's refusal opens, so a test of another refusal can assert it is not this one."""
+"""How the strict rule's refusal opens, so another refusal's test can assert it is not this one."""
 
 
 class TestRouteKwargs:

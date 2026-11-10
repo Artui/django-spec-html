@@ -53,7 +53,7 @@ PKS = Parameters.of(Parameter("pks", "array", items="integer", required=True))
 
 
 class Editors(PermissionCheck):
-    """Admits a principal holding the change permission on notes: the spec's own rule, not the admin's."""
+    """Admits a principal with change permission on notes: the spec's own rule, not the admin's."""
 
     message = "Only an editor may do this."
 

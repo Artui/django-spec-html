@@ -109,7 +109,7 @@ ONE_NOTE = SelectorSpec(kind=SelectorKind.RETRIEVE, selector=note_by_pk, reads=P
 
 
 def archive_spec(**kwargs: Any) -> ServiceSpec:
-    """Archive the note the route names: no Validator, and one required read, the target's ``pk``."""
+    """Archive the route's note: no Validator, and one required read, the target's ``pk``."""
     kwargs.setdefault("service", Archives())
     kwargs.setdefault("permissions", OPEN)
     kwargs.setdefault("instance_selector_spec", ONE_NOTE)
@@ -462,7 +462,7 @@ class TestAPostThatDoesNotCommit:
 
 
 class TestARefusal:
-    """A refused post re-renders the confirmation page, at the map's status, with no messages app."""
+    """A refused post re-renders the confirmation page at the map's status, with no messages app."""
 
     def test_a_conflict_is_the_page_again_with_its_message(self, ada: Any, note: Note) -> None:
         view = confirm_view(raising(ServiceConflict("Already archived.")))
@@ -666,7 +666,7 @@ def test_every_stage_is_handed_the_request_and_the_page(ada: Any, note: Note) ->
 
 
 class ReturnsToTheList(SpecConfirmView):
-    """A confirmation posted from a list's row, sent back to it: set as a host's subclass sets it."""
+    """A confirmation posted from a list's row, sent back to it: set as a subclass sets it."""
 
     template_name = PAGE
     success_url = "/done/"

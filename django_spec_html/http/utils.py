@@ -64,7 +64,7 @@ REFUSAL_STATUSES: Final[
     (AdditionalInputRequired, 422, Outcome.NEEDS_INPUT),
     (ServiceError, 422, Outcome.FAILED),
 )
-"""Every refusal this package answers, its status and its outcome: read top to bottom, first match wins.
+"""Every refusal this package answers, its status and outcome: read top down, first match wins.
 
 A subclass is listed above its base, or the base's row would answer for it.
 Every refusal has a row naming it, even where its status is its base's, so
@@ -101,7 +101,7 @@ def refusal_status(refused: DispatchError | ServiceError) -> int:
 
 
 def refusal_outcome(refused: DispatchError | ServiceError) -> Outcome:
-    """The outcome ``REFUSAL_STATUSES`` reads ``refused`` as, from the row its status is read from."""
+    """The outcome ``REFUSAL_STATUSES`` reads ``refused`` as, from the status's row."""
     return next(outcome for kind, _, outcome in REFUSAL_STATUSES if isinstance(refused, kind))
 
 
@@ -325,7 +325,7 @@ def _configured(view_class: type[View], initkwargs: Mapping[str, Any], name: str
 def _filled_by(
     name: str, route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None
 ) -> str | None:
-    """The parameter the captured kwarg ``name`` fills under ``route_kwargs``, or ``None`` if dropped."""
+    """The parameter a captured ``name`` fills under ``route_kwargs``, or ``None`` if dropped."""
     if route_kwargs is None:
         return name
     if isinstance(route_kwargs, Mapping):
@@ -354,4 +354,7 @@ def _split(server: ServerArguments | None) -> tuple[frozenset[str], frozenset[st
 def _described(server: ServerArguments | None) -> str:
     """What ``server`` binds and withholds, in order, for a refusal."""
     bound, withheld = _split(server)
-    return f"binds {', '.join(sorted(bound)) or 'nothing'} and withholds {', '.join(sorted(withheld)) or 'nothing'}"
+    return (
+        f"binds {', '.join(sorted(bound)) or 'nothing'} "
+        f"and withholds {', '.join(sorted(withheld)) or 'nothing'}"
+    )
