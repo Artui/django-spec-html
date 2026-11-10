@@ -1,5 +1,3 @@
-"""``HTML_TRANSPORT`` - the name this package stamps on the call context of every call it makes."""
-
 from __future__ import annotations
 
 from typing import Final
