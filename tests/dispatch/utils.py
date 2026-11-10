@@ -1,5 +1,3 @@
-"""Concept doubles, callables and expected messages the dispatch tests share."""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -44,8 +42,7 @@ def notes_of(*, user: Any) -> QuerySet[Note]:
 
 
 def note_by_pk(*, pk: int) -> QuerySet[Note]:
-    # Unscoped on purpose: the object-level check is what refuses another
-    # owner's row, so the selector must be able to find one.
+    # Unscoped on purpose, so the object-level check is what refuses another owner's row.
     return Note.objects.filter(pk=pk)
 
 
@@ -75,11 +72,7 @@ class OwnerOnly(PermissionCheck):
 
 
 class Titled(Validator):
-    """Declares a required title and strips it; records every call.
-
-    ``returns`` replaces the verdict, for a test about what a Validator hands
-    back rather than about what it checks.
-    """
+    """Declares a required title and strips it; records every call."""
 
     def __init__(self, returns: Mapping[str, Any] | None = None) -> None:
         self.returns = returns
@@ -96,12 +89,7 @@ class Titled(Validator):
 
 
 class Listed(Titled):
-    """Validates a many call's rows as one list, as a list serializer does, and binds itself once.
-
-    Refuses the list as a whole when it holds more than ``most`` rows, under
-    ``non_field_errors``, which a list-level ``validate()`` would raise, and a
-    row titled ``bad`` by its index. Records every ``validated_many`` call.
-    """
+    """Validates a many call's rows as one list, as a list serializer does."""
 
     def __init__(self, *, most: int = 10) -> None:
         super().__init__()
@@ -144,11 +132,7 @@ class Titles(Presenter):
 
 
 class Record:
-    """A spec callable that records the keywords it received and returns ``returns``.
-
-    Declares ``**pool``, so it receives the whole pool it was resolved from:
-    what a test reads back is exactly what dispatch put there.
-    """
+    """A spec callable that records the keywords it received and returns ``returns``."""
 
     def __init__(self, returns: Any = None) -> None:
         self.returns = returns

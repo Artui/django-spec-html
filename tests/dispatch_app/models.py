@@ -1,16 +1,3 @@
-"""Models for the dispatch_app tests.
-
-One row type owned by a user: enough for a selector to scope rows to its
-principal, a retrieve to miss, a queryset to shape through ``select_related``,
-and a write to be rolled back. The app has no migrations, so the test database
-creates its table directly, as Django does for any unmigrated app.
-
-``archived`` is the row state an affordance condition reads.
-
-``Tag`` is keyed by a string, for the admin's URLs, which quote a key
-holding a character they escape.
-"""
-
 from __future__ import annotations
 
 from django.conf import settings

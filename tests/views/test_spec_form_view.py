@@ -1,12 +1,3 @@
-"""``SpecFormView``: a spec validated by a form, served as the page that form is.
-
-Assertions read ``response.context_data["form"].errors`` - the bound form the
-page re-renders - rather than parsing HTML, and each refusal test says which
-check answered: the Validator records every call, so a test naming the shape
-check asserts the Validator never ran, and one naming the form asserts it did.
-The module is its own URLconf, since ``resolve_url`` reads the project's.
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -425,9 +416,7 @@ def validated(spec: ServiceSpec) -> int:
 
 @pytest.fixture(autouse=True)
 def urlconf(settings: Any) -> None:
-    # The suite's settings name no URLconf, which pytest-django's ``urls``
-    # marker needs one of to restore; the ``settings`` fixture sets it and
-    # removes it again.
+    # pytest-django's urls marker needs a URLconf to restore; the settings fixture sets one.
     settings.ROOT_URLCONF = __name__
 
 
@@ -493,7 +482,6 @@ class TestAnUpdatePage:
         assert not form.is_bound
         assert form["title"].value() == "Notes"
         assert form["attachment"].value() == STORED
-        # Built on a copy of the row, as the Validator binds its ModelForm.
         assert form.instance.pk == row.pk
         assert form.instance is not row
         assert b'type="checkbox" name="attachment-clear"' in response.content
@@ -520,16 +508,14 @@ class TestAnUpdatePage:
         assert form["remark"].value() == "none"
 
     def test_a_disabled_field_shows_its_own_initial(self, ada: Any) -> None:
-        # The post cleans it from that initial and never reads it, so the
-        # row's value is not what the page offers.
+        # The post cleans from that initial and never reads it, so it is not what the page offers.
         note = Note.objects.create(owner=ada, title="Ada's")
         spec = row_spec(validator=Watched(DisabledTitleForm))
         form = get(form_view(spec), ada, pk=note.pk).context_data["form"]
         assert form["title"].value() == "Fixed"
 
     def test_a_model_form_of_another_model_is_built_as_a_create(self, ada: Any) -> None:
-        # The Validator binds a ModelForm to the target only where the target
-        # is a row of its model, so the page does too.
+        # The Validator binds a ModelForm to the target only where it is a row of its model.
         note = Note.objects.create(owner=ada, title="Ada's")
         spec = row_spec(validator=FormValidator(DocumentForm))
         form = get(form_view(spec), ada, pk=note.pk).context_data["form"]
@@ -565,8 +551,7 @@ class TestAnUpdatePage:
             get(form_view(spec), ada, pk=note.pk)
 
     def test_a_create_the_scope_check_refuses_is_never_offered(self, ada: Any) -> None:
-        # A create resolves ``None``, which dispatch's scope check is asked
-        # about, so the page is refused where its post would be.
+        # A create resolves None, which dispatch's scope check is asked about, as a post would be.
         spec = entry_spec(permissions=[NoCreating()])
         with pytest.raises(PermissionDenied, match=r"^Nothing may be created here\.$"):
             get(form_view(spec), ada)
@@ -574,9 +559,7 @@ class TestAnUpdatePage:
             post(form_view(spec), ada, {"title": "Hi"})
 
     def test_a_principal_deactivated_once_admitted_is_refused_at_the_row(self, ada: Any) -> None:
-        # The target's lookup refuses a deactivated principal on its own, so
-        # one admitted at class level and deactivated before the row is found
-        # is the host's 403, not an unhandled refusal.
+        # A principal deactivated before the row is found gets the host's 403, not a refusal.
         note = Note.objects.create(owner=ada, title="Ada's")
         with pytest.raises(PermissionDenied, match=r"^The acting principal is unavailable\.$"):
             get(form_view(row_spec(permissions=[Deactivating()])), ada, pk=note.pk)
@@ -598,8 +581,7 @@ class TestAnUpdatePage:
             get(form_view(spec), ada, pk=1)
 
     def test_a_route_value_the_target_refuses_is_a_bad_request(self, ada: Any) -> None:
-        # Its text is the refusal's tree, printed as a tree of plain strings:
-        # a message's code is for a program, never part of the words.
+        # Its text is the refusal's tree printed as plain strings: a code is for a program.
         with pytest.raises(BadRequest) as caught:
             get(form_view(row_spec()), ada, pk="first")
         assert str(caught.value) == "{'pk': ['Enter a whole number.']}"
@@ -647,8 +629,7 @@ class TestAnUpdatePost:
         assert response.context_data["form"].initial == {"title": "Ada's"}
 
     def test_the_object_check_refuses_before_a_malformed_post_is_read(self, ada: Any) -> None:
-        # The row is found and checked first, so a principal the row refuses
-        # is answered 403 rather than shown the page with the post's errors.
+        # The row is checked first, so a principal it refuses gets a 403, not the post's errors.
         note = Note.objects.create(owner=make_user("bob"), title="Bob's")
         spec = row_spec(permissions=[OwnerOnly()])
         with pytest.raises(PermissionDenied, match=r"^Only the owner may touch this note\.$"):
@@ -673,10 +654,7 @@ class TestAnUpdatePost:
     def test_the_page_form_s_writes_never_reach_the_row_dispatch_is_handed(
         self, ada: Any, media: str
     ) -> None:
-        # The page's form is built before dispatch, and the row it shows is
-        # the one dispatch is handed as its target: built on that row itself,
-        # what the form's constructor writes onto its instance would reach the
-        # service as the row's stored values.
+        # The row shown is dispatch's target, so the form must not write onto its instance.
         row = stored_document()
         spec = ServiceSpec(
             service=Record(),
@@ -832,8 +810,7 @@ class TestReturningToNext:
         assert posted_to(view, ada, "/?back=/list/", {"title": "Hi"}).url == "/list/"
 
     def test_next_never_reaches_dispatch(self, ada: Any) -> None:
-        # The default closed argument set would refuse a key no parameter
-        # declares, so a success here is the key never read as an argument.
+        # The default closed argument set would refuse a key no parameter declares.
         spec = entry_spec()
         view = ReturnsToNext.as_view(spec=spec)
         response = posted_to(view, ada, "/?next=/a/", {"title": "Hi", "next": "/b/"})
@@ -939,20 +916,17 @@ class TestReadingThroughTheWidgets:
 
     @pytest.mark.parametrize(
         ("name", "cleaned"),
-        # Each read as ``""`` would be refused by the shape check where the
-        # form takes it: not a whole number, not a date, not one of the choices.
+        # Each read as "" would be refused by the shape check where the form takes it.
         [("count", None), ("due", None), ("colour", "")],
     )
     def test_a_blank_optional_field_is_absent(self, ada: Any, name: str, cleaned: Any) -> None:
-        # Holds the blank half of the absence guard.
         spec = entry_spec()
         post(form_view(spec), ada, {"title": "Hi", name: ""})
         assert name not in spec.validator.calls[0]
         assert received(spec)[name] == cleaned
 
     def test_a_required_field_never_posted_is_refused_once(self, ada: Any) -> None:
-        # Holds the ``None`` half of the absence guard: read as ``None``, the
-        # shape check would say "cannot be null" beside the form's "required".
+        # Holds the None half of the absence guard, else the shape check says "cannot be null".
         spec = entry_spec()
         response = post(form_view(spec), ada, {})
         assert (response.status_code, refused(response)) == (400, {"title": [REQUIRED]})
@@ -967,8 +941,7 @@ class TestReadingThroughTheWidgets:
     def test_dates_in_the_forms_input_formats_are_read_as_the_form_reads_them(
         self, ada: Any
     ) -> None:
-        # Neither is ISO, and the shape check parses ISO: each is sent on in
-        # the wire form it reads, as the field's own ``to_python`` read it.
+        # The shape check parses ISO, so each value is sent on in the wire form its field reads.
         spec = entry_spec()
         post(form_view(spec), ada, {"title": "Hi", "due": "10/25/2006", "at": "10/25/2006 14:30"})
         at = timezone.make_aware(datetime.datetime(2006, 10, 25, 14, 30))
@@ -989,8 +962,7 @@ class TestReadingThroughTheWidgets:
     def test_a_decimal_with_three_places_is_not_read_as_thousands(
         self, ada: Any, settings: Any
     ) -> None:
-        # The page reads 1,500 as one and a half and sends on "1.500". The
-        # validator's own localized field then read that as fifteen hundred.
+        # The page reads 1,500 as one and a half and sends on "1.500".
         settings.USE_THOUSAND_SEPARATOR = True
         spec = entry_spec()
         with translation.override("de"):
@@ -1006,8 +978,7 @@ class TestReadingThroughTheWidgets:
         assert received(spec)["count"] == 5
 
     def test_an_integer_past_a_float_s_range_reaches_the_validator(self, ada: Any) -> None:
-        # The field reads the digits as the int they spell, which no float
-        # holds: asking whether it was finite raised OverflowError.
+        # The field reads the digits as the int they spell, which no float holds: OverflowError.
         spec = entry_spec()
         post(form_view(spec), ada, {"title": "Hi", "count": "1" + "0" * 400})
         assert spec.validator.calls[0]["count"] == 10**400
@@ -1019,23 +990,19 @@ class TestReadingThroughTheWidgets:
         assert validated(spec) == 0
 
     def test_a_non_finite_number_never_reaches_the_validator(self, ada: Any) -> None:
-        # The field reads "nan" as a float and only refuses it when it
-        # validates; sent on as the string, the flat reading refuses it first.
+        # The field reads "nan" as a float; sent as the string, the flat reading refuses it first.
         spec = entry_spec()
         response = post(form_view(spec), ada, {"title": "Hi", "ratio": "nan"})
         assert refused(response) == {"ratio": ["Enter a number."]}
         assert validated(spec) == 0
 
     def test_the_csrf_token_and_a_submit_button_are_not_arguments(self, ada: Any) -> None:
-        # Only the form's fields are read, so neither reaches the closed
-        # argument set, which would refuse both under REJECT.
+        # Only the form's fields are read, so neither reaches the closed set that refuses both.
         data = {"title": "Hi", "csrfmiddlewaretoken": "token", "save": "Save"}
         assert post(form_view(entry_spec()), ada, data).status_code == 302
 
     def test_a_disabled_field_is_not_read(self, ada: Any) -> None:
-        # The form cleans it from its initial whatever is posted, and the
-        # Validator declares no parameter for it, so a posted value is dropped
-        # rather than refused as an unknown argument.
+        # The form cleans from its initial, and the Validator declares no parameter for it.
         spec = entry_spec()
         response = post(form_view(spec), ada, {"title": "Hi", "code": "E-9"})
         assert response.status_code == 302
@@ -1052,7 +1019,6 @@ class TestClearingAFile:
         assert b'type="checkbox" name="cover-clear"' in page.content
         response = post(form_view(spec), ada, {"title": "Hi", "cover-clear": "on"})
         assert response.status_code == 302
-        # The form's own value for a cleared file, as the Validator returns it.
         assert received(spec)["cover"] is False
 
     def test_left_unticked_the_held_file_is_kept(self, ada: Any) -> None:
@@ -1103,9 +1069,7 @@ class TestRefusals:
         assert validated(spec) == 1
 
     def test_after_a_shape_refusal_the_form_s_own_checks_answer_too(self, ada: Any) -> None:
-        # The shape check refuses the count before the Validator runs, so the
-        # page's own form, built as the Validator's is, adds what its
-        # ``clean()`` finds, and its own word for the count adds nothing.
+        # The shape check refuses the count before the Validator runs, so the form adds nothing.
         spec = entry_spec()
         response = post(form_view(spec), ada, {"title": "shut", "count": "x"})
         assert (response.status_code, refused(response)) == (
@@ -1115,9 +1079,7 @@ class TestRefusals:
         assert validated(spec) == 0
 
     def test_a_blank_required_field_and_a_clean_violation_show_in_one_post(self, ada: Any) -> None:
-        # The shape check answers the blank title, so the
-        # Validator never runs (none of its calls), and the clean() rule the
-        # colour breaks is the page's own form's, in the same post.
+        # The shape check answers the blank title, so the Validator never runs on the row.
         spec = entry_spec(validator=Watched(RedIsClosed))
         response = post(form_view(spec), ada, {"title": "", "colour": "red"}).render()
         assert (response.status_code, refused(response)) == (
@@ -1129,8 +1091,7 @@ class TestRefusals:
         assert response.content.count(RED_CLOSED.encode()) == 1
 
     def test_a_uniqueness_rule_shows_beside_a_shape_refusal(self, ada: Any) -> None:
-        # The date-time is the shape check's, so the Validator never runs, and
-        # the username another user holds is the page's own ModelForm's.
+        # The date-time is the shape check's, so the Validator never runs on the row.
         make_user("grace")
         spec = ServiceSpec(
             service=Record(),
@@ -1154,12 +1115,7 @@ class TestRefusals:
 
     @pytest.mark.parametrize("pk", ["own", "abc"], ids=["the-row", "a-refused-route"])
     def test_an_update_page_s_own_unchanged_value_is_never_taken(self, ada: Any, pk: str) -> None:
-        # The page's ModelForm is validated on a copy of her row, so its
-        # uniqueness check leaves her own username out, as the Validator's
-        # does. A route the target's reads refuse finds no row, so the form is
-        # not judged as a create either: the route's refusal, found while
-        # the post is read and before dispatch's shape check, is all that
-        # page shows.
+        # Validated on a copy of her row, so the uniqueness check leaves her own username out.
         spec = ServiceSpec(
             service=Record(),
             permissions=OPEN,
@@ -1186,9 +1142,7 @@ class TestRefusals:
     def test_a_refusal_after_the_validator_took_the_form_validates_it_no_further(
         self, ada: Any, exc: Exception
     ) -> None:
-        # The Validator's form, built as the page's is, took the post, so the
-        # page's form would find nothing it did not: its clean() runs once,
-        # the Validator's, and the refusal is all the page shows.
+        # The Validator's form took the post, so the page's form finds nothing it did not.
         Counting.cleans = 0
 
         def service(**pool: Any) -> None:
@@ -1219,9 +1173,7 @@ class TestRefusals:
         )
 
     def test_an_update_page_never_calls_its_own_unchanged_value_taken(self, ada: Any) -> None:
-        # The Validator's form is bound to her row and passed her username;
-        # whatever the page's own form found, the service's refusal is the
-        # page's only error.
+        # The Validator's form is bound to her row; the service's refusal is the page's only error.
         def busy(**pool: Any) -> None:
             raise ServiceConflict("Busy.")
 
@@ -1241,10 +1193,7 @@ class TestRefusals:
     def test_a_principal_the_spec_refuses_is_never_shown_the_page(
         self, ada: Any, django_assert_num_queries: Any
     ) -> None:
-        # Dispatch's shape check runs before its permission check, so a
-        # malformed post from a refused principal was answered with the page:
-        # every user the choice field lists, and which pk was one of them.
-        # Refused before the post is read, it queries nothing.
+        # The shape check runs before the permission check, so a refused principal sees the page.
         spec = ServiceSpec(
             service=lambda **pool: None, permissions=[Refuse()], validator=FormValidator(AssignForm)
         )
@@ -1252,9 +1201,7 @@ class TestRefusals:
             post(form_view(spec), ada, {"title": "", "assignee": "99999"})
 
     def test_a_refused_principals_unreadable_number_is_never_read(self, ada: Any) -> None:
-        # ``coerce_flat`` refuses a number it cannot read, and it runs before
-        # dispatch: sized so that it, not the shape check, would answer, a
-        # refused principal read the post first was shown the page at 400.
+        # coerce_flat refuses a number it cannot read, before dispatch is asked.
         spec = entry_spec(permissions=[Refuse()])
         with pytest.raises(PermissionDenied):
             post(form_view(spec), ada, {"title": "Hi", "count": "abc"})
@@ -1270,8 +1217,7 @@ class TestRefusals:
             post(form_view(spec), ada, {"title": "Hi"})
 
     def test_the_class_level_check_runs_once(self, ada: Any) -> None:
-        # The view runs it before reading the post and hands dispatch the
-        # grant, rather than dispatch running it a second time.
+        # The view runs it before reading the post and hands dispatch the grant, not twice.
         check = Counted()
         spec = entry_spec(permissions=[check])
         assert post(form_view(spec), ada, {"title": "Hi"}).status_code == 302
@@ -1314,8 +1260,7 @@ class TestRefusals:
                 422,
             ),
             (Throttled("Moved while you were editing."), 400),
-            # Raised by an operation, since the page reads no body itself:
-            # answered as the JSON views answer it.
+            # Raised by an operation, as the page reads no body: answered as JSON views answer.
             (UnsupportedMediaType("Moved while you were editing."), 415),
         ],
         ids=[
@@ -1350,13 +1295,7 @@ def ranges(request: pytest.FixtureRequest) -> None:
 
 @pytest.mark.usefixtures("ranges")
 class TestAValuePastItsColumn:
-    """A post refused for a value no column holds re-renders the page.
-
-    The page's own form is validated beside an argument refusal under the
-    kernel's ``clean_held_to_their_columns``, the Validator's own guards:
-    validated without them, it would hand the value to the database driver,
-    which raises ``OverflowError``.
-    """
+    """A post refused for a value no column holds re-renders the page."""
 
     def test_a_model_form_s_integer_past_its_column_is_refused_on_the_page(self, ada: Any) -> None:
         book = Book.objects.create(
@@ -1380,10 +1319,7 @@ class TestAValuePastItsColumn:
     def test_a_key_past_its_column_beside_a_shape_refusal_never_reaches_the_driver(
         self, ada: Any
     ) -> None:
-        # The shape check refuses the missing title before the Validator runs,
-        # so the page's own form judges the key, held to its column as the
-        # Validator's is: refused in the field's words, never handed to the
-        # driver, which raises ``OverflowError`` for it.
+        # The shape check refuses the title first; the form holds the key to its column.
         spec = ServiceSpec(
             service=Record(), permissions=OPEN, validator=FormValidator(AssigneesForm)
         )
@@ -1441,8 +1377,7 @@ class TestDeniedAndMissing:
 
 class TestServing:
     def test_the_views_settings_reach_dispatch(self, ada: Any) -> None:
-        # A field the form adds in ``__init__`` is read, and FormValidator
-        # declares no parameter for it, so the policy decides what becomes of it.
+        # A field the form adds in __init__ is read, and FormValidator declares no parameter for it.
         spec = entry_spec(validator=Watched(WithAnExtra))
         view = form_view(spec, unknown_arguments=UnknownArguments.IGNORE, pool_seeds=TENANT_SEEDS)
         assert post(view, ada, {"title": "Hi", "extra": "x"}).status_code == 302
@@ -1460,9 +1395,7 @@ class TestServing:
     def test_a_route_capturing_an_undeclared_kwarg_is_improperly_configured(
         self, ada: Any, policy: UnknownArguments
     ) -> None:
-        # The route is the host's, so a kwarg the spec does not declare is
-        # wrong for every caller rather than a refusal of this one, under
-        # either policy: the policy governs what a client sends.
+        # The route is the host's: a kwarg the spec does not declare is wrong for every caller.
         spec = entry_spec()
         with pytest.raises(ImproperlyConfigured) as raised:
             post(
@@ -1472,15 +1405,13 @@ class TestServing:
         assert spec.service.calls == []
 
     def test_the_page_is_refused_for_a_route_capturing_an_undeclared_kwarg(self, ada: Any) -> None:
-        # On GET too, as SpecView refuses it on any method: served anyway, the
-        # page would fail only once someone had filled it in.
+        # On GET too, as SpecView refuses it on any method, so it fails before anyone fills it in.
         with pytest.raises(ImproperlyConfigured) as raised:
             get(form_view(entry_spec()), ada, zone="eu", org="a")
         assert str(raised.value) == UNDECLARED.format(names="org, zone")
 
     def test_an_undeclared_kwarg_is_raised_whoever_posts(self, ada: Any) -> None:
-        # The host's mistake, so a principal the spec refuses meets it too,
-        # rather than a 403 that hides it until someone admitted posts.
+        # The host's mistake, so a refused principal meets it too, not a 403 that hides it.
         spec = entry_spec(permissions=[Refuse()])
         with pytest.raises(ImproperlyConfigured) as raised:
             post(form_view(spec), ada, {"title": "Hi"}, zone="eu")
@@ -1504,11 +1435,7 @@ FRAGMENT = "spec_fragment.html"
 
 
 def fragmented(spec: ServiceSpec, **attributes: Any) -> Any:
-    """A view whose page has a layout and whose fragment, in a file of its own, has none.
-
-    Set as class attributes, as a host's subclass sets them, so the fragment
-    renders on every Django this suite runs on.
-    """
+    """A view whose page has a layout and whose fragment, in a file of its own, has none."""
     attributes = {
         "template_name": PAGE,
         "fragment_template_name": FRAGMENT,
@@ -1543,13 +1470,7 @@ def hx_headers(response: Any) -> dict[str, str]:
 
 
 class HtmxDetails:
-    """What django-htmx's middleware sets as ``request.htmx``, in the shape it has.
-
-    django-htmx's ``HtmxDetails`` is truthy for a request whose ``HX-Request``
-    is ``true``, and carries ``boosted`` and ``history_restore_request``. The
-    tests that use this give it answers its headers disagree with, so they
-    can tell which of the two the view read.
-    """
+    """The request.htmx details django-htmx sets: truthy for HX-Request, with boosted."""
 
     def __init__(
         self, *, htmx: bool = True, boosted: bool = False, history_restore_request: bool = False
@@ -1563,8 +1484,7 @@ class HtmxDetails:
 
 
 class TestWantsFragment:
-    # Each condition of the rule is held by its own row: a request that is
-    # not htmx, a boosted one and a history restore each get the page.
+    # Each condition of the rule has its own row, each getting the page.
     @pytest.mark.parametrize(
         ("headers", "expected"),
         [
@@ -1589,8 +1509,7 @@ class TestWantsFragment:
     def test_read_from_the_headers(self, headers: Mapping[str, str], expected: bool) -> None:
         assert SpecFormView().wants_fragment(FACTORY.get("/", **headers)) is expected
 
-    # Each row's headers say the opposite of the details, so a view reading
-    # the headers where django-htmx set ``request.htmx`` fails every row.
+    # Each row's headers say the opposite of its details, so reading headers fails every row.
     @pytest.mark.parametrize(
         ("headers", "details", "expected"),
         [
@@ -1636,8 +1555,7 @@ class TestTheFragmentOnGet:
     def test_a_boosted_or_restoring_get_is_the_page(
         self, ada: Any, headers: Mapping[str, str]
     ) -> None:
-        # A boosted link swaps the whole body, and a history restore after a
-        # cache miss needs the whole page back.
+        # A boosted link swaps the whole body, and a history restore needs the whole page back.
         response = hx_get(fragmented(entry_spec()), ada, headers).render()
         assert response.template_name == [PAGE]
         assert b"<html>" in response.content
@@ -1650,8 +1568,6 @@ class TestTheFragmentOnGet:
 class TestTheFragmentOnASuccess:
     def test_an_htmx_success_is_hx_redirect_never_a_302(self, ada: Any) -> None:
         # An XHR follows a 302 itself and swaps the next page into the form.
-        # The view needs nothing htmx-specific: the default fragment address
-        # is never rendered on a success.
         spec = entry_spec()
         response = hx_post(form_view(spec), ada, {"title": "Hi"})
         assert response.status_code == 200
@@ -1689,13 +1605,11 @@ class TestTheFragmentOnASuccess:
         return ToTheURL.as_view(spec=entry_spec())
 
     def test_hx_redirect_is_the_page_s_location(self, ada: Any) -> None:
-        # Encoded as the page's redirect encodes it: set raw, a path outside
-        # ASCII is a MIME-encoded header no browser reads as the path.
+        # Encoded as the page's redirect encodes it, else a browser cannot read a non-ASCII path.
         page = hx_post(self.to("/books/日本/"), ada, {"title": "Hi"}, {})
         fragment = hx_post(self.to("/books/日本/"), ada, {"title": "Hi"})
         assert fragment["HX-Redirect"] == page["Location"] == "/books/%E6%97%A5%E6%9C%AC/"
         assert "Location" not in fragment
-        # Read as a redirect's ``url`` is, so its repr and a test reading it work.
         assert fragment.url == page.url
 
     @pytest.mark.parametrize("headers", [{}, HTMX], ids=["page", "fragment"])
@@ -1721,14 +1635,7 @@ class TestTheFragmentOnASuccess:
     def test_a_cookie_the_middleware_sets_reaches_hx_redirect(
         self, ada: Any, settings: Any
     ) -> None:
-        """Holds the page's claim that a cookie set while the request is handled reaches it.
-
-        What sets it is the host's middleware, on whatever answer the view
-        returns, so this holds that ``HX-Redirect`` is an answer the
-        middleware passes through like any other: signing in sets the
-        session cookie, and an answer that lost it would sign the visitor
-        straight back out.
-        """
+        """Holds the page's claim that a cookie set while the request is handled reaches it."""
         settings.SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
 
         class SignsIn(SpecFormView):
@@ -1806,8 +1713,7 @@ class TestTheResultFragment:
 
 class TestTheFragmentOnARefusal:
     def test_a_refused_htmx_post_is_the_form_fragment_at_200(self, ada: Any) -> None:
-        # The whole page swapped into the form's target nests a second layout
-        # inside it, and a 4xx is swapped nowhere by default.
+        # A whole page swapped into the form's target nests a layout, and a 4xx is swapped nowhere.
         response = hx_post(fragmented(entry_spec()), ada, {"title": "shut"}).render()
         assert response.status_code == 200
         assert response.template_name == [FRAGMENT]
@@ -1858,8 +1764,7 @@ class TestTheFragmentOnARefusal:
         assert set(fragment.context_data) == set(page.context_data)
         assert varied_on(page) >= MODE_HEADERS
         assert varied_on(fragment) >= MODE_HEADERS
-        # No header on any of them, a confirmation included: it is re-rendered
-        # in the target the form already swaps into.
+        # No header on any of them: a confirmation is re-rendered in the target the form swaps into.
         assert hx_headers(fragment) == {}
 
     @pytest.mark.parametrize("headers", [BOOSTED, RESTORING], ids=["boosted", "history-restore"])
@@ -1924,8 +1829,7 @@ class TestNothingHtmxReachesTheSpec:
 
 
 class TestVary:
-    # One URL answers two bodies, so a cache keyed on fewer headers would
-    # hand a fragment to a page load or a history restore.
+    # One URL answers two bodies, so a cache keyed on fewer headers serves a fragment wrongly.
     @pytest.mark.parametrize("headers", [{}, HTMX, BOOSTED, RESTORING])
     @pytest.mark.parametrize(
         ("method", "data"),
@@ -2197,9 +2101,7 @@ class TestThePagesPoolSeeds:
     def test_the_class_level_check_is_asked_with_the_seed_it_names(
         self, ada: Any, attributes: dict[str, Any], tenant: str
     ) -> None:
-        # Asked before anything else, with the seeds the request's call is
-        # resolved with, on GET and on POST; the post's grant hands dispatch
-        # the check already made, so it is asked once per request.
+        # Asked before anything else, with the request's seeds, once per request on GET and POST.
         check = SeesTenant()
         view = paged(entry_spec(permissions=[check]), **attributes).as_view()
         assert headed(view, ada).status_code == 200
@@ -2235,8 +2137,7 @@ class TestThePagesPoolSeeds:
 
 class TestThePagesServerArguments:
     def test_a_bound_value_outranks_a_malformed_posted_one(self, ada: Any) -> None:
-        # Malformed, so a value coerced before the binding drops it is refused
-        # as the client's 400 for a name it was never offered.
+        # Malformed, so a value coerced before binding would be a 400 for a name never offered.
         spec = entry_spec()
         view = paged(spec, server_arguments=ServerArguments(values={"count": 3})).as_view()
         assert post(view, ada, {"title": "Hi", "count": "abc"}).status_code == 302
@@ -2289,8 +2190,7 @@ class TestThePagesServerArguments:
             ).as_view()
 
     def test_the_target_is_found_by_the_server_s_value(self, ada: Any, note: Note) -> None:
-        # The route's pk is dropped and the server's finds the row, so the
-        # page and dispatch see one value.
+        # The route's pk is dropped and the server's finds the row, so the page and dispatch agree.
         spec = row_spec()
         view = paged(
             spec,
@@ -2416,7 +2316,6 @@ class TestThePagesServerArguments:
         assert refused(response) == {"count": [WHOLE]}
         tag = field_tag(response, "title")
         assert (b'value="S"' in tag, b"disabled" in tag) == (True, True)
-        # As a value, not a substring: the CSRF token is random text.
         assert b'value="client"' not in response.content
         assert spec.service.calls == []
 
@@ -2522,17 +2421,14 @@ class TestUnavailableOnGet:
     def test_a_callable_condition_is_named_before_a_row_condition_declared_first(
         self, ada: Any, note: Note
     ) -> None:
-        # The callable conditions are asked first, with no row, so the page
-        # names one where the post, asking in declaration order, names the
-        # row's: both are unmet, and the post's 409 stays the authority.
+        # Callable conditions are asked first, with no row, so the page names the same 409.
         view = form_view(row_spec(affordances=[UNTITLED, CLOSED_TODAY]))
         assert get(view, ada, pk=str(note.pk)).context_data["unavailable"] is CLOSED_TODAY
         posted = post(view, ada, {"title": "Hi"}, pk=str(note.pk))
         assert (posted.status_code, posted.context_data["code"]) == (409, "titled")
 
     def test_no_row_asks_no_row_condition(self, ada: Any) -> None:
-        # A missing row ``allow_none`` lets through is ``None``, which the
-        # kernel refuses to ask a row condition about.
+        # A missing row that allow_none lets through is None, which the kernel never asks about.
         spec = entry_spec(
             affordances=[UNTITLED],
             instance_selector_spec=SelectorSpec(
@@ -2565,9 +2461,7 @@ class TestUnavailableOnGet:
         assert headed(view.as_view(), ada).context_data["unavailable"] is when
 
     def test_the_row_s_conditions_are_asked_with_the_call_s_seeds(self, ada: Any) -> None:
-        # Both met, so the walk reaches ``enforce_affordances``, which asks
-        # the callable again: without the call's reserved seeds it is never
-        # handed ``tenant``.
+        # Both met, so enforce_affordances asks again; without the seeds it never gets tenant.
         note = Note.objects.create(owner=ada, title="")
         when = Affordance(code="tenant", reason="Not for this tenant.", when=open_for)
 
@@ -2578,8 +2472,7 @@ class TestUnavailableOnGet:
         assert unavailable_of(get(view, ada, pk=str(note.pk))) == "absent"
 
     def test_on_a_row_each_condition_and_each_seed_is_asked_twice(self, ada: Any) -> None:
-        # Once alone, then with the row's conditions; each seed once for the
-        # lookup's pool and once for the affordances'.
+        # Once alone, then with the row's conditions: each seed is asked twice.
         note = Note.objects.create(owner=ada, title="")
         asked: list[str] = []
 
@@ -2596,8 +2489,7 @@ class TestUnavailableOnGet:
         assert (asked.count("condition"), asked.count("seed")) == (2, 2)
 
     def test_the_page_no_longer_offers_what_the_post_refuses(self, ada: Any) -> None:
-        # Served before, the page offered the form with no reason, and the
-        # post then answered 409.
+        # Served before, the page offered the form with no reason, and the post then answered 409.
         view = form_view(entry_spec(affordances=[CLOSED_TODAY]), template_name=AVAILABLE)
         page = get(view, ada).render()
         assert page.status_code == 200
@@ -2673,11 +2565,7 @@ class OwnersEntryForm(EntryForm):
 
 
 class Keywords:
-    """A ``form_kwargs`` recording what each call is handed, the call's context by identity.
-
-    It names a seed, so the view must resolve it, and ``instance`` with a
-    default, so a create, whose pool has none, is asked too.
-    """
+    """A ``form_kwargs`` recording what each call is handed, the call's context by identity."""
 
     def __init__(self, returns: Callable[[Any], Mapping[str, Any]]) -> None:
         self.returns = returns
@@ -2767,8 +2655,7 @@ class TestTheFormsKeywords:
         service = ContextService()
         view = form_view(keyed_note_spec(keywords, service), pool_seeds=TENANT_SEEDS)
         page = get(view, ada, pk=note.pk)
-        # A post the Validator's clean() refuses, then one it takes: each asks
-        # ``form_kwargs`` twice, the page's form first and the Validator's after.
+        # A post clean() refuses, then one it takes: form_kwargs is asked twice.
         assert post(view, ada, {"title": "shut"}, pk=note.pk).status_code == 400
         assert post(view, ada, {"title": "Hi"}, pk=note.pk).status_code == 302
         calls = keywords.calls
@@ -2776,18 +2663,15 @@ class TestTheFormsKeywords:
         assert {(each["user"], each["tenant"], each["instance"]) for each in calls} == {
             (ada, "tenant-of-ada", note)
         }
-        # The row itself on both sides, never the copy the page's ModelForm edits.
         assert calls[1]["instance"] is calls[2]["instance"]
         assert calls[3]["instance"] is calls[4]["instance"]
         assert page.context_data["form"].instance is not calls[0]["instance"]
-        # One call context per request, the one dispatch is handed too.
         assert calls[1]["context"] is calls[2]["context"]
         assert calls[3]["context"] is calls[4]["context"] is service.contexts[0]
         assert calls[1]["context"] is not calls[3]["context"]
 
     def test_a_post_whose_route_is_refused_is_built_as_no_row(self, ada: Any, note: Note) -> None:
-        # The target is never found, so the page's form is asked about none,
-        # rather than the marker of a target not yet looked for.
+        # The target is never found, so the page's form is asked about none, not a pending marker.
         keywords = Keywords(owned)
         view = form_view(keyed_note_spec(keywords), pool_seeds=TENANT_SEEDS)
         response = post(view, ada, {"title": "Hi"}, pk="abc")
@@ -2797,9 +2681,7 @@ class TestTheFormsKeywords:
     def test_an_initial_form_kwargs_answers_sits_under_the_row_s_values(
         self, ada: Any, note: Note
     ) -> None:
-        # A plain form on a row takes the row's values as its ``initial``, so
-        # one ``form_kwargs`` answers too is merged under them rather than
-        # passed twice: the disabled field the row never fills keeps it.
+        # A plain form on a row takes the row's values as initial, which form_kwargs merges under.
         def initial(user: Any) -> Mapping[str, Any]:
             return {"cap": 3, "initial": {"code": "K-9", "title": "Not the row's"}}
 
@@ -2827,11 +2709,7 @@ def partial_user_spec() -> ServiceSpec:
 
 
 def partial_spec() -> ServiceSpec:
-    """A partial write validated by ``NoteTitleForm``, its title required on a whole call.
-
-    No checkbox or multi-select: the browser posts those whatever is ticked,
-    so neither is ever a field the post leaves out.
-    """
+    """A partial write validated by ``NoteTitleForm``, its title required on a whole call."""
     return entry_spec(validator=Watched(NoteTitleForm), partial=True)
 
 
@@ -2884,16 +2762,14 @@ class TestAPartialPage:
         assert received(spec) == {}
 
     def test_a_shape_refusal_shows_no_word_about_a_field_left_blank(self, ada: Any) -> None:
-        # A blank field on a partial page is one the post leaves alone, so
-        # nothing beside the refusal says it is required.
+        # A blank field on a partial page is left alone, so nothing says it is required.
         spec = entry_spec(partial=True)
         response = post(form_view(spec), ada, {"title": "", "count": "x"})
         assert (response.status_code, refused(response)) == (400, {"count": [WHOLE]})
         assert validated(spec) == 0
 
     def test_a_checkbox_and_a_multi_select_are_always_sent(self, ada: Any) -> None:
-        # The browser posts neither when unticked or empty, and the form reads
-        # each as a value all the same, so neither is a field left out.
+        # The browser posts neither when unticked or empty; the form reads both as values.
         spec = entry_spec(partial=True)
         assert post(form_view(spec), ada, {}).status_code == 302
         assert received(spec) == {"urgent": False, "tags": []}
@@ -2919,11 +2795,7 @@ class TestASeedResolvedAtEachStep:
     def test_a_named_seed_is_resolved_at_each_step_that_names_it(
         self, ada: Any, note: Note, form_kwargs: Any, on_get: int, on_post: int
     ) -> None:
-        # GET: the admission, whose seeds the class-level check and the
-        # target's lookup share, the affordances' pool and the form's
-        # keywords; POST: the admission, whose seeds dispatch runs on too, and
-        # the form's keywords. A resolver answering a fresh object answers
-        # each of those steps a different one.
+        # Each step that names a seed resolves it at the admission, once, on GET and on POST.
         fresh = Fresh()
         spec = row_spec(
             permissions=[SeesTenant()],
@@ -2941,9 +2813,7 @@ class TestASeedResolvedAtEachStep:
     def test_a_validated_refresh_resolves_it_once_more_to_bind(
         self, ada: Any, note: Note, validate: bool, more: int
     ) -> None:
-        # A post that does not commit is the page again: the admission and
-        # the affordances' pool. Under ``validate_on_refresh`` the kernel's
-        # ``bind_arguments``, which takes no carrier, resolves it once more.
+        # A post that does not commit is the page again: the admission and the affordances' pool.
         fresh = Fresh()
         spec = row_spec(permissions=[SeesTenant()])
         seeds = DEFAULT_POOL_SEEDS.extend(tenant=fresh)
@@ -2963,10 +2833,7 @@ class TestOneResolutionPerRequest:
     def test_one_resolution_from_the_class_level_check_to_the_run(
         self, ada: Any, note: Note, make_spec: Any, routed: bool, questions: list[str]
     ) -> None:
-        # ``admitted`` resolves the seeds once and hands the carrier to the
-        # class-level check, the target's lookup and its checks, and
-        # dispatch: a resolver answering a fresh object answers every one of
-        # them the same object, and is called once.
+        # admitted resolves the seeds once and hands them to every step.
         fresh = Fresh()
         check = SeesTenantAtEachQuestion()
         spec = make_spec(permissions=[check])
@@ -2991,8 +2858,7 @@ class TestOneResolutionPerRequest:
     def test_a_route_the_host_got_wrong_runs_no_resolver(
         self, ada: Any, attributes: dict[str, Any], url_kwargs: dict[str, str], method: str
     ) -> None:
-        # The route is read before the seeds are resolved, so a resolver that
-        # has a cost is never paid for a page that cannot be served.
+        # The route is read before the seeds, so a costly resolver skips an unservable page.
         fresh = Fresh()
         check = SeesTenantAtEachQuestion()
         seeds = DEFAULT_POOL_SEEDS.extend(tenant=fresh)
@@ -3014,12 +2880,7 @@ class TestOneResolutionPerRequest:
     def test_a_resolver_refusing_the_principal_is_denied(
         self, ada: Any, note: Note, permissions: list[PermissionCheck], method: str
     ) -> None:
-        # Resolved inside the admission, so a resolver raising
-        # ``PrincipalUnavailable`` is the host's 403 rather than an unhandled
-        # refusal. Every seed a check names resolves ahead of the class-level
-        # check, as dispatch resolves them, so one only the object-level check
-        # names is resolved, and refuses, before a class-level check that
-        # would refuse the principal is asked.
+        # Resolved inside the admission: a resolver raising PrincipalUnavailable is the host's 403.
         def gone() -> object:
             raise PrincipalUnavailable("The tenant is gone.")
 
@@ -3077,8 +2938,7 @@ class TestOneCallContextPerRequest:
         view = form_view(spec)
         assert get(view, ada, pk=note.pk).status_code == 200
         on_get = check.contexts + asked
-        # The class-level check, the row's check, both affordance questions
-        # and the form's keywords.
+        # The class-level check, the row's check, both affordance questions and the form's keywords.
         assert [name for name, _ in on_get] == [
             "class",
             "object",
@@ -3100,8 +2960,7 @@ class TestTheCallsDeclaration:
     """The page reads a spec's parameters with the request's call context, as dispatch does."""
 
     def test_the_post_is_read_as_the_call_declares_it(self, ada: Any) -> None:
-        # The call declares the count a string: read without the context, the
-        # page coerced "3" to 3, which dispatch refused as no string.
+        # The call declares the count a string: read without the context, "3" is coerced to 3.
         validator = DeclaredByTheRequest()
         spec = entry_spec(validator=validator)
         request = signed_in(FACTORY.post("/", data={"title": "Hi", "count": "3"}), ada)
@@ -3110,8 +2969,7 @@ class TestTheCallsDeclaration:
         assert validator.one_context()["request"] is request
 
     def test_a_route_kwarg_the_call_declares_is_read(self, ada: Any) -> None:
-        # Declared to a call alone: read without the context, the route's
-        # check called the kwarg one the spec does not declare.
+        # Declared to a call alone: read without the context, it names an undeclared kwarg.
         spec = entry_spec(validator=DeclaredByTheRequest(routed="slug"))
         assert get(form_view(spec), ada, slug="spring").status_code == 200
         response = post(form_view(spec), ada, {"title": "Hi"}, slug="spring")
@@ -3124,10 +2982,7 @@ class TestTheCallsDeclaration:
         assert (response.status_code, refused(response)) == (200, {})
 
     def test_a_bound_value_is_checked_against_the_call_s_declaration(self, ada: Any) -> None:
-        # The call declares the count a string, so the server's 3 is the
-        # host's mistake, raised where the page reads its route. Checked
-        # against the declaration made to no call, an integer, as ``as_view()``
-        # checked it, it was laid on, and the page rendered.
+        # The call declares the count a string, so the server's 3 is the host's mistake.
         validator = DeclaredByTheRequest()
         binding = ServerArguments(values={"count": 3})
         view = form_view(entry_spec(validator=validator), server_arguments=binding)
@@ -3136,8 +2991,7 @@ class TestTheCallsDeclaration:
         assert validator.one_context()["request"] is not None
 
     def test_as_view_refuses_binding_a_name_declared_to_a_call_alone(self) -> None:
-        # ``as_view()`` runs with no request, so it reads the declaration made
-        # to no call, which has no ``note``.
+        # as_view() runs with no request, so it reads the declaration made to no call.
         spec = entry_spec(validator=DeclaredByTheRequest(routed="note"))
         with pytest.raises(
             ImproperlyConfigured, match="ServerArguments names note, which the spec does not"
@@ -3145,8 +2999,7 @@ class TestTheCallsDeclaration:
             form_view(spec, server_arguments=ServerArguments(values={"note": "x"}))
 
     def test_a_key_declared_to_the_call_alone_can_be_asked_for(self, ada: Any) -> None:
-        # Checked against the declaration made to no call, which has no
-        # ``note``, the question was the service's error, never rendered.
+        # Checked against a declaration made to no call, the question was the service's error.
         schema = {"note": {"type": "string"}}
 
         def ask(**pool: Any) -> None:
@@ -3169,8 +3022,7 @@ class TestTheRequestAndTheView:
         view = form_view(handed_spec(handed))
         request = signed_in(FACTORY.get("/"), ada)
         assert view(request, pk=note.pk).status_code == 200
-        # The class-level check, the target's selector and its check, both
-        # affordance questions and the form's keywords.
+        # The checks, the target's selector, both affordance questions and the form keywords.
         assert handed.stages() == HANDED_STAGES - {"service"}
         page = handed.one_view(request)
         assert isinstance(page, SpecFormView)
@@ -3186,9 +3038,7 @@ class TestTheRequestAndTheView:
         assert handed.one_transport() == "html"
 
     def test_a_seed_resolver_reading_the_request_binds(self, ada: Any, note: Note) -> None:
-        # A GET builds the pool its affordances and display read, and a
-        # refused post builds one for the target it shows again: both resolve
-        # the seed against the call's context, as dispatch's own pool does.
+        # GET and a refused post each build a pool, resolving the seed against the call's context.
         asked: list[Any] = []
 
         def asker(*, request: Any, view: Any) -> Any:
@@ -3222,8 +3072,7 @@ class TestTheRequestAndTheView:
     def test_the_displays_ambient_holds_the_seeds_and_never_the_call_context(
         self, ada: Any, note: Note, method: str, status: int
     ) -> None:
-        # The page's pool is built carrying the context, for its resolvers,
-        # and the context leaves it before a presenter reads it as ambient.
+        # The page's pool carries the context for its resolvers, then drops it for presenters.
         ambients: list[Mapping[str, Any]] = []
 
         class Recording(DataclassPresenter):
@@ -3366,8 +3215,7 @@ class TestTheTargetInTheContext:
         assert response.context_data["target"].pk == note.pk
 
     def test_a_post_whose_route_is_refused_carries_no_target(self, ada: Any) -> None:
-        # The route never found a row, so there is none to show beside the
-        # refusal, and the marker of one not looked for is never handed on.
+        # The route never found a row, so there is none to show beside the refusal.
         response = post(form_view(row_spec()), ada, {"title": "Hi"}, pk="first")
         assert response.status_code == 400
         assert "target" not in response.context_data
@@ -3435,10 +3283,7 @@ class TestABulkPage:
     def test_a_refused_post_counts_the_set_as_it_is_now_not_as_the_service_read_it(
         self, ada: Any
     ) -> None:
-        # The service reads the set it was handed, filling its result cache,
-        # then changes what the set holds before it refuses. Not atomic, so
-        # the change stays, and the page counts the set as it is now rather
-        # than reading the cache the service filled.
+        # The service fills its result cache, then changes the set before it refuses.
         notes(ada, 2)
 
         def service(*, collection: Any, **pool: Any) -> None:
@@ -3565,8 +3410,7 @@ class TestTheTargetDisplay:
     def test_a_display_resolves_a_seed_once_more_only_on_a_refused_post(
         self, ada: Any, method: str, more: int
     ) -> None:
-        # GET's presenter reads the pool the affordances were asked on; a
-        # refused post builds one for it, and only where a display is shown.
+        # GET's presenter reads the pool the affordances were asked on; a refused post builds one.
         resolved: list[int] = []
 
         def tenant(*, user: Any) -> str:
@@ -3601,9 +3445,7 @@ class TestTheTargetDisplay:
         assert display["label"] == "Ada's"
 
     def test_an_output_selector_declaring_affordances_still_renders(self, ada: Any) -> None:
-        # The kernel's ``present`` adds each row's answers, which only a row
-        # read through that selector carries; the target was read through the
-        # target selector, so the page presents it without them.
+        # present adds answers only to rows read through that selector; the target lacks them.
         note = Note.objects.create(owner=ada, title="Ada's")
         archivable = ServiceSpec(
             service=Record(),
@@ -3658,9 +3500,7 @@ class TestTheTargetDisplay:
     def test_the_presenter_is_handed_the_context_dispatch_hands_it(
         self, ada: Any, method: str
     ) -> None:
-        # The principal, the target, the request's one call context, and the
-        # call's seeds as ``ambient``, so a presenter written for dispatch -
-        # one building a link from a seed, say - reads what it reads there.
+        # The presenter gets the principal, target, context and seeds as ambient, as dispatch does.
         seen: list[Any] = []
 
         class Seeing(DataclassPresenter):
@@ -3723,9 +3563,7 @@ class TestDisplayingTheTargetIsOptIn:
         assert SpecFormView.display_target is False
 
     def test_a_page_not_opted_in_never_presents_its_target(self, ada: Any) -> None:
-        # A marked Output describes the operation's result, which need not be
-        # the target, so presenting the target unasked could fail a page that
-        # served before.
+        # A marked Output describes the result, not the target, so presenting it may fail.
         note = Note.objects.create(owner=ada, title="Ada's")
         row = row_spec(presenter=Unpresentable(NoteOut))
         context = get(form_view(row), ada, pk=note.pk).context_data
@@ -3767,8 +3605,7 @@ class TestDisplayingTheTargetIsOptIn:
         ids=["choices-alone", "nested-only"],
     )
     def test_an_output_marking_none_of_its_own_fields_is_refused(self, out: type) -> None:
-        # Choices alone would be spoken for an agent, and a nested marking
-        # names the nested object; the row's own markings drive its display.
+        # Choices alone would be spoken for an agent; a nested marking names the nested object.
         with pytest.raises(
             ImproperlyConfigured, match=r"marks none of its own fields with a FieldMarking"
         ):
@@ -3897,8 +3734,7 @@ class TestTheConfirmationPage:
         assert service.calls == [{"reason": "Tidy", "confirmed": True}]
 
     def test_a_re_ask_is_never_ticked_from_the_post(self, ada: Any) -> None:
-        # Asked again after a yes - the set it counted moved, say - the box is
-        # shown empty, so one click never answers a question nobody read.
+        # Asked again after a yes, the box is shown empty, so one click never answers unread.
         view = confirm_view(confirm_spec(Confirming(always=True)))
         response = post(view, ada, {"reason": "Tidy", "confirmed": "on"})
         assert response.status_code == 422
@@ -3907,8 +3743,7 @@ class TestTheConfirmationPage:
         assert b'name="reason" value="Tidy"' in response.content
 
     def test_a_multi_select_keeps_every_value_it_posted(self, ada: Any) -> None:
-        # The posted values are copied to clear the box, and a copy of a
-        # request's ``POST`` keeps each value of a key, where a dict keeps one.
+        # A copy of request.POST keeps every value of a key, where a dict keeps one.
         spec = raising(AdditionalInputRequired(ASK, schema={"urgent": {"type": "boolean"}}))
         view = confirm_view(spec, asked_fields=("urgent",))
         response = post(view, ada, {"title": "Hi", "urgent": "on", "tags": ["home", "work"]})
@@ -3946,8 +3781,7 @@ class TestTheConfirmationPage:
         }
 
     def test_a_key_no_field_declares_is_asked_by_its_message_alone(self, ada: Any) -> None:
-        # A read the spec declares passes the kernel's check, and the page
-        # builds no widget from a schema, so nothing is revealed for it.
+        # A read the spec declares passes the kernel's check; no widget comes from a schema.
         schema = {"ack": {"type": "boolean"}}
         spec = confirm_spec(
             Confirming(schema=schema), reads=Parameters.of(Parameter("ack", "boolean"))
@@ -3979,8 +3813,7 @@ class TestTheConfirmationPage:
         ]
 
     def test_the_confirmation_counts_the_set_again(self, ada: Any) -> None:
-        # The count is a time of check: the page that asks says what it found
-        # when the post that asked was made, not what the page's GET counted.
+        # The count is a time of check: the page shows what the post found, not what GET counted.
         notes(ada, 2)
         spec = confirm_spec(
             collection_selector_spec=SelectorSpec(
@@ -4026,9 +3859,7 @@ class TestTheQuestionIsChecked:
             hx_post(view, ada, {"reason": "Tidy"}, headers=headers)
 
     def test_the_call_s_seeds_are_the_ones_it_reads(self, ada: Any) -> None:
-        # A reflected read is filled by the seed of its name, so an answer
-        # under that key would be dropped, and only the call's seeds say the
-        # seed is there: without them, the same spec is asked as any other.
+        # A reflected read is filled by the seed of its name; only the call's seeds say it is there.
         def spec() -> ServiceSpec:
             reads = Parameters.of(Parameter("ack", "boolean", reflected=True))
             return confirm_spec(Confirming(schema={"ack": {"type": "boolean"}}), reads=reads)
@@ -4218,8 +4049,7 @@ class TestAPostThatDoesNotCommit:
     ) -> None:
         calls = never_dispatched(monkeypatch)
         spec = entry_spec()
-        # A required title left out and a count no integer field reads: both
-        # refused by the form, and neither shown, since nothing was validated.
+        # A required title and a non-integer count are refused by the form, and neither is shown.
         response = post(committing(spec), ada, {"count": "many", "refresh": "Refresh"}).render()
         assert response.status_code == 200
         form = response.context_data["form"]
@@ -4246,8 +4076,7 @@ class TestAPostThatDoesNotCommit:
         assert spec.service.calls == []
 
     def test_a_trigger_naming_another_posted_control_does_not_commit(self, ada: Any) -> None:
-        # The button's name is in the data, put there by an inherited
-        # ``hx-vals`` say, but the request was issued by the colour picker.
+        # The button's name is in the data, but the request was issued by the colour picker.
         spec = entry_spec()
         data = {"title": "Hi", "colour": "red", "save": "Save"}
         response = hx_post(fragmented(spec, commit_button="save"), ada, data, triggered("colour"))
@@ -4264,8 +4093,7 @@ class TestAPostThatDoesNotCommit:
         assert received(spec)["title"] == "Hi"
 
     def test_a_trigger_naming_the_form_commits(self, ada: Any) -> None:
-        # ``<form name="entry" hx-post="">`` submitted by its button: the
-        # header names the form, which is no key of the post.
+        # A form named by its button: the header names the form, which is no key of the post.
         spec = entry_spec()
         data = {"title": "Hi", "save": "Save"}
         response = hx_post(fragmented(spec, commit_button="save"), ada, data, triggered("entry"))
@@ -4314,8 +4142,6 @@ class TestAPostThatDoesNotCommit:
         assert refreshed.status_code == 200
         assert refreshed.context_data["form"].errors == {}
         fields = refreshed.context_data["form"].fields
-        # Narrowed by ``form_kwargs``, as every form the page builds is, and
-        # by the author the post names.
         assert list(fields["author"].queryset) == [le_guin]
         assert list(fields["book"].queryset) == [earthsea]
         assert spec.service.calls == []
@@ -4338,8 +4164,7 @@ class TestAPostThatDoesNotCommit:
             post(committing(spec), ada, {"title": "Hi"})
 
     def test_a_route_the_target_refuses_is_a_bad_request_as_on_get(self, ada: Any) -> None:
-        # GET's answer, since the page a refresh re-renders is GET's; a
-        # committing post leaves the route to dispatch, which answers 400.
+        # GET's answer, since the page a refresh re-renders is GET's; a commit goes to dispatch.
         spec = row_spec()
         with pytest.raises(BadRequest):
             post(committing(spec), ada, {"title": "Hi"}, pk="nope")
@@ -4367,11 +4192,7 @@ THIRTEEN = "Thirteen is taken."
 
 
 class ClosedForm(forms.Form):
-    """Refused by its own checks in three places at once: a title, a count, and the whole form.
-
-    Each passes the shape check, so the Validator is what answers, and a
-    trigger naming one field has two other places to leave out.
-    """
+    """Refused by its own checks in three places at once: a title, a count, and the whole form."""
 
     title = forms.CharField()
     count = forms.IntegerField(required=False)
@@ -4446,8 +4267,7 @@ class TestValidatingARefresh:
     def test_a_field_s_own_request_shows_that_field_s_errors_alone(
         self, ada: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # An htmx request a field issued, ``hx-trigger="change"`` say, names
-        # it: its errors are shown, and neither the other field's nor the form's.
+        # An htmx request a field issued names it: its errors show, not the other field's.
         calls = never_dispatched(monkeypatch)
         spec = closed_spec()
         data = {"title": "taken", "count": "13"}
@@ -4480,17 +4300,14 @@ class TestValidatingARefresh:
         assert (response.status_code, refused(response)) == (200, {})
 
     def test_the_shape_check_s_refusal_follows_the_trigger_too(self, ada: Any) -> None:
-        # The title left out and the count no integer: the shape check
-        # refuses both, before the Validator runs.
+        # The shape check refuses both the blank title and the count, before the Validator.
         spec = entry_spec()
         response = hx_post(checking(spec), ada, {"count": "many"}, triggered("count"))
         assert (response.status_code, refused(response)) == (200, {"count": [WHOLE]})
         assert validated(spec) == 0
 
     def test_a_field_s_own_check_answers_beside_the_rest_of_the_shape(self, ada: Any) -> None:
-        # The count is no integer, so the shape check refuses the post and
-        # the Validator never runs; the page's own form, validated beside the
-        # refusal, asks ``clean_title``, and the title shows its answer.
+        # The shape check refuses the post, so the Validator never runs; the title shows its answer.
         spec = closed_spec()
         data = {"title": "taken", "count": "many"}
         response = hx_post(checking(spec), ada, data, triggered("title"))
@@ -4501,15 +4318,13 @@ class TestValidatingARefresh:
         assert validated(spec) == 0
 
     def test_a_field_s_own_request_is_refused_beside_a_blank_one(self, ada: Any) -> None:
-        # The name left blank is absent to the shape check, which refuses it
-        # and never asks the Validator; the email's own error is the form's.
+        # The blank name is absent to the shape check, which never asks the Validator.
         data = {"name": "", "email": "nope"}
         response = hx_post(checking(contact_spec()), ada, data, triggered("email"))
         assert (response.status_code, refused(response)) == (200, {"email": [INVALID_EMAIL]})
 
     def test_a_field_s_own_request_shows_its_error_when_the_shape_passes(self, ada: Any) -> None:
-        # The guard beside the one above: the shape check passes, and the
-        # Validator's form answers.
+        # The guard beside the one above: the shape check passes, and the Validator's form answers.
         spec = contact_spec()
         data = {"name": "a", "email": "nope"}
         response = hx_post(checking(spec), ada, data, triggered("email"))
@@ -4517,8 +4332,7 @@ class TestValidatingARefresh:
         assert validated(spec) == 1
 
     def test_a_refresh_shows_what_its_commit_refuses(self, ada: Any) -> None:
-        # A button that is not the commit's: the whole refusal, which is
-        # what the same post refuses from the commit button.
+        # A button that is not the commit's gets the whole refusal, as the commit button would.
         view = checking(contact_spec())
         data = {"name": "", "email": "nope"}
         every = {"name": [REQUIRED], "email": [INVALID_EMAIL]}
@@ -4530,10 +4344,7 @@ class TestValidatingARefresh:
     def test_a_field_s_own_request_leaves_out_the_form_s_own_non_field_error(
         self, ada: Any
     ) -> None:
-        # The count is no integer, so the shape check refuses it alone; the
-        # page's form, validated beside it, calls the blank title required
-        # and adds its ``clean()``'s, and the title's own request shows its
-        # own error and neither the count's nor the form's.
+        # The count is no integer, so the shape check refuses it alone, not the title.
         spec = closed_spec()
         data = {"title": "", "count": "many"}
         response = hx_post(checking(spec), ada, data, triggered("title"))
@@ -4541,24 +4352,19 @@ class TestValidatingARefresh:
         assert validated(spec) == 0
 
     def test_a_partial_page_s_refresh_calls_no_blank_field_required(self, ada: Any) -> None:
-        # The count is no integer, so the shape check refuses it; the title
-        # left blank is one a partial call leaves as it is, and the page's
-        # form validated whole would call it required.
+        # The count is no integer, so it is refused; a partial call leaves the blank title.
         spec = entry_spec(partial=True)
         response = post(checking(spec), ada, {"count": "many", "refresh": "Refresh"})
         assert (response.status_code, refused(response)) == (200, {"count": [WHOLE]})
 
     def test_a_prefixed_form_s_field_is_named_as_it_posts(self, ada: Any) -> None:
-        # Both left blank, so the shape check refuses both; the header names
-        # the title as the browser posts it, under the form's prefix.
+        # Both blank, so the shape check refuses both; the header names the title under its prefix.
         spec = entry_spec(validator=Watched(PrefixedForm))
         response = hx_post(checking(spec), ada, {}, triggered("entry-title"))
         assert (response.status_code, refused(response)) == (200, {"title": [REQUIRED]})
 
     def test_a_filled_prefixed_field_is_bound_under_its_prefix(self, ada: Any) -> None:
-        # Both filled, so the shape check passes and the form's own binding
-        # answers: read under its prefix, it finds nothing wrong, whether the
-        # title's own request or the whole form's.
+        # Both filled, so the shape check passes and the form's own binding answers.
         spec = entry_spec(validator=Watched(PrefixedForm))
         data = {"entry-title": "Hi", "entry-count": "3"}
         for name in ("entry-title", "entry"):
@@ -4575,8 +4381,7 @@ class TestValidatingARefresh:
         assert received(spec) == {"title": "Hi", "count": 3}
 
     def test_a_form_whose_keywords_name_a_seed_is_bound_with_it(self, ada: Any) -> None:
-        # The cap is the Validator's form's alone, and its ``form_kwargs``
-        # names the ``tenant`` seed, which the bind must resolve to build it.
+        # The cap is the Validator's form alone, and its form_kwargs names the tenant seed.
         keywords = Keywords(capped)
         spec = keyed_entry_spec(keywords, row=False)
         view = checking(spec, pool_seeds=TENANT_SEEDS)
@@ -4587,7 +4392,6 @@ class TestValidatingARefresh:
         )
         page, bound = keywords.calls
         assert bound["tenant"] == "tenant-of-ada"
-        # The request's one call context, as every other stage is handed.
         assert bound["context"] is page["context"]
 
     def test_an_update_s_own_unique_value_is_not_taken(self, ada: Any) -> None:
@@ -4621,8 +4425,7 @@ class TestValidatingARefresh:
         assert refused(post(checking(spec), ada, data)) == {"extra": ["Unknown argument."]}
 
     def test_a_field_a_provider_fills_is_judged_as_posted(self, ada: Any) -> None:
-        # No provider runs on a refresh, so the form is handed the title as
-        # posted, blank, where the commit is handed the provider's.
+        # No provider runs on a refresh, so the form gets the title as posted, blank.
         spec = entry_spec(input_data=server_title)
         view = checking(spec)
         response = post(view, ada, {"refresh": "Refresh"})
@@ -4756,8 +4559,7 @@ class TestASuccessMessage:
     def test_without_the_middleware_nothing_is_raised(
         self, ada: Any, settings: Any, app: bool
     ) -> None:
-        # Django's ``messages.success`` raises ``MessageFailure`` here unless
-        # told to fail silently: the app alone puts no store on the request.
+        # Django's messages.success raises MessageFailure unless told to fail silently.
         if app:
             settings.INSTALLED_APPS = [*settings.INSTALLED_APPS, "django.contrib.messages"]
         spec = entry_spec()

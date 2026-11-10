@@ -1,5 +1,3 @@
-"""``route_arguments``: the kwargs a route captured, as arguments the spec declares."""
-
 from __future__ import annotations
 
 from typing import Any, cast
@@ -34,9 +32,7 @@ def test_every_undeclared_kwarg_is_named_in_order() -> None:
 
 
 def test_merged_last_and_typed_with_the_rest_one_refusal_carries_every_problem() -> None:
-    # The recipe the docstring and the HTTP page give a host's own view. The
-    # route comes back uncoerced, so a malformed route value is refused in the
-    # same call as a malformed value the view read, rather than on its own.
+    # The recipe the docstring and the HTTP page give a host's own view.
     parameters = Parameters.of(Parameter("pk", "integer"), Parameter("count", "integer"))
     read = {"count": "many"}
     with pytest.raises(InvalidArguments) as refused:
@@ -58,8 +54,7 @@ class TestRouteKwargs:
         assert route == {"pk": "4", "slug": "acme"}
 
     def test_a_mapping_to_none_drops_a_captured_kwarg(self) -> None:
-        # The ``include()`` prefix shape: ``<org>/`` reaches every view under
-        # it, including one whose spec does not read it.
+        # include()'s prefix: <org>/ reaches every view under it, even one whose spec ignores it.
         route = route_arguments(ROUTED, {"org": "acme", "pk": "4"}, route_kwargs={"org": None})
         assert route == {"pk": "4"}
 
@@ -82,8 +77,7 @@ class TestRouteKwargs:
         assert UNDECLARED not in message
 
     def test_a_mapped_target_is_checked_on_a_route_that_does_not_capture_it(self) -> None:
-        # The mapping is the host's, the same for every route the view is
-        # mounted on, so a typo in it fails on the first request any route serves.
+        # The mapping is the host's, the same on every route, so a typo fails on the first request.
         with pytest.raises(ImproperlyConfigured, match="maps a kwarg to tenant,"):
             route_arguments(ROUTED, {"pk": "4"}, route_kwargs={"org": "tenant"})
 
@@ -117,7 +111,6 @@ class TestRouteKwargs:
 
 
 def test_it_is_public_from_the_subpackage_and_the_root() -> None:
-    # A host reading arguments its own way merges the route as the entry
-    # points do, and refuses an undeclared kwarg as the same misconfiguration.
+    # A host reading arguments its own way merges the route as the entry points do.
     assert "route_arguments" in django_spec_html.http.__all__
     assert "route_arguments" in django_spec_html.__all__

@@ -1,15 +1,3 @@
-"""``SpecActionsMixin``: specs' pages served as a ``ModelAdmin``'s actions.
-
-Every request goes through Django's handler and the admin's own stack -
-``admin_view``, the changelist's action form, the change form - as a signed-in
-client, since what the admin offers and refuses is decided there, and a call
-to an action's function would cross none of it. The module is its own
-URLconf: two admin sites over one model, the second deployed last, so a link
-the chrome resolves without naming its site resolves into the wrong one; and
-three more, each an admin answering one question differently - a key the
-admin quotes, a tenant's scope, a permission answered without the other.
-"""
-
 from __future__ import annotations
 
 import re
@@ -72,8 +60,7 @@ def archive_all(*, collection: QuerySet[Note]) -> int:
 
 
 def own_notes(*, pks: list[int], user: Any) -> QuerySet[Note]:
-    # The selector decides the set: the selected keys, narrowed to the
-    # principal's own rows.
+    # The selector decides the set: the selected keys, narrowed to the principal's own rows.
     return Note.objects.filter(pk__in=pks, owner=user)
 
 
@@ -208,11 +195,7 @@ def by_keys(*, keys: list[str]) -> QuerySet[Note]:
 
 
 class ScopedAdmin(SpecActionsMixin, admin.ModelAdmin):
-    """A tenant's admin: each staff member shown their own notes, and none titled Locked.
-
-    Its specs are open to every principal, so whatever the admin does not
-    show is kept from the pages by the admin alone.
-    """
+    """A tenant's admin: each staff member shown their own notes, and none titled Locked."""
 
     spec_actions = (
         SpecAction(
@@ -355,8 +338,7 @@ def run_action(user: Any, name: str, *notes: Note) -> Any:
 
 class TestTheUrls:
     def test_each_page_is_served_at_its_own_url(self, editor: Any, note: Note) -> None:
-        # Ahead of the admin's catch-all, which would redirect any
-        # ``<object_id>/...`` to the change page.
+        # Ahead of the admin's catch-all, which would redirect it to the change page.
         assert reverse("admin:dispatch_app_note_archive", args=(note.pk,)) == page("archive", note)
         assert reverse("admin:dispatch_app_note_archive_all") == page("archive_all")
         for url in (page("archive", note), page("retitle", note), page("archive_all")):
@@ -375,8 +357,7 @@ class TestTheUrls:
         assert Note.objects.get().archived is False
 
     def test_a_quoted_key_reaches_the_selector_unquoted(self) -> None:
-        # A key holding a character the admin escapes in its URLs, so only
-        # the key unquoted finds the row.
+        # A key the admin escapes in URLs: only the unquoted key finds the row.
         keyed = Tag.objects.create(key="a/b")
         url = f"/keyed/dispatch_app/tag/{quote('a/b')}/actions/archive/"
         assert url == "/keyed/dispatch_app/tag/a_2Fb/actions/archive/"
@@ -432,8 +413,7 @@ class TestTheDropdownEntry:
         assert "archive_all" not in body
 
     def test_posting_an_entry_not_offered_runs_nothing(self, viewer: Any, note: Note) -> None:
-        # The changelist again, with no action to run: offered, the entry
-        # would redirect to its page.
+        # The changelist again, with no action to run: offered, it redirects to its page.
         response = run_action(viewer, "archive_all", note)
         assert (response.status_code, response.has_header("Location")) == (200, False)
         assert Note.objects.get().archived is False
@@ -460,8 +440,7 @@ class TestTheDropdownEntry:
             assert off.get_actions(client(user).get(CHANGELIST).wsgi_request) == {}
 
     def test_django_reads_get_actions_as_its_own(self, editor: Any, note: Note) -> None:
-        # From Django 6.1 an override without ``action_location`` is warned
-        # about, and turns the change form's actions off.
+        # From Django 6.1, an override without action_location is warned about.
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             client(editor).get(change_page(note))
@@ -487,9 +466,7 @@ class TestThePage:
         assert '<button type="submit">Confirm</button>' in body
 
     def test_the_breadcrumbs_link_only_what_the_admin_shows(self, editor: Any, note: Note) -> None:
-        # Admitted to the page by the change permission, by an admin that
-        # answers no view permission, so its changelist and its change page
-        # are not linked, as its own pages would not link them.
+        # Admitted by the change permission alone, so its changelist and change page are not linked.
         response = client(editor).get(page("archive", note, prefix="viewless"))
         body = response.content.decode()
         assert response.status_code == 200
@@ -593,8 +570,7 @@ class TestThePage:
         assert (desk, asked_with) == ("desk-of-editor", request)
         assert isinstance(view, SpecPageBase)
         assert view.request is request
-        # The offer's context is stamped as the page's own call is, so a
-        # listing of the entry and the call it links to read one value.
+        # The offer's context is stamped as the page's own call is, so listing and link agree.
         assert [each["transport"] for each in stamped] == ["html"]
         assert [(each["format"], each["action"]) for each in stamped] == [(None, None)]
 
@@ -648,9 +624,7 @@ class TestTheChangelistAction:
         assert Note.objects.get().archived is False
 
     def test_a_comma_list_selection_is_read_as_its_keys(self, editor: Any, note: Note) -> None:
-        # The selection is read by the flat rules every query string is, so a
-        # comma list of integer keys is its elements rather than one key the
-        # parameter refuses.
+        # Read by the flat rules every query string follows: a comma list is its elements.
         other = Note.objects.create(owner=editor, title="Buy bread")
         url = f"{page('archive_all')}?pks={note.pk},{other.pk}"
         assert client(editor).get(url).context_data["target_count"] == 2
@@ -658,8 +632,7 @@ class TestTheChangelistAction:
         assert Note.objects.filter(archived=True).count() == 2
 
     def test_a_blank_selection_is_no_keys(self, editor: Any, note: Note) -> None:
-        # A blank value is absent under the flat rules, so it selects nothing
-        # rather than being refused as a malformed key.
+        # A blank value is absent under the flat rules, so it selects nothing, not a refusal.
         assert client(editor).get(f"{page('archive_all')}?pks=").context_data["target_count"] == 0
 
     def test_a_selection_past_the_parameter_s_length_is_a_bad_request(
@@ -672,8 +645,7 @@ class TestTheChangelistAction:
     def test_a_selection_past_the_kernel_s_array_length_is_a_bad_request(
         self, editor: Any, note: Note, settings: Any
     ) -> None:
-        # Where the parameter declares no max_length, the kernel's setting is
-        # the cap, read on the request.
+        # Where the parameter declares no max_length, the kernel's setting is the cap.
         settings.SERVICE_SPECS_MAX_ARRAY_LENGTH = 2
         url = page("archive_all")
         assert client(editor).get(f"{url}?pks={note.pk}&pks={note.pk + 1}").status_code == 200
@@ -685,9 +657,7 @@ class TestTheChangelistAction:
     def test_the_form_posts_back_to_the_url_carrying_the_selection(
         self, editor: Any, note: Note
     ) -> None:
-        # The selection is in the query string alone, so a browser keeps it
-        # only by posting to the page's full URL: the form names no action,
-        # on the page and on the page a refusal re-renders.
+        # The selection lives in the query string, so the form posts to the full URL.
         url = run_action(editor, "retitle_all", note)["Location"]
         shown = client(editor).get(url).content.decode()
         refused = client(editor).post(url, {"title": ""})
@@ -736,7 +706,6 @@ class TestTheAdminsScope:
         assert Note.objects.get().archived is False
         # A key that is no row's, which get_object() finds nothing for too.
         assert client(me).get(f"{SCOPED}abc/actions/one/").status_code == 404
-        # Where the change page redirects to the admin's index instead.
         change = client(me).get(f"{SCOPED}{theirs.pk}/change/")
         assert (change.status_code, change["Location"]) == (302, "/scoped/")
 
@@ -773,8 +742,7 @@ class TestTheAdminsScope:
         assert "many" in scoped.get_actions(client(me).get(SCOPED).wsgi_request)
 
     def test_a_deactivated_account_is_offered_nothing(self) -> None:
-        # Kept from the admin's pages by admin_view, and refused by the
-        # spec's check where a host asks for the actions itself.
+        # Kept from the admin's pages by admin_view, and refused by the spec's check.
         request = RequestFactory().get(SCOPED)
         request.user = staff("gone", "view_note", "change_note")
         request.user.is_active = False
@@ -975,8 +943,7 @@ class TestTheDeclaration:
     )
     @pytest.mark.parametrize("spec", [archive_spec, archive_all_spec], ids=["object", "changelist"])
     def test_a_label_that_does_not_format_is_refused(self, label: str, why: str, spec: Any) -> None:
-        # Formatted as Django formats an action's description, which the
-        # dropdown would fail on at render and the page at its title.
+        # Formatted as Django formats an action's description, or the dropdown fails.
         parameter = "pk" if spec is archive_spec else "pks"
         with pytest.raises(ImproperlyConfigured) as refused:
             built(SpecAction("act", spec, label, parameter))
@@ -987,15 +954,13 @@ class TestTheDeclaration:
         )
 
     def test_the_page_s_own_check_names_the_declaration(self) -> None:
-        # The page's ``as_view()`` is the page's: a keyword it does not take
-        # is refused there, under the admin's name for the action.
+        # The page's as_view() is the page's: a keyword it does not take is refused there.
         with pytest.raises(ImproperlyConfigured) as refused:
             built(SpecAction("archive", archive_spec, "Archive", "pk", {"commit_button": ""}))
         assert str(refused.value).startswith("Declared['archive'].commit_button must be None")
 
     def test_a_selection_no_list_meets_empty_is_refused_by_the_kernel(self) -> None:
-        # The binding is declared empty, so a parameter needing a row is
-        # refused in the kernel's words when the admin is built.
+        # The binding is declared empty, so a parameter needing a row is refused at build time.
         reads = Parameters.of(Parameter("pks", "array", items="integer", min_length=1))
         spec = ServiceSpec(
             service=archive_all,

@@ -1,10 +1,3 @@
-"""The ``available`` and ``unavailable`` filters, asked of rows as ``SpecSelectorView`` serves them.
-
-The rows are answered here by the helper the view answers them with, from
-flags written by hand in the kernel's spelling, so each test reads one
-template against one row with no page around it.
-"""
-
 from __future__ import annotations
 
 import json
@@ -104,10 +97,7 @@ def test_a_mapping_row_is_copied_and_the_selector_s_own_left_alone() -> None:
 
 @pytest.mark.parametrize("asked", ["available", "unavailable"])
 def test_a_misspelt_name_under_not_is_swallowed_by_django(asked: str) -> None:
-    # Held because the filter's docstring tells a template author to read a
-    # negated condition through ``{% with %}``: under ``not`` Django's
-    # ``{% if %}`` reads the error as the whole condition false, so an
-    # archived row's notice is never drawn and nothing raises.
+    # The filter's docstring says to read a negated condition through {% with %}.
     row = answered(SPEC, dict(ARCHIVED))
 
     assert rendered(f'{{% if not row|{asked}:"renmae" %}}archived{{% endif %}}', row) == ""
@@ -140,17 +130,12 @@ def test_unavailable_is_none_for_an_available_action_and_the_answer_otherwise() 
 
 
 def test_a_row_that_no_longer_exists_is_unavailable_with_no_reason() -> None:
-    # The kernel answers a condition on a row that is gone with no code and no
-    # reason, since no condition's sentence is true of it; ``{% if why %}``
-    # still holds, and the code and reason render as missing variables.
+    # A gone row's condition has no code or reason; {% if why %} still holds.
     assert rendered(WHY, answered(SPEC, dict(GONE))) == "[|]"
 
 
 def test_a_template_cannot_change_the_answers_the_row_carries() -> None:
-    # Django calls a zero-argument callable a template names, so the row's
-    # own answer would be emptied by ``{{ why.clear }}`` for every later read,
-    # and a plain copy would still be emptied under the rest of the block;
-    # each method left unmarked renders here and fails the first assertion.
+    # Django calls zero-argument callables, so each unmarked method renders here.
     row = answered(SPEC, dict(ARCHIVED))
 
     cleared = rendered(
@@ -167,8 +152,7 @@ def test_a_template_cannot_change_the_answers_the_row_carries() -> None:
 
 
 def test_python_may_change_its_copy_and_the_row_keeps_its_answer() -> None:
-    # Only a template is refused the two methods; a caller in Python holds a
-    # fresh copy per call, so what it does stays with that copy.
+    # Only a template is refused the two methods; a Python caller holds a fresh copy per call.
     unavailable = register.filters["unavailable"]
     row = answered(SPEC, dict(ARCHIVED))
     popped = unavailable(row, "rename")
@@ -182,8 +166,7 @@ def test_python_may_change_its_copy_and_the_row_keeps_its_answer() -> None:
 
 
 def test_the_answer_renders_through_json_script() -> None:
-    # The answer is a ``dict``, so a template can hand it to a script as it
-    # would the row's own answer; a read-only view raises TypeError here.
+    # The answer is a dict, so a template can hand it to a script.
     row = answered(SPEC, dict(ARCHIVED))
 
     script = rendered('{{ row|unavailable:"rename"|json_script:"why" }}', row)

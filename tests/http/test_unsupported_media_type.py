@@ -1,11 +1,3 @@
-"""``UnsupportedMediaType``: this package's refusal of the call, answered 415.
-
-The refusal leaves the kernel with the JSON half, so no map in the kernel names
-it and this package's own ``error_response`` is what answers it. The tests
-here raise this package's class through each JSON entry point, since a row
-that missed it would answer it with the ``DispatchError`` row's 400.
-"""
-
 from __future__ import annotations
 
 from django_service_specs import DispatchError, ServiceError
@@ -23,8 +15,7 @@ REFUSED = {"detail": f'Unsupported media type "{UNREADABLE}" in request.'}
 
 
 def test_it_is_a_dispatch_refusal_and_not_a_service_one() -> None:
-    # A service error is one an agent reads and routes around; a body the
-    # transport could not read is the caller's framing to fix.
+    # A body the transport cannot read is the caller's framing to fix.
     refused = UnsupportedMediaType()
     assert isinstance(refused, DispatchError)
     assert not isinstance(refused, ServiceError)

@@ -1,5 +1,3 @@
-"""``SpecAction``: the declaration of a spec served as an admin action."""
-
 from __future__ import annotations
 
 import dataclasses
@@ -14,8 +12,7 @@ SPEC = ServiceSpec(service=lambda: None, permissions=[Unrestricted()])
 
 
 def test_page_kwargs_is_a_read_only_copy() -> None:
-    # A key added later to the caller's dict never reaches a page built from
-    # the declaration, and the declaration's own refuses one.
+    # A key added to the caller's dict never reaches a page built from the declaration.
     given: dict[str, Any] = {"display_target": True}
     action = SpecAction("archive", SPEC, "Archive", "pk", given)
     given["commit_button"] = "go"

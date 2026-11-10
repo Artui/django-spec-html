@@ -1,5 +1,3 @@
-"""``SpecView``: a spec served as a class-based view, methods and all."""
-
 from __future__ import annotations
 
 import dataclasses
@@ -114,9 +112,7 @@ class TestServing:
         assert (response.status_code, body(response)) == (200, {"title": "One"})
 
     def test_a_uuid_route_capture_reaches_a_string_parameter_as_its_string(self, ada: Any) -> None:
-        # Django's <uuid:pk> converter hands the view a uuid.UUID. The kernel's
-        # coerce_flat spells it as its string where the parameter declares
-        # string, from 0.31.0; before, it answered "Expected a string.".
+        # Django's <uuid:pk> converter hands the view a uuid.UUID.
         captured = uuid.uuid4()
         seen: list[Any] = []
 
@@ -156,9 +152,7 @@ class TestServing:
     def test_every_url_kwarg_is_an_argument_the_spec_must_declare(
         self, ada: Any, policy: UnknownArguments
     ) -> None:
-        # The route is the host's, so the mismatch is wrong for every request
-        # and propagates to the host's error handling, whatever the policy on
-        # what a client sends.
+        # The route is the host's: a mismatch is wrong for every request, whatever the policy.
         view = SpecView.as_view(spec=notes_spec(), unknown_arguments=policy)
         with pytest.raises(ImproperlyConfigured, match="The route captures org,"):
             send(view, "GET", ada, org="acme")
@@ -176,8 +170,7 @@ class TestServing:
         assert spec.service.calls[0]["tenant"] == "tenant-of-ada"
 
     def test_a_query_key_the_spec_does_not_declare_is_refused_by_default(self, ada: Any) -> None:
-        # The JSON views keep REJECT where the list page ignores the key: a
-        # client's code chose it, not a link someone else wrote.
+        # JSON views keep REJECT where the list page ignores; a client's code chose it.
         response = query(SpecView.as_view(spec=notes_spec()), ada, "/?colour=red")
         assert (response.status_code, body(response)) == (
             400,
@@ -185,9 +178,7 @@ class TestServing:
         )
 
     def test_a_body_nested_past_the_decoder_is_the_clients_400(self, ada: Any) -> None:
-        # The decoder raises RecursionError, which no refusal above
-        # request_arguments catches, so unless it is refused there the
-        # request is the host's 500 rather than the client's 400.
+        # RecursionError is no refusal above request_arguments: unrefused, it is a 500.
         spec = titled_spec({"id": 1})
         request = FACTORY.generic("POST", "/", data=DEEP_JSON, content_type="application/json")
         response = SpecView.as_view(spec=spec)(signed_in(request, ada))
@@ -235,8 +226,7 @@ class TestConfiguration:
         )
 
     def test_a_misspelt_setting_is_djangos_own_refusal(self) -> None:
-        # Django's check runs first, so a typo is named as a typo rather than
-        # read as a view with no spec.
+        # Django's check runs first, so a typo is named as a typo.
         with pytest.raises(TypeError, match="invalid keyword 'sepc'"):
             SpecView.as_view(sepc=notes_spec())
 
@@ -311,8 +301,7 @@ class TestRouteKwargs:
             SpecView.as_view(spec=notes_spec(), route_kwargs={"org": "team"})
 
     def test_two_kwargs_onto_one_parameter_are_refused_per_request(self, ada: Any) -> None:
-        # Mounted on two routes, a view may capture ``note`` on one and ``pk``
-        # on the other, so only a request capturing both is wrong.
+        # Mounted on two routes, a view may capture note on one and pk on the other; both is wrong.
         note = Note.objects.get(owner=ada)
         view = configured(spec=note_spec(), route_kwargs={"note": "pk"})
         assert send(view, "GET", ada, pk=str(note.pk)).status_code == 200
@@ -425,8 +414,7 @@ class TestPoolSeeds:
             SpecView.as_view(spec=notes_spec(), **{hook: asynchronous})
 
     def test_an_async_method_of_a_name_the_view_never_calls_is_not_a_hook(self, ada: Any) -> None:
-        # ``get_query`` is the list page's hook, not a JSON view's: a mixin
-        # carrying an async one of that name builds and serves here.
+        # get_query is the list page's hook, not a JSON view's: an async one builds and serves here.
         async def get_query(self: Any, request: Any) -> Any: ...
 
         view = type("Mixed", (SpecView,), {"spec": notes_spec(), "get_query": get_query})
@@ -457,8 +445,7 @@ class TestPoolSeeds:
 
 class TestServerArguments:
     def test_a_bound_value_outranks_a_malformed_one_in_the_query(self, ada: Any) -> None:
-        # Malformed, so a value coerced before the binding drops it is refused
-        # as the client's 400 for a name it was never offered.
+        # Malformed: coerced before binding, it would be a 400 for a name never offered.
         note = Note.objects.get(owner=ada)
 
         class Bound(SpecView):
@@ -521,8 +508,7 @@ class TestServerArguments:
             )
 
     def test_withholding_a_read_a_provider_requires_itself_is_refused_at_as_view(self) -> None:
-        # The kernel demands such a read of the caller, so a binding
-        # withholding it leaves every call refused.
+        # The kernel demands this read of the caller; withholding it refuses every call.
         with pytest.raises(ImproperlyConfigured, match="withholds pk, which no call could"):
             configured(
                 spec=provider_read_spec(),
@@ -530,8 +516,7 @@ class TestServerArguments:
             )
 
     def test_binding_a_name_declared_to_a_call_alone_is_refused_at_as_view(self) -> None:
-        # ``as_view()`` runs with no request, so it reads the declaration made
-        # to no call, which has no ``note``.
+        # as_view() runs with no request, so it reads the declaration made to no call.
         spec = ServiceSpec(
             service=Record(), permissions=OPEN, validator=DeclaredByTheRequest(routed="note")
         )
@@ -709,8 +694,7 @@ class TestTheRequestAndTheView:
 
 class TestCsrf:
     def test_the_hosts_middleware_protects_it(self, ada: Any) -> None:
-        # Nothing is exempted: Django's own middleware refuses a POST carrying
-        # no token, as it would for any view the host wrote.
+        # Nothing is exempt: CSRF refuses a POST with no token, as for any view.
         view = SpecView.as_view(spec=titled_spec({"id": 1}))
         request = signed_in(FACTORY.post("/", data={"title": "x"}), ada)
         refused = CsrfViewMiddleware(view).process_view(request, view, (), {})

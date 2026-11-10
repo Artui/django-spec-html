@@ -1,11 +1,3 @@
-"""``request_arguments``: a Django request read as the arguments a JSON caller would send.
-
-Every request here comes from Django's own ``RequestFactory``, which encodes a
-query string, a form and a multipart body the way a browser does, so what is
-read back is what a real client's request carries rather than a double's idea
-of it.
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -48,13 +40,7 @@ request_arguments_module = importlib.import_module("django_spec_html.http.reques
 
 
 def coded(detail: Any) -> Any:
-    """``detail`` with every message read as ``(message, code)``, ``None`` for a message with none.
-
-    Read through ``getattr`` rather than the message's type, so a test written
-    with it compiles against a tree that carries no codes at all, and fails
-    there by its assertion rather than at import. The pair, not the code alone,
-    so each assertion also says which message answered.
-    """
+    """detail with every message read as (message, code), None for a message with none."""
     if isinstance(detail, Mapping):
         return {key: coded(value) for key, value in detail.items()}
     if isinstance(detail, list):
@@ -120,8 +106,7 @@ def post_json(payload: Any, method: str = "post") -> HttpRequest:
 
 class TestQueryString:
     def test_a_scalar_takes_the_last_of_repeated_values(self) -> None:
-        # QueryDict's own reading of a repeated key, so a query string built by
-        # appending reads as the client's last word rather than its first.
+        # QueryDict reads a repeated key's last value, so an appended query keeps its last word.
         assert read(FACTORY.get("/?count=1&count=2&title=a&title=b")) == {
             "count": 2,
             "title": "b",
@@ -149,8 +134,7 @@ class TestQueryString:
         }
 
     def test_an_undeclared_key_passes_through_for_the_closed_set_to_refuse(self) -> None:
-        # Left to check_arguments, under the caller's policy; the blank one is
-        # kept too, since a blank only means "absent" for a declared type.
+        # Left to check_arguments; a blank is absent only for a declared type.
         assert read(FACTORY.get("/?colour=red&shade=")) == {"colour": "red", "shade": ""}
 
 
@@ -182,14 +166,7 @@ class _Ordered(django_filters.FilterSet):
 
 
 class TestCommaSeparatedArrays:
-    """``?pks=1,2``: the spelling django-filter's CSV filters advertise.
-
-    Splitting is the element type's to allow. A number, an integer and a
-    boolean can never hold a comma, so the split is unambiguous; a string
-    can, so a string array (declared or not) takes its value whole, unless
-    its choices hold no comma, when a value holding one can only be several
-    choices. ``_splits`` names the test holding each condition.
-    """
+    """``?pks=1,2``: the spelling django-filter's CSV filters advertise."""
 
     @pytest.mark.parametrize(
         ("query", "expected"),
@@ -197,14 +174,10 @@ class TestCommaSeparatedArrays:
             ("pks=1,2.5", {"pks": [1.0, 2.5]}),
             ("ids=1,2,3", {"ids": [1, 2, 3]}),
             ("flags=true,0,False", {"flags": [True, False, False]}),
-            # A boolean is the type that cares: " true" is no spelling of one,
-            # where an integer already ignores the space.
+            # A boolean is the type that cares: " true" is no spelling of one.
             ("flags=true, false ,1", {"flags": [True, False, True]}),
             ("ids=1&ids=2", {"ids": [1, 2]}),
             ("ids=1,2&ids=3&ids=4,5", {"ids": [1, 2, 3, 4, 5]}),
-            # ``?o=title,-pk``: the spelling django-filter's OrderingFilter
-            # takes. No choice holds a comma, so a value holding one is several
-            # choices.
             ("o=title,-pk&o=pk", {"o": ["title", "-pk", "pk"]}),
         ],
         ids=[
@@ -227,8 +200,7 @@ class TestCommaSeparatedArrays:
         assert read(request, CSV) == {"ids": [1, 2], "pks": [3.0]}
 
     def test_a_decimal_array_reads_a_comma_separated_value_as_its_elements_exactly(self) -> None:
-        # A decimal never holds a comma, so ``?pks=1,2`` splits as a number's
-        # does, and each part stays the string it spells, digits and all.
+        # A decimal never holds a comma, so ?pks=1,2 splits as a number's does.
         fraction = "0.1234567890123456789012345678901234567891"
         query = f"/?pks=1,{fraction}, 3 &pks=4"
         assert read(FACTORY.get(query), _decimal_pks()) == {"pks": ["1", fraction, "3", "4"]}
@@ -243,7 +215,6 @@ class TestCommaSeparatedArrays:
         [
             # A comma is part of a string; the whole value is the element.
             ("words=a,b&words=c", {"words": ["a,b", "c"]}),
-            # One choice holds a comma, so the whole value may be that choice.
             ("places=Paris, France&places=Paris", {"places": ["Paris, France", "Paris"]}),
             ("marks=a,b", {"marks": ["a,b"]}),
             ("tags=a,b", {"tags": ["a,b"]}),
@@ -283,8 +254,7 @@ class TestCommaSeparatedArrays:
     def test_an_empty_part_is_refused_at_its_index_as_a_malformed_element(
         self, query: str, index: int
     ) -> None:
-        # Not dropped as a blank element is: a stray comma is a mistake in the
-        # value, and the reader's wording for one is the element's own.
+        # Not dropped as a blank element is: a stray comma is a mistake in the value.
         assert refusal(FACTORY.get(f"/?{query}"), CSV) == {
             "ids": {index: ["Enter a whole number."]}
         }
@@ -308,21 +278,15 @@ class TestCommaSeparatedArrays:
 
 class TestBlanks:
     def test_a_blank_value_for_a_type_that_is_not_a_string_is_absent(self) -> None:
-        # Without the rule, ``""`` reaches coerce_flat as an integer and is
-        # refused as "Enter a whole number.", which is not what a left-blank
-        # field means.
+        # Blank reaches coerce_flat as an integer and is refused, not read as absent.
         assert read(FACTORY.get("/?count=&active=&pk=4")) == {"pk": 4}
 
     def test_a_blank_string_is_kept(self) -> None:
-        # Holds ``type != "string"`` in the blank guard: a string's blank is a
-        # value, the empty string, and dropping it would make it unsendable.
+        # A string's blank is a value, the empty string; dropping it would make it unsendable.
         assert read(FACTORY.get("/?title=")) == {"title": ""}
 
     def test_a_blank_untyped_read_is_kept(self) -> None:
-        # Holds ``"any"`` in the blank guard: an untyped read is handed what
-        # was sent, so ``?pk=`` reaches it as the empty string, as a string's
-        # does, rather than being dropped. Built in the body, so the module
-        # imports on a release whose Parameter has no such type.
+        # An untyped read is handed what was sent, so ?pk= reaches it as the empty string.
         untyped = Parameters.of(Parameter("pk", "any"))
         assert read(FACTORY.get("/?pk="), untyped) == {"pk": ""}
 
@@ -330,8 +294,7 @@ class TestBlanks:
         assert read(FACTORY.get("/?ids=1&ids=&ids=3")) == {"ids": [1, 3]}
 
     def test_an_array_whose_every_element_is_blank_is_absent(self) -> None:
-        # A multi-value input left blank: nothing was chosen, so nothing is
-        # sent, and a required array reads as missing rather than as ``[]``.
+        # A multi-value input left blank sends nothing, so a required array reads as missing.
         assert read(FACTORY.get("/?ids=&ids=")) == {}
 
     def test_blank_elements_of_a_string_array_are_kept(self) -> None:
@@ -339,22 +302,18 @@ class TestBlanks:
         assert read(FACTORY.get("/?words=a&words=")) == {"words": ["a", ""]}
 
     def test_a_blank_date_is_absent(self) -> None:
-        # A filter form's empty date input. Kept, it reached the shape check as
-        # a malformed date, refusing a form that was only left blank.
+        # A filter form's empty date input.
         assert read(FACTORY.get("/?since=&price="), BLANKS) == {}
 
     def test_a_blank_the_choices_leave_out_is_absent(self) -> None:
-        # An "any status" option whose value is blank: the shape check would
-        # refuse it as no valid choice, and an array's choices constrain each
-        # of its elements the same way.
+        # An option whose value is blank: the shape check would refuse it as no valid choice.
         assert read(FACTORY.get("/?status=&labels=&labels=a"), BLANKS) == {"labels": ["a"]}
 
     def test_a_blank_the_choices_name_is_kept(self) -> None:
         assert read(FACTORY.get("/?shelf="), BLANKS) == {"shelf": ""}
 
     def test_blank_elements_of_an_undeclared_element_type_are_kept(self) -> None:
-        # Holds the ``None`` half: coerce_flat reads an undeclared element as
-        # the string it arrived as, so its blank is a string's blank.
+        # An undeclared element is read as a string, so its blank is a string's blank.
         assert read(FACTORY.get("/?tags=&tags=x")) == {"tags": ["", "x"]}
 
 
@@ -375,9 +334,7 @@ class TestFormBody:
 
     @pytest.mark.parametrize("method", ["put", "patch", "delete"])
     def test_a_form_encoded_body_is_read_whatever_the_method(self, method: str) -> None:
-        # Django parses a form body into ``request.POST`` for POST alone, so a
-        # PUT or PATCH from a script (or an htmx ``hx-put``) would otherwise
-        # arrive with no arguments at all and fail as "required".
+        # Django parses request.POST for POST alone, so PUT and PATCH need reading here.
         request = getattr(FACTORY, method)("/", data="count=2&ids=1&ids=2", content_type=FORM)
         assert request.POST == {}
         assert read(request) == {"count": 2, "ids": [1, 2]}
@@ -389,16 +346,13 @@ class TestFormBody:
             "/", data=body, content_type=f"multipart/form-data; boundary={BOUNDARY}"
         )
         assert request.POST == {}
-        # Django fills ``request.FILES`` for POST alone, so the upload is read
-        # from the body here rather than dropped with the parser's other half.
+        # Django fills request.FILES for POST alone, so the upload is read from the body here.
         assert not request.FILES
         assert contents(read(request, files())) == {"count": 2, "ids": [1, 2], "notes": b"A file."}
 
     @pytest.mark.parametrize("method", ["post", "put"])
     def test_a_body_that_is_neither_form_nor_json_is_refused(self, method: str) -> None:
-        # Read as no arguments, an operation whose parameters are all optional
-        # ran with nothing and answered success; read as a form, ``count=2``
-        # became an argument its client never framed as one.
+        # Read as no arguments, an all-optional operation ran with nothing and answered success.
         request = getattr(FACTORY, method)(
             "/", data='{"count": 2}', content_type="application/merge-patch+json"
         )
@@ -409,17 +363,14 @@ class TestFormBody:
         )
 
     def test_the_refusal_survives_the_middleware_reading_post_first(self) -> None:
-        # CsrfViewMiddleware reads ``request.POST`` before any view runs, and a
-        # body it has consumed could no longer be seen to be there.
+        # CsrfViewMiddleware reads request.POST before any view runs, consuming the body.
         request = FACTORY.post("/", data="count=2", content_type="text/plain")
         assert request.POST == {}
         with pytest.raises(UnsupportedMediaType):
             read(request)
 
     def test_a_multipart_post_is_read_after_the_middleware_has_read_it(self) -> None:
-        # Django streams a multipart POST into ``request.POST`` without keeping
-        # the body, so once CsrfViewMiddleware has read it, ``request.POST`` is
-        # the only place its fields still are: parsing the body again raises.
+        # Once CSRF has read a multipart POST, request.POST is its only copy; parsing again raises.
         attached = SimpleUploadedFile("notes.txt", b"A file.")
         request = FACTORY.post("/", data={"count": "2", "notes": attached})
         assert request.POST["count"] == "2"
@@ -455,9 +406,7 @@ class TestUploads:
         assert contents(read(FACTORY.post("/", data={"notes": notes}), files())) == {"notes": b"B."}
 
     def test_an_upload_wins_over_a_field_of_the_same_name(self) -> None:
-        # A browser sends a file input's part as a file, never as a field, so a
-        # field under the same name is something else, and the upload is what
-        # the parameter declares.
+        # A browser sends a file input as a file part, never as a field.
         attached = SimpleUploadedFile("notes.txt", b"A file.")
         request = FACTORY.generic(
             "PUT",
@@ -474,8 +423,7 @@ class TestUploads:
         }
 
     def test_a_form_encoded_body_carries_no_file(self) -> None:
-        # Nothing to read: urlencoded has no upload part, and the declared
-        # file is simply absent rather than a crash on a parser that is not run.
+        # urlencoded has no upload part, so the declared file is simply absent, not a crash.
         request = FACTORY.put("/", data="count=2", content_type=FORM)
         assert read(request, files()) == {"count": 2}
 
@@ -483,11 +431,7 @@ class TestUploads:
     def test_an_upload_past_the_body_size_limit_is_read_whatever_the_method(
         self, method: str
     ) -> None:
-        # DATA_UPLOAD_MAX_MEMORY_SIZE (2.5 MB by default) bounds a body read
-        # whole into memory, and Django never applies it to a file part, which
-        # its parser streams to the upload handlers. Reading a PATCH's body
-        # whole to parse it refused the upload a POST took with
-        # RequestDataTooBig.
+        # DATA_UPLOAD_MAX_MEMORY_SIZE bounds a whole-body read, but never a file part.
         scan = b"x" * (3 * 1024 * 1024)
         request = FACTORY.generic(
             method,
@@ -499,8 +443,7 @@ class TestUploads:
 
     @pytest.mark.parametrize("method", ["POST", "PATCH"])
     def test_a_field_past_the_body_size_limit_is_still_refused(self, method: str) -> None:
-        # The limit bounds what is read into memory, and a form field is: only
-        # a file part streams past it.
+        # The limit bounds memory: a form field is held in it, only a file part streams past.
         request = FACTORY.generic(
             method,
             "/",
@@ -511,9 +454,7 @@ class TestUploads:
             read(request)
 
     def test_a_multipart_body_already_read_is_parsed_from_what_was_read(self) -> None:
-        # Something before the view read ``request.body``, so the stream is
-        # spent and the buffer is where the body still is, as Django's own
-        # parse of a POST takes it.
+        # Something read request.body first: the stream is spent, and the buffer is the body.
         attached = SimpleUploadedFile("notes.txt", b"A file.")
         request = FACTORY.patch(
             "/",
@@ -524,9 +465,7 @@ class TestUploads:
         assert contents(read(request, files())) == {"count": 2, "notes": b"A file."}
 
     def test_a_multipart_body_parsed_from_the_stream_cannot_be_read_again(self) -> None:
-        # Django's own POST parse leaves the body the same way: the stream
-        # went to the parser and nothing kept a copy. A reader after the view
-        # - middleware, an audit log, an error reporter - meets this.
+        # Django's own POST parse leaves the body the same way: the stream went to the parser.
         request = FACTORY.patch(
             "/",
             data=encode_multipart(BOUNDARY, {"count": "2"}),
@@ -539,8 +478,7 @@ class TestUploads:
             read(request)
 
     def test_a_multipart_body_read_first_stays_readable_and_parses_again(self) -> None:
-        # Reading ``request.body`` before the parse keeps the buffer, which the
-        # parse then reads from, so both the body and the arguments survive.
+        # Reading request.body first keeps the buffer, so the body and arguments both survive.
         body = encode_multipart(BOUNDARY, {"count": "2"})
         request = FACTORY.patch(
             "/", data=body, content_type=f"multipart/form-data; boundary={BOUNDARY}"
@@ -551,9 +489,7 @@ class TestUploads:
         assert request.body == body
 
     def test_reading_the_body_first_brings_the_size_limit_back_on_an_upload(self) -> None:
-        # The way round the spent stream is a whole-body read, which
-        # DATA_UPLOAD_MAX_MEMORY_SIZE bounds, file parts and all; the parse
-        # itself takes the same upload, as the test above it shows.
+        # Round a spent stream: a whole-body read, bounded by DATA_UPLOAD_MAX_MEMORY_SIZE.
         request = FACTORY.patch(
             "/",
             data=encode_multipart(BOUNDARY, {"notes": SimpleUploadedFile("a", b"x" * 3 * 1024**2)}),
@@ -563,8 +499,7 @@ class TestUploads:
             request.body  # noqa: B018
 
     def test_a_multipart_stream_read_without_a_buffer_is_refused(self) -> None:
-        # Something read the stream and kept nothing, so the body is gone:
-        # parsed anyway, it would be a call with no arguments.
+        # Something read the stream and kept nothing, so the body is gone.
         request = FACTORY.patch(
             "/",
             data=encode_multipart(BOUNDARY, {"count": "2"}),
@@ -575,8 +510,7 @@ class TestUploads:
             read(request)
 
     def test_a_file_input_left_empty_is_absent(self) -> None:
-        # A browser posts an empty file input as a part with no filename, and
-        # Django's parser skips it, so a required file reads as missing.
+        # A browser posts an empty file input as a part with no filename, which Django skips.
         body = (
             f"--{BOUNDARY}\r\n"
             'Content-Disposition: form-data; name="notes"; filename=""\r\n'
@@ -602,8 +536,7 @@ class TestAClearCheckbox:
         assert read(request, parameters) == {"cover-clear": True}
 
     def test_a_browser_s_default_on_is_refused(self) -> None:
-        # A checkbox with no value attribute posts "on", which a flat boolean
-        # does not spell: the page sets value="true".
+        # A checkbox with no value posts "on", which a flat boolean does not spell.
         parameters = FormValidator(_Cover).parameters()
         request = FACTORY.post("/", data={"cover-clear": "on"})
         assert refusal(request, parameters) == {"cover-clear": ["Enter true, false, 1 or 0."]}
@@ -617,8 +550,7 @@ def _merged_multipart(fields: dict[str, Any], uploads: dict[str, Any]) -> bytes:
 
 class TestJsonBody:
     def test_the_body_is_read_as_it_is(self) -> None:
-        # No coerce_flat: a JSON caller's ``"5"`` for an integer is its own
-        # mistake, for the shape check to name, not a flat string to parse.
+        # No coerce_flat: a JSON caller's "5" for an integer is its own mistake, not a flat string.
         payload = {"count": "5", "ids": [1, "2"], "title": "", "extra": None}
         assert read(post_json(payload)) == payload
 
@@ -633,17 +565,13 @@ class TestJsonBody:
         assert read(post_json({"count": 2}, method)) == {"count": 2}
 
     def test_an_empty_body_is_no_arguments(self) -> None:
-        # What DRF's parser answers for a request with no content, so a
-        # client of both reads one answer to a bodiless POST.
-        # Set by hand: RequestFactory drops the content type of an empty body,
-        # which would send this request down the form route instead.
+        # What DRF answers for a request with no content, so both entry points agree.
         request = FACTORY.generic("POST", "/", CONTENT_TYPE="application/json")
         assert request.content_type == "application/json"
         assert read(request) == {}
 
     def test_a_body_that_is_no_json_is_refused_as_drf_s_parser_refuses_it(self) -> None:
-        # DRF answers it with a ParseError, whose code is ``parse_error``; here it
-        # is one refusal of the arguments, carrying the same code.
+        # DRF answers a ParseError, code parse_error; here one refusal has the same code.
         request = FACTORY.post("/", data=b"{", content_type="application/json")
         assert coded(refusal(request)) == {NON_FIELD_ERRORS: [(NOT_JSON, "parse_error")]}
 
@@ -663,17 +591,12 @@ class TestJsonBody:
         ],
     )
     def test_a_malformed_body_is_refused_under_non_field_errors(self, body: bytes) -> None:
-        # NaN and the infinities are Python's extension, not JSON: no JSON
-        # encoder produces one, and a decoder that took one would hand a
-        # Validator a value coerce_flat refuses on the flat route. The
-        # integer is longer than the 4300 digits Python converts from a
-        # string, which the decoder raises as a bare ValueError.
+        # NaN and the infinities are Python's extension, not JSON, and coerce_flat refuses them.
         request = FACTORY.post("/", data=body, content_type="application/json")
         assert refusal(request) == {"non_field_errors": [NOT_JSON]}
 
     def test_a_body_nested_past_the_decoder_is_refused_under_non_field_errors(self) -> None:
-        # Sized so the decoder's own refusal is the one that answers: had it
-        # decoded, the list would be refused as "Expected an object." instead.
+        # Sized so the decoder's own refusal answers: decoded, it would say "Expected an object.".
         with pytest.raises(RecursionError):
             json.loads(DEEP_JSON)
         request = FACTORY.post("/", data=DEEP_JSON, content_type="application/json")
@@ -681,8 +604,7 @@ class TestJsonBody:
 
     @pytest.mark.parametrize("payload", [[1, 2], "count", 3, None])
     def test_a_body_that_is_not_an_object_is_refused(self, payload: Any) -> None:
-        # The shape check's own wording, so a caller reads one refusal for a
-        # value that is not an object wherever it appears.
+        # The shape check's own wording, so a non-object reads the same wherever it appears.
         assert refusal(post_json(payload)) == {"non_field_errors": ["Expected an object."]}
 
     def test_get_ignores_a_json_body(self) -> None:
@@ -710,13 +632,11 @@ class TestUrlKwargs:
         ids=["query", "form", "json"],
     )
     def test_the_route_wins_a_clash(self, request_: HttpRequest) -> None:
-        # A client value must not move the route's scope: ``/notes/4/`` with
-        # ``pk=9`` in the body acts on note 4 or on nothing.
+        # A client value must not move the route's scope: pk=9 acts on note 4, or on nothing.
         assert read(request_, url_kwargs={"pk": "4"}) == {"pk": 4, "count": 1}
 
     def test_a_clashing_client_value_that_does_not_parse_is_not_reported(self) -> None:
-        # It was never going to be used, so refusing it would refuse a request
-        # for a value the route overrides.
+        # It was never going to be used, so refusing it would refuse a value the route overrides.
         assert read(FACTORY.get("/?pk=nine"), url_kwargs={"pk": "4"}) == {"pk": 4}
 
     def test_a_route_value_that_does_not_parse_is_refused_with_the_rest(self) -> None:
@@ -743,9 +663,7 @@ class TestUrlKwargs:
     def test_an_undeclared_route_value_is_the_hosts_misconfiguration(
         self, request_: HttpRequest
     ) -> None:
-        # Read as a client's undeclared argument, it was a 400 blaming the
-        # client for the host's route; held on every path, since each merges
-        # the route by its own branch.
+        # Read as an undeclared client argument, it blamed the client for the host's route.
         with pytest.raises(ImproperlyConfigured, match="The route captures org, slug,"):
             read(request_, url_kwargs={"slug": "x", "org": "acme", "pk": "4"})
 
@@ -783,9 +701,7 @@ class TestServerArguments:
     def test_every_name_it_answers_for_is_dropped_before_coercion(
         self, request_: HttpRequest
     ) -> None:
-        # Coerced first, ``nine`` and ``x`` would be refused as the client's
-        # 400 for names the client was never offered. The values are not laid
-        # here: ``apply_server_arguments`` lays them, with the spec to check them.
+        # Coerced first, nine and x would be refused as the client's 400 for names never offered.
         assert read(request_, server_arguments=SERVED) == {"title": "t"}
 
     @pytest.mark.parametrize(
@@ -800,8 +716,7 @@ class TestServerArguments:
     def test_a_route_kwarg_filling_a_name_it_answers_for_is_refused(
         self, request_: HttpRequest
     ) -> None:
-        # The route is the host's, so contradicting the host's own binding is
-        # a misconfiguration rather than a value to drop.
+        # The route is the host's: contradicting its binding is a misconfiguration.
         with pytest.raises(ImproperlyConfigured) as refused:
             read(request_, url_kwargs={"pk": "4", "count": "1"}, server_arguments=SERVED)
         assert str(refused.value).startswith(
@@ -847,8 +762,7 @@ class TestArrayLength:
     TOO_MANY = "Ensure this field has no more than %s elements."
 
     def test_a_comma_list_past_the_default_maximum_is_refused_at_its_name(self) -> None:
-        # The spelling that reaches round Django's DATA_UPLOAD_MAX_NUMBER_FIELDS:
-        # one key, any number of values.
+        # One key, many values: the spelling that passes DATA_UPLOAD_MAX_NUMBER_FIELDS.
         query = ",".join(map(str, range(1001)))
         assert refusal(FACTORY.get(f"/?ids={query}"), CSV) == {"ids": [self.TOO_MANY % 1000]}
 
@@ -870,11 +784,7 @@ class TestArrayLength:
     def test_a_flat_array_is_split_no_further_than_one_past_its_maximum(
         self, monkeypatch: pytest.MonkeyPatch, query: str, handed_on: list[str]
     ) -> None:
-        # Invisible to every message, which is the length's either way: what is
-        # held is the list built on the way, one element past the bound and no
-        # more, so a value of a million commas is never split a million times.
-        # One past rather than at it, or a list over the bound would be cut to
-        # one that is accepted.
+        # Holds at most one element past the bound, so a million commas are not split in full.
         seen: list[Any] = []
         real = request_arguments_module.coerce_flat
 

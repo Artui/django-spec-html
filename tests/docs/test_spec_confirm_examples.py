@@ -1,14 +1,3 @@
-"""The confirmation example, posted to as a browser posts, and as htmx posts.
-
-``docs/confirm.md`` includes its spec and URLconf from
-``docs/examples/spec_confirm.py`` and its templates from the suite's own. Each
-test resolves a path against that URLconf, as Django's handler would, and
-posts what the rendered page sends - the CSRF token and the named submit
-button - so the page cannot describe a reading, a redirect or a refusal the
-view does not make. Where the page states an outcome, the assertion here is
-that statement.
-"""
-
 from __future__ import annotations
 
 from decimal import Decimal
@@ -132,8 +121,7 @@ class TestThePost:
         assert (book.status, other.status) == (Status.DRAFT, Status.PUBLISHED)
 
     def test_a_refusal_is_the_page_again_with_its_reason(self, ada: Any, book: Book) -> None:
-        # Withdrawn between the page and its post: dispatch asks the
-        # affordance again, and its 409 is the authority.
+        # Withdrawn after the page: dispatch asks again, and its 409 is the authority.
         Book.objects.filter(pk=book.pk).update(status=Status.DRAFT)
         response = serve(FACTORY.post(withdrawing(book), data=PRESSED), ada)
         assert response.status_code == 409
@@ -205,8 +193,7 @@ def test_a_route_parameter_route_kwargs_does_not_name_is_refused() -> None:
 
 
 def test_a_box_s_own_value_is_one_a_boolean_parameter_refuses() -> None:
-    # Why the page reads no answer off a post: a checkbox with no ``value``
-    # posts "on", and the kernel reads a boolean as true, false, 1 or 0.
+    # A checkbox with no value posts "on"; the page reads no answer off the post.
     confirmed = Parameters.of(Parameter("confirmed", "boolean"))
     with pytest.raises(InvalidArguments):
         coerce_flat(confirmed, {"confirmed": "on"})

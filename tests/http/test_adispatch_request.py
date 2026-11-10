@@ -1,13 +1,3 @@
-"""``adispatch_request``: ``dispatch_request`` from async code, with nothing queried on the loop.
-
-Each test runs with ``transaction=True``: the executor thread's connection
-cannot see rows written inside the ordinary test transaction. Any query that
-strays onto the event loop raises ``SynchronousOnlyOperation``, so a test
-passing is also evidence that nothing did - and the principal here is the lazy
-object AuthenticationMiddleware leaves on a request, whose first read *is* a
-query.
-"""
-
 from __future__ import annotations
 
 import json
@@ -83,9 +73,7 @@ def post(user: Any, payload: Any) -> Any:
 
 
 async def test_the_arguments_are_read_as_the_call_declares_them(ada: Any) -> None:
-    # Posted as a form, so the reader types the count by its declaration:
-    # read without the context, as an integer, which the call refused as no
-    # string. The read is its own hop, handed the call's dict.
+    # Without the context the count is read as an integer, which the call refuses as no string.
     validator = DeclaredByTheRequest()
     spec = ServiceSpec(service=Record(), permissions=OPEN, validator=validator)
     request = ASYNC_FACTORY.post("/", data={"title": "Hi", "count": "3"})
@@ -97,9 +85,7 @@ async def test_the_arguments_are_read_as_the_call_declares_them(ada: Any) -> Non
 
 
 async def test_a_bound_value_is_checked_against_the_call_s_declaration(ada: Any) -> None:
-    # The call declares the count a string, so the server's 3 is the host's
-    # mistake. Checked against the declaration made to no call, an integer,
-    # it was laid on, and dispatch refused it as the client's 400.
+    # The call declares the count a string, so the server's 3 is the host's mistake.
     validator = DeclaredByTheRequest()
     spec = ServiceSpec(service=Record(), permissions=OPEN, validator=validator)
     request = ASYNC_FACTORY.post("/", data={"title": "Hi"})
@@ -112,8 +98,7 @@ async def test_a_bound_value_is_checked_against_the_call_s_declaration(ada: Any)
 
 
 async def test_a_key_declared_to_the_call_alone_can_be_asked_for(ada: Any) -> None:
-    # Checked against the declaration made to no call, which has no ``note``,
-    # the question was the service's error rather than a 422.
+    # Checked against a declaration made to no call, the question was the service's error.
     schema = {"note": {"type": "string"}}
     validator = DeclaredByTheRequest(routed="note")
     request = ASYNC_FACTORY.post("/", data={"title": "Hi"})
@@ -135,8 +120,7 @@ class Querying(Titled):
 
 
 async def test_the_principal_is_read_off_the_event_loop(ada: Any) -> None:
-    # On the loop, touching the lazy user runs its query and Django refuses
-    # it; Django 4.2, the floor, has no ``request.auser()`` to await instead.
+    # On the loop, touching the lazy user runs a query, which Django refuses.
     response = await adispatch_request(notes_spec(), get(ada))
     assert (response.status_code, body(response)) == (200, [{"title": "One"}])
 
@@ -149,8 +133,6 @@ async def test_the_parameters_are_read_off_the_event_loop(ada: Any) -> None:
 
 async def test_the_asked_input_check_reads_the_parameters_off_the_event_loop(ada: Any) -> None:
     # The check reads the spec's parameters to hold the schema against them.
-    # On the loop, a Validator's query there raised ``SynchronousOnlyOperation``
-    # and turned the 422 into a 500.
     schema = {"title": {"type": "string"}}
     spec = asking_spec(schema, validator=Querying())
     response = await adispatch_request(spec, post(ada, {"title": "x"}))
@@ -220,8 +202,7 @@ async def test_a_configuration_error_is_not_answered(ada: Any) -> None:
 
 
 async def test_the_grant_seeds_and_policy_reach_adispatch() -> None:
-    # A grant is bound to the principal object by identity, so this one is
-    # minted for the very object the request carries.
+    # A grant binds the principal by identity, so it is minted for the request's object.
     user = await get_user_model().objects.acreate(username="grace")
     request = ASYNC_FACTORY.post(
         "/", data=json.dumps({"title": "x", "colour": "red"}), content_type="application/json"
@@ -275,8 +256,7 @@ async def test_a_schema_naming_an_undeclared_key_is_the_services_error_not_a_422
 async def test_a_schema_naming_a_key_the_requests_seeds_fill_is_the_services_error(
     ada: Any, served: Any
 ) -> None:
-    # ``tenant`` is declared and well formed, so the seed rule is the one that
-    # answers, not the "no parameter declares it" rule.
+    # tenant is declared and well formed, so the seed rule answers, not the no-parameter rule.
     asking = served(asking_for_tenant_spec({"tenant": {"type": "string"}}))
     with pytest.raises(ImproperlyConfigured, match="a provider or a pool seed fills it") as refused:
         await adispatch_request(asking, post(ada, {"title": "x"}), pool_seeds=TENANT_SEEDS)
@@ -315,8 +295,7 @@ async def test_route_kwargs_and_a_binding_reach_the_call(ada: Any) -> None:
 
 
 async def test_the_binding_is_applied_off_the_event_loop(ada: Any) -> None:
-    # Applying a bound value reads the spec's parameters, which this
-    # Validator declares from a query: on the loop that would be refused.
+    # Applying a bound value reads query parameters, which the loop refuses.
     spec = ServiceSpec(service=Record({"id": 1}), permissions=OPEN, validator=Querying())
     response = await adispatch_request(
         spec,

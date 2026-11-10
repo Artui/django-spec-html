@@ -1,12 +1,3 @@
-"""The admin example, followed from the admin's own pages as a signed-in staff member.
-
-``docs/admin.md`` includes its specs and its ``ModelAdmin`` from
-``docs/examples/admin.py``, whose URLconf every test is served through:
-Django's handler, the admin's ``admin_view``, its change form and its
-changelist's action form. Where the page states an outcome, the assertion here
-is that statement.
-"""
-
 from __future__ import annotations
 
 from decimal import Decimal

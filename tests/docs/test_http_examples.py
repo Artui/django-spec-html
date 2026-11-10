@@ -1,13 +1,3 @@
-"""The HTTP page's examples, run through Django's own URL resolver.
-
-``docs/http.md`` includes its views and URLconf from ``docs/examples/http.py``.
-Each test here resolves a path against that URLconf, as Django's handler
-would, and sends the view a request from ``RequestFactory``, so the page
-cannot describe a route, a method or an answer the package does not have.
-Where the page states an outcome - a status, a body, which note a clashing pk
-renamed - the assertion here is that statement.
-"""
-
 from __future__ import annotations
 
 import inspect
@@ -235,14 +225,10 @@ class TestWhatTheRequestCarries:
     def test_a_callable_naming_request_is_handed_this_one_with_no_seed_registered(
         self, member: Any
     ) -> None:
-        # The request reaches it through the call's context, not as a seed: a
-        # reader with no request hands it ``None`` rather than refusing.
+        # The context carries the request; a reader with no request hands in None, not a refusal.
         assert "request" not in SpecView.pool_seeds.reserved
         assert self.titles("/my-notes/", member) == ["A", "B", "C"]
-        # Another user's notes stay theirs: the request read is this one.
         assert self.titles("/my-notes/", make_user("bo")) == []
-        # A reader with no request, here the kernel's own ``dispatch`` as the
-        # other transports call it, hands the same callable ``None``.
         result = dispatch(http.my_notes_spec, principal=member, arguments={})
         assert list(result.value) == []
 
@@ -252,8 +238,7 @@ class TestWhatTheRequestCarries:
         request.user = member
         response = dispatch_request(http.transport_notes_spec, request)
         assert [row["title"] for row in body(response)] == ["A", "B", "C"]
-        # The kernel's own ``dispatch``, as another transport calls it with a
-        # context of its own: the same callable reads that transport's name.
+        # The kernel's own dispatch, as another transport calls it with a context of its own.
         for call_context in (None, {"transport": "rest"}):
             result = dispatch(
                 http.transport_notes_spec,

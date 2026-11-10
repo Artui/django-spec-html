@@ -1,10 +1,3 @@
-"""The page base: what a page class owes it before ``as_view()`` builds a view.
-
-The rest of ``views/utils.py`` is served through ``SpecFormView``, whose tests
-hold it, every one of them building a page that supplies every hook. What is
-held here is what no concrete page can show: a page class that left one out.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping

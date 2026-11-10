@@ -1,14 +1,3 @@
-"""The formset example, posted to as a browser posts, and as htmx posts.
-
-``docs/formsets.md`` includes its spec and URLconf from
-``docs/examples/spec_form_set.py`` and its templates from the suite's own.
-Each test resolves a path against that URLconf, as Django's handler would, and
-posts what the rendered page sends - the CSRF token, the management form and
-the pressed button - so the page cannot describe a reading, a refusal or a
-success the view does not make. Where the page states an outcome, the
-assertion here is that statement.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -109,8 +98,7 @@ class TestThePost:
         assert [each.message for each in request._messages] == ["2 books were added."]
 
     def test_a_refusal_lands_on_the_form_that_sent_the_row(self, ada: Any, author: Author) -> None:
-        # The blank second form is no row, so the third form's price is the
-        # list's row 1, and is placed back on the third form.
+        # The blank second form is no row, so the third form's price is list row 1.
         data = posted(book(author, "The Dispossessed"), {}, book(author, "Lavinia", "a lot"))
         response = serve(FACTORY.post("/books/batch/", data=data), ada)
         assert response.status_code == 400

@@ -24,8 +24,7 @@ def _subpackages() -> list[ModuleType]:
 
 
 def test_the_package_has_the_subpackages_it_re_exports() -> None:
-    # The tests below walk the subpackages, so an empty walk would pass them
-    # with nothing checked.
+    # The tests below walk the subpackages, so an empty walk would pass them with nothing checked.
     assert sorted(package.__name__ for package in _subpackages()) == [
         "django_spec_html.http",
         "django_spec_html.model_admin",
@@ -36,10 +35,7 @@ def test_the_package_has_the_subpackages_it_re_exports() -> None:
 
 
 def test_every_subpackage_name_is_re_exported_at_the_root() -> None:
-    # A subpackage's ``__all__`` is its public surface, and the root is where a
-    # consumer reads the whole of it. A name added to a subpackage and not to
-    # the root is public in one place and missing from the other, and nothing
-    # else in the suite notices, because every test imports from leaf paths.
+    # A subpackage's __all__ is its public surface; the root is where a consumer reads all of it.
     missing = {
         f"{package.__name__}.{name}"
         for package in _subpackages()
@@ -50,9 +46,7 @@ def test_every_subpackage_name_is_re_exported_at_the_root() -> None:
 
 
 def test_each_root_name_is_the_subpackage_s_own_object() -> None:
-    # Identity rather than equality: a second definition of one name would
-    # pass ``==`` for a class compared with itself nowhere, and an
-    # ``isinstance`` against the other copy would fail in a consumer.
+    # Identity, not equality, so a second copy of one name is caught.
     for package in _subpackages():
         for name in package.__all__:
             assert getattr(django_spec_html, name) is getattr(package, name), name
@@ -109,12 +103,7 @@ print(django_spec_html.SpecActionsMixin.__name__)
 
 
 def test_the_package_imports_in_a_project_without_the_admin() -> None:
-    # The root re-exports the admin face, so importing the package imports
-    # ``django.contrib.admin``, and does so while the app registry is being
-    # populated, since the package is an installed app. A project that does
-    # not install the admin must still be able to install this package, so
-    # the import may touch none of the admin's models. A process of its own,
-    # as this suite's settings install the admin.
+    # The root re-exports the admin face, so importing the package imports django.contrib.admin.
     ran = subprocess.run(
         [sys.executable, "-c", _WITHOUT_THE_ADMIN],
         capture_output=True,
@@ -139,11 +128,7 @@ _MOVED_NAMES = [
 
 
 def test_the_kernel_ships_no_http_package() -> None:
-    # The JSON views live here alone. A kernel floor lowered past the release
-    # that removed them would put a second SpecView beside this package's, one
-    # that an isinstance check or a mock patch against either would miss. A
-    # kernel source checkout can also leave an http/ directory holding only
-    # __pycache__, which find_spec reports as a namespace package and fails here.
+    # The JSON views live here alone.
     assert importlib.util.find_spec("django_service_specs.http") is None
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("django_service_specs.http")
@@ -157,6 +142,5 @@ def test_the_kernel_root_exports_none_of_the_moved_names(name: str) -> None:
 
 
 def test_every_moved_name_is_served_here() -> None:
-    # The absence check above passes for any name the kernel never had, so a
-    # misspelt entry would hold nothing. Each must be a name this package serves.
+    # The absence check passes for any name the kernel never had.
     assert set(_MOVED_NAMES) <= set(django_spec_html.__all__)
