@@ -1,12 +1,3 @@
-"""The templates this package ships, rendered by a page built with no ``template_name``.
-
-Each test reads the rendered body - what a person is sent - and asserts what
-is in it and what is not. The suite's settings list ``django_spec_html`` with
-``APP_DIRS`` on, as a project rendering the shipped templates does; the
-tests of the refusal at ``as_view()`` take it out again. The module is its
-own URLconf, since ``resolve_url`` reads the project's.
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -198,8 +189,7 @@ class TestTheShippedNames:
         assert view.get_fragment_template_names() == ["books/form.html#spec-form"]
 
     def test_a_project_s_file_of_the_same_name_overrides_it(self, ada: Any, tmp_path: Path) -> None:
-        # The document every shipped page extends, and the form page's
-        # fragment, each replaced by a directory searched before the app's.
+        # The shipped base and fragment are each replaced by a directory searched first.
         (tmp_path / "django_spec_html").mkdir()
         (tmp_path / "django_spec_html" / "base.html").write_text(
             "<body class=ours>{% block content %}{% endblock %}</body>"
@@ -325,8 +315,7 @@ class TestTheFormPage:
         assert "Ensure this value has at most 20 characters" in rendered
 
     def test_a_success_under_htmx_is_a_client_redirect(self, ada: Any) -> None:
-        # The shipped fragment defines no ``spec-result``, so no success is
-        # rendered in place: it is the redirect the page would make.
+        # The shipped fragment defines no spec-result, so a success redirects rather than renders.
         response = post(built(SpecFormView, form_spec()), ada, {"title": "a"}, HTMX)
         assert (response.status_code, response["HX-Redirect"]) == (200, "/done/")
         assert "HX-Trigger" not in response
@@ -408,8 +397,7 @@ class TestTheTargetPane:
     def test_a_field_named_items_is_shown_as_a_field(
         self, ada: Any, note: Note, presenter: type, shown: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # ``fields.items`` in a template would read the key ``items`` first,
-        # and fail to unpack its value; the pane loops over ``pairs``.
+        # fields.items would read the key items first; the pane loops over pairs instead.
         monkeypatch.setattr(Note, "items", "three", raising=False)
         if presenter is BasketOut:
             spec = confirm_spec(presenter=DataclassPresenter(presenter))
@@ -789,8 +777,7 @@ class TestAPageNoEngineCanRender:
         )
 
     def test_the_fragment_is_looked_for_beside_the_page(self, tmp_path: Path) -> None:
-        # A project overriding the page in a directory of its own, without
-        # the app: the page is found, and the fragment the page includes not.
+        # A project overriding the page without the app: the page is found, its fragment not.
         (tmp_path / "django_spec_html").mkdir()
         (tmp_path / "django_spec_html" / "spec_form.html").write_text("<p>Ours</p>")
         templates = [
@@ -806,8 +793,7 @@ class TestAPageNoEngineCanRender:
             built(SpecFormView, form_spec())
 
     def test_the_view_s_own_engine_is_the_one_asked(self) -> None:
-        # The default engine finds what the app ships; the one the view names
-        # does not, and that is the engine every request renders with.
+        # The default engine finds what the app ships; the view's engine is the one rendering.
         templates = [
             {
                 "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -827,8 +813,7 @@ class TestAPageNoEngineCanRender:
             built(SpecFormView, form_spec(), template_engine="bare")
 
     def test_a_fragment_of_the_project_s_own_is_not_the_shipped_one(self, tmp_path: Path) -> None:
-        # The page overridden in a directory of its own, without the app, and
-        # its fragment named: the shipped fragment would never render.
+        # Overridden without the app, with its fragment named: the shipped fragment never renders.
         (tmp_path / "django_spec_html").mkdir()
         (tmp_path / "django_spec_html" / "spec_form.html").write_text("<p>Ours</p>")
         templates = [
@@ -862,8 +847,7 @@ class TestAPageNoEngineCanRender:
             built(Chosen, form_spec())
 
     def test_what_a_page_extends_is_not_followed(self, tmp_path: Path) -> None:
-        # Left to the first request, as the docs say: a copied page extending
-        # a base.html no engine finds passes here.
+        # Left to the first request, as the docs say: a page extending a missing base passes here.
         (tmp_path / "django_spec_html").mkdir()
         for name in ("spec_form.html", "spec_form_fragment.html"):
             (tmp_path / "django_spec_html" / name).write_text(

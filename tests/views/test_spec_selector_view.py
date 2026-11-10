@@ -1,12 +1,3 @@
-"""``SpecSelectorView``: a selector spec served as a page, a list's rows or one row.
-
-Assertions read ``response.context_data`` - what a template is handed - and,
-for what the template draws, the rendered body. Most pages render the shipped
-template, so a spec here declares an Output marking the row's label; a test
-about the rows a template is handed sets ``display_rows=False`` and renders
-``spec_selector_rows.html``, which asks each row ``available``.
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -386,8 +377,7 @@ class TestTheListPage:
 
         assert response.context_data["page"].items is response.context_data["rows"]
 
-    # Under REJECT a page key that reached the spec would be refused; under
-    # IGNORE it would be dropped and the page would be page 1.
+    # Under REJECT a page key reaching the spec is refused; under IGNORE it is dropped.
     @pytest.mark.parametrize("policy", [UnknownArguments.IGNORE, UnknownArguments.REJECT])
     def test_the_page_key_never_reaches_the_spec(
         self, ada: Any, notes: list[Note], policy: UnknownArguments
@@ -625,8 +615,7 @@ class TestTheRequest:
         assert len({id(context) for _, context in asked}) == 1
         context = asked[0][1]
         assert context["transport"] == "html"
-        # The standard entries the builder fills are there, and none: a
-        # callable naming neither is handed what it was before.
+        # The standard entries are there, and none: a callable naming neither gets what it did.
         assert (context["format"], context["action"]) == (None, None)
 
     def test_a_seed_the_request_adds_reaches_the_selector(
@@ -658,9 +647,7 @@ class TestTheRequest:
         url_kwargs: dict[str, Any],
         questions: list[str],
     ) -> None:
-        # The admission resolves the seeds the checks name once, and dispatch
-        # runs on them: the class-level check, the check dispatch asks and the
-        # selector each see the resolver's one object.
+        # The admission resolves the seeds once; each check and the selector see the same object.
         fresh = Fresh()
         check = SeesTenantAtEachQuestion()
         selected: list[Any] = []
@@ -728,8 +715,7 @@ class TestTheRequest:
     def test_a_route_capture_the_spec_does_not_declare_is_refused(
         self, ada: Any, policy: UnknownArguments
     ) -> None:
-        # The route is the host's, so the policy, which governs what a
-        # client sends, does not reach it.
+        # The route is the host's, so the policy, which governs client input, does not reach it.
         view = SpecSelectorView.as_view(spec=listing(), unknown_arguments=policy)
 
         with pytest.raises(ImproperlyConfigured, match=r"pk"):
@@ -827,8 +813,7 @@ class TestFilters:
 
         response = shown(listing(filter_set=Counted), "title=note", user=ada)
 
-        # Once, by dispatch reading the filter set; the form the page shows
-        # is rendered with no error state, so drawing a field asks nothing.
+        # Once, by dispatch reading the filter set; the page's form is drawn with no error state.
         assert cleaned == ["clean"]
         assert response.context_data["filter"].form.errors == {}
 
@@ -1150,9 +1135,7 @@ class TestATable:
     def test_a_table_s_own_order_by_never_reorders_a_sorted_page(
         self, ada: Any, notes: list[Note]
     ) -> None:
-        # NoteTable's Meta orders by -title. With headers that sort, tables2
-        # would apply that order to the page the spec sorted by ?o=title,
-        # unless the page builds the table with no ordering of its own.
+        # NoteTable's Meta orders by -title.
         view = SpecSelectorView.as_view(
             spec=listing(filter_set=Ordered, affordances=OFFERED),
             table_class=NoteTable,
@@ -1397,8 +1380,7 @@ class TestTheQueryHook:
     def test_a_table_s_header_links_keep_the_remembered_query(
         self, ada: Any, notes: list[Note]
     ) -> None:
-        # django-tables2 builds a header's link from the template's
-        # ``request.GET``, so the template must see the query the page read.
+        # django-tables2 builds a header's link from request.GET, so the template sees the query.
         response, _ = remembered(
             listing(filter_set=Ordered, affordances=OFFERED),
             "",

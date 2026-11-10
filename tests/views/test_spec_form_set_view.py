@@ -1,13 +1,3 @@
-"""``SpecFormSetView``: a ``many`` spec validated by a form, served as a formset of that form.
-
-Assertions read ``response.context_data["formset"]`` - the bound formset the
-page re-renders - and what the service received, rather than parsing HTML.
-The Validator records the rows the kernel hands it, so ``rows(spec)`` is the
-list the page sent under ``many_argument``, once the shape check had read it,
-and the service is a ``Record``, so a call that ran is seen to have run.
-The module is its own URLconf, since ``resolve_url`` reads the project's.
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -345,8 +335,7 @@ class TestGet:
             get(formset_view(many_spec(permissions=[Refuse()])), ada)
 
     def test_a_principal_the_scope_check_refuses_is_never_offered_the_page(self, ada: Any) -> None:
-        # Asked of nothing, as dispatch asks it of a many call, and as the
-        # single page asks it of a create: the post would be refused too.
+        # Asked of nothing, as dispatch asks a many call, and as the single page asks a create.
         check = Scoped(admits=False)
         view = formset_view(many_spec(permissions=[check]))
         with pytest.raises(PermissionDenied, match="No batch may be added here"):
@@ -363,8 +352,7 @@ class TestGet:
         assert check.scopes == [None]
 
     def test_a_service_s_refusal_asks_the_scope_check_once(self, ada: Any) -> None:
-        # Dispatch asked it before the service ran, and only an
-        # ``InvalidArguments`` may have been raised before it was asked.
+        # Dispatch asked it before the service ran; only InvalidArguments may precede that.
         def conflicts(**kwargs: Any) -> None:
             raise ServiceConflict("Already shelved.")
 
@@ -386,9 +374,7 @@ class TestGet:
     def test_a_post_the_page_s_reading_refuses_asks_the_scope_check_first(
         self, ada: Any, form_class: type[forms.BaseForm], data: dict[str, str]
     ) -> None:
-        # Refused before dispatch, which would have asked it: a principal the
-        # scope check refuses is denied, never shown the formset, as the
-        # single page denies one before reading its form.
+        # Refused before dispatch asks it: a refused principal never sees the formset.
         check = Scoped(admits=False)
         view = formset_view(many_spec(form_class, permissions=[check]))
         with pytest.raises(PermissionDenied, match="No batch may be added here"):
@@ -418,9 +404,7 @@ class TestGet:
     def test_a_post_the_shape_check_refuses_is_denied_to_a_principal_the_scope_check_refuses(
         self, ada: Any, kwargs: dict[str, Any], rows: int
     ) -> None:
-        # Refused by dispatch's shape check, before the scope check it would
-        # have asked: a crafted management form must not show a principal
-        # the GET denies the formset, every author the choice field lists.
+        # A crafted management form must not show a principal the GET denies the formset.
         secret = Author.objects.create(name="Secret")
         check = Scoped(admits=False)
         view = formset_view(many_spec(AuthoredRow, permissions=[check], **kwargs))
@@ -429,8 +413,7 @@ class TestGet:
         assert check.scopes == [None]
 
     def test_a_row_the_validator_refuses_asks_the_scope_check_again(self, ada: Any) -> None:
-        # Dispatch asked it before the Validator refused the row, and no grant
-        # vouches for a scope check, so the page asks it a second time.
+        # Dispatch asked before the Validator refused the row, and no grant vouches; ask again.
         check = Scoped()
         response = post(
             formset_view(many_spec(BookRow, permissions=[check])), ada, posted({"title": "shut"})
@@ -441,9 +424,7 @@ class TestGet:
     def test_a_post_refused_at_its_top_level_is_answered_before_the_scope_check(
         self, ada: Any
     ) -> None:
-        # As on the single page, whose route value its reads refuse is
-        # answered at 400 with the scope check unasked: there are no
-        # arguments to ask it with.
+        # As on the single page: a refused route value is a 400, with the scope check unasked.
         check = Scoped(admits=False)
         spec = many_spec(
             permissions=[check],
@@ -488,8 +469,7 @@ class TestFoldingThePost:
         assert [row["title"] for row in rows(spec)] == ["One", "Three"]
 
     def test_a_required_form_left_blank_is_sent_and_refused(self, ada: Any) -> None:
-        # The first form is the list's minimum, so it is sent left blank,
-        # and the kernel refuses its row.
+        # The first form is the list's minimum, sent blank, so the kernel refuses its row.
         spec = many_spec(many_min_length=1)
         response = post(formset_view(spec), ada, posted({}, {"title": "Two"}))
         assert response.status_code == 400
@@ -497,8 +477,7 @@ class TestFoldingThePost:
         assert spec.service.calls == []
 
     def test_no_management_form_key_becomes_an_argument(self, ada: Any) -> None:
-        # The closed argument set refuses a key no parameter declares, so a
-        # management key sent as an argument would be a 400, not a redirect.
+        # The closed argument set refuses an undeclared key, so a management key would be a 400.
         spec = many_spec(reads=Parameters.of(Parameter("shelf", "integer")))
         data = posted({"title": "One"}, csrfmiddlewaretoken="token", save="Save")
         response = post(formset_view(spec), ada, data)
@@ -516,8 +495,7 @@ class TestFoldingThePost:
         assert all("shelf" not in row for row in rows(spec))
 
     def test_route_kwargs_name_the_call_s_parameters_never_a_row_s(self, ada: Any) -> None:
-        # Read against the top level, so a name only the call declares is
-        # allowed, and no row is checked against it.
+        # Read against the top level, so a name only the call declares is allowed.
         spec = many_spec(reads=Parameters.of(Parameter("shelf", "integer", required=True)))
         view = formset_view(spec, route_kwargs=("shelf",))
         response = post(view, ada, posted({"title": "One"}), url_kwargs={"shelf": "4"})
@@ -552,8 +530,7 @@ class TestFoldingThePost:
         assert str(rows(spec)[0]["due"]) == "2006-10-25"
 
     def test_a_choice_s_key_is_coerced_in_its_row(self, ada: Any) -> None:
-        # A choice posts its key as a string, which the kernel's shape check
-        # refuses for an integer key unless the row is coerced first.
+        # A choice posts its key as a string, which the shape check refuses unless coerced first.
         author = Author.objects.create(name="Ursula")
         spec = many_spec(AuthoredRow)
         response = post(formset_view(spec), ada, posted({"author": str(author.pk)}))
@@ -561,8 +538,7 @@ class TestFoldingThePost:
         assert spec.service.calls[0]["data"] == [{"author": author}]
 
     def test_a_row_its_coercion_refuses_is_refused_at_its_form(self, ada: Any) -> None:
-        # Coerced per row, every row's refusal collected under its index
-        # before any is raised, as the kernel collects its own.
+        # Coerced per row; every refusal is collected under its index before any is raised.
         spec = many_spec(AuthoredRow)
         author = Author.objects.create(name="Ursula")
         data = posted({"author": "x"}, {"author": str(author.pk)}, {"author": "y"})
@@ -570,7 +546,6 @@ class TestFoldingThePost:
         assert response.status_code == 400
         errors = row_errors(response)
         assert [list(each) for each in errors] == [["author"], [], ["author"]]
-        # Every row's refusal at its form, none of them read as the call's.
         assert non_form(response) == []
         assert spec.service.calls == []
 
@@ -591,9 +566,7 @@ class TestSplittingTheRefusal:
     def test_a_refusal_of_a_row_the_post_did_not_send_lands_on_the_non_form_errors(
         self, ada: Any, index: int
     ) -> None:
-        # A service's tree reaches the page as it raised it, so it can name a
-        # row no form sent: never an IndexError, and never the refusal of
-        # another form counted from the end of the list.
+        # A service's tree can name a row no form sent, so the page must not index the list.
         def refuses_a_row(**arguments: Any) -> None:
             raise InvalidArguments({"items": {index: {"title": ["No such row."]}}})
 
@@ -635,8 +608,7 @@ class TestSplittingTheRefusal:
     def test_a_service_s_tree_under_another_key_is_a_prefixed_non_form_error(
         self, ada: Any
     ) -> None:
-        # A mapping under a key that is not the list's is about the call,
-        # read with its path rather than as rows.
+        # A mapping under a key that is not the list's is about the call, not rows.
         def refuses(**pool: Any) -> None:
             raise ServiceValidationError({"shelf": {"code": ["Unknown shelf."]}})
 
@@ -661,26 +633,21 @@ class TestSplittingTheRefusal:
         assert non_form(response) == []
 
     def test_a_row_s_own_check_answers_beside_another_row_s_shape_refusal(self, ada: Any) -> None:
-        # The shape check refuses the blank title, so the Validator never
-        # runs on the row; the page's form says the rest in the same post.
+        # The shape check refuses the blank title, so the Validator never runs on the row.
         spec = many_spec()
         response = post(formset_view(spec), ada, posted({"count": "13"}, {"title": "Two"}))
         assert response.status_code == 400
         assert row_errors(response) == [{"title": [REQUIRED], "__all__": [UNLUCKY]}, {}]
 
     def test_a_partial_spec_s_rows_carry_the_refusal_alone(self, ada: Any) -> None:
-        # Its Validator leaves the blank title out, and the page's form
-        # validated whole would call it required.
+        # The Validator leaves the blank title out, so the form calls it required.
         spec = many_spec(partial=True)
         response = post(formset_view(spec), ada, posted({"count": "13"}))
         assert response.status_code == 400
         assert row_errors(response) == [{"__all__": [UNLUCKY]}]
 
     def test_a_route_value_and_a_row_s_coercion_are_refused_in_one_post(self, ada: Any) -> None:
-        # On a partial spec, whose forms carry the refusal alone, so the
-        # row's refusal is seen only if the one raised still carries it: the
-        # scope check asked beside a refused reading reads the route again
-        # and must not raise its own refusal in its place.
+        # On a partial spec the refusal survives only if the one raised still carries it.
         spec = many_spec(
             AuthoredRow,
             partial=True,
@@ -769,8 +736,7 @@ class TestAPostThatDoesNotCommit:
         assert len(response.context_data["formset"].forms) == 0
 
     def test_a_refresh_validates_nothing(self, ada: Any) -> None:
-        # Neither a row past its length nor a broken management form is
-        # called out on a post that did not ask for a verdict.
+        # Neither an over-long list nor a broken management form is called out without a verdict.
         response = post(adding(many_spec()), ada, posted({"title": "toolong"}))
         assert response.status_code == 200
         assert row_errors(response) == [{}]
@@ -853,10 +819,7 @@ class TestASuccess:
 
 class TestOneResolutionPerRequest:
     def test_one_resolution_from_the_class_level_check_to_the_run(self, ada: Any) -> None:
-        # A many call finds no target, so dispatch asks its scope check: on
-        # the seeds the admission resolved for the class-level check, as the
-        # run is, so the resolver is called once and every step sees its one
-        # object.
+        # No target, so dispatch's scope check runs on the admission's seeds, resolved once.
         fresh = Fresh()
         check = SeesTenantAtEachQuestion()
         spec = many_spec(permissions=[check])
@@ -869,8 +832,7 @@ class TestOneResolutionPerRequest:
         assert spec.service.calls[0]["tenant"] is seen
 
     def test_a_refused_post_asks_the_scope_check_again_on_the_same_seeds(self, ada: Any) -> None:
-        # A post the page's reading refuses leaves dispatch's scope check
-        # unasked, so the page asks it, with the admission's seeds too.
+        # A post the page's reading refuses leaves the scope check unasked; the page asks it.
         fresh = Fresh()
         check = SeesTenantAtEachQuestion()
         view = formset_view(
@@ -957,9 +919,7 @@ class TestTheFragment:
 
 
 def test_every_stage_is_handed_the_request_and_the_page(ada: Any) -> None:
-    # A batch has no target, so no selector and no object-level question:
-    # the class-level check, the affordance, the form's keywords and the
-    # service are what name the two here.
+    # A batch has no target: the checks, affordance, form keywords and service name both.
     handed = Handed()
     view = formset_view(handed_spec(handed, many=True, instance_selector_spec=None))
     request = signed_in(FACTORY.get("/"), ada)
@@ -983,8 +943,7 @@ class TestTheCallsDeclaration:
     """The page reads a spec's parameters with the request's call context, as dispatch does."""
 
     def test_each_row_is_read_as_the_call_declares_it(self, ada: Any) -> None:
-        # The call declares each row's count a string: read without the
-        # context, the page coerced "3" to 3, which dispatch refused.
+        # The call declares the count a string; read without the context, "3" is coerced to 3.
         validator = DeclaredByTheRequest()
         spec = ServiceSpec(service=Record(), many=True, permissions=OPEN, validator=validator)
         data = posted({"title": "Hi", "count": "3"})

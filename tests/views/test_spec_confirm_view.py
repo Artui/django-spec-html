@@ -1,12 +1,3 @@
-"""``SpecConfirmView``: a spec with no Validator, served as the page that confirms it.
-
-Assertions read ``response.context_data`` - what a template is handed - and,
-for what the template draws, the rendered body. A spec callable that records
-its pool is the service throughout, so a test reads back exactly what
-dispatch handed it. The module is its own URLconf, since ``resolve_url`` reads
-the project's.
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -172,8 +163,7 @@ class TestTheSpecsItServes:
             confirm_view(archive_spec(validator=Titled()))
 
     def test_the_form_view_refuses_a_spec_with_no_validator(self) -> None:
-        # The review's row 7: the form view refuses the spec this view serves,
-        # at URLconf import, naming what it found.
+        # The review's row 7: the form view refuses this view's spec at URLconf import, naming it.
         with pytest.raises(ImproperlyConfigured, match="must be a FormValidator; got NoneType"):
             SpecFormView.as_view(spec=archive_spec(), template_name=PAGE, success_url="/done/")
 
@@ -220,8 +210,7 @@ class TestARequiredParameterIsSupplied:
         "route_kwargs", [None, {"pk": None}, {"org": None}], ids=["strict", "dropped", "unnamed"]
     )
     def test_a_route_naming_no_kwarg_into_it_supplies_nothing(self, route_kwargs: Any) -> None:
-        # Under the strict rule the route is not known when the URLconf is
-        # imported, so it supplies nothing until route_kwargs names it.
+        # Under the strict rule the route is unknown at URLconf import, so it supplies nothing.
         with pytest.raises(
             ImproperlyConfigured, match=r"requires pk, which no post .* route_kwargs"
         ):
@@ -262,8 +251,7 @@ class TestARequiredParameterIsSupplied:
         confirm_view(self.spec(Parameter("owner_name", "string", required=True), kwargs=scope))
 
     def test_a_key_a_typed_provider_may_decline_is_not_demanded(self) -> None:
-        # Not among the keys the server owns, which leave a declinable one to
-        # the caller: the shape check's relaxing alone lets it through.
+        # Not a key the server owns, which leaves a declinable one to the caller.
         def scope() -> MayDecline:
             return {"owner_name": UNSET}
 
@@ -274,9 +262,7 @@ class TestARequiredParameterIsSupplied:
         confirm_view(spec)
 
     def test_a_read_a_provider_requires_itself_is_demanded(self) -> None:
-        # Handed only its seat's reads, the provider can have ``pk`` from the
-        # caller alone, which no post to a confirmation carries. Named in
-        # ``route_kwargs``, the route supplies it.
+        # Handed only its seat's reads, the provider can take pk from the caller alone.
         spec = provider_read_spec()
         with pytest.raises(ImproperlyConfigured, match=r"requires pk, which no post") as e:
             SpecConfirmView.as_view(spec=spec, template_name=PAGE, success_url="/")
@@ -408,8 +394,7 @@ class TestAPostThatCommits:
     def test_htmx_is_answered_the_result_in_place_where_the_fragment_has_one(
         self, ada: Any, note: Note, settings: Any
     ) -> None:
-        # From Django 6.0 the address names a ``partialdef`` inside the file;
-        # below it, a template registered under the address itself.
+        # From Django 6.0 the address names a partialdef inside the file, else a template at it.
         result = "<p>{{ result.value.title }} archived.</p>"
         if django.VERSION >= (6, 0):
             templates = {
@@ -605,8 +590,7 @@ class TestASuccessMessage:
         assert sent(response) == [(messages.SUCCESS, f"Note object ({note.pk}) archived.")]
 
     def test_a_set_is_read_as_the_operation_left_it(self, ada: Any, note: Note, stack: Any) -> None:
-        # The set is the queryset, read again when the message is formatted:
-        # every draft archived, none match it any more.
+        # The set is read again when the message formats: every draft archived, none match.
         def archive_all(*, collection: QuerySet[Note]) -> None:
             collection.update(archived=True)
 
@@ -640,8 +624,7 @@ class TestASuccessMessage:
 
 
 def test_every_stage_is_handed_the_request_and_the_page(ada: Any, note: Note) -> None:
-    # No Validator, so no form's keywords: the target's selector, both
-    # checks, the affordance and the service are what name the two here.
+    # No Validator, so no form keywords: the selector, checks, affordance and service name them.
     handed = Handed()
 
     def service(*, request: Any, view: Any, call_context: Any) -> None:
@@ -798,8 +781,7 @@ class TestARefusalRedirect:
     def test_without_the_messages_middleware_it_is_the_page_again(
         self, ada: Any, note: Note
     ) -> None:
-        # No store on the request: Django raises MessageFailure, and the page
-        # renders the refusal itself rather than lose it in a redirect.
+        # No store on the request: Django raises MessageFailure, so the page renders the refusal.
         view = ReturnsToTheList.as_view(spec=archive_spec(affordances=[PAUSED]))
         request = signed_in(
             FACTORY.post(f"/notes/{note.pk}/archive/{FROM_THE_LIST}", data=PRESSED), ada
@@ -825,8 +807,7 @@ class TestARefusalRedirect:
     def test_a_refusal_with_nothing_to_say_is_the_page_again(
         self, ada: Any, note: Note, refused: Any, status: int, store: bool
     ) -> None:
-        # A redirect with no message would lose the refusal, store or none:
-        # nothing is sent to fail, and Django's storage drops an empty one.
+        # A redirect with no message loses the refusal: Django's storage drops an empty message.
         view = ReturnsToTheList.as_view(spec=raising(refused))
         request = signed_in(
             FACTORY.post(f"/notes/{note.pk}/archive/{FROM_THE_LIST}", data=PRESSED), ada
@@ -838,10 +819,7 @@ class TestARefusalRedirect:
         assert stored(request) == []
 
     def test_a_refusal_sent_back_reads_no_target(self, ada: Any, note: Note) -> None:
-        # A set target, displayed: rendering the page again counts it and
-        # reads its rows for the presenter. Sent back, the page reads neither.
-        # The page rendered is the control, so the test cannot pass on a
-        # target that is never read.
+        # A set target, displayed: re-rendering counts it and reads its rows for the presenter.
         spec = ServiceSpec(
             service=raising(ServiceConflict("Not now.")).service,
             permissions=OPEN,
@@ -856,7 +834,6 @@ class TestARefusalRedirect:
             request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
             with CaptureQueriesContext(connection) as queries:
                 response = view(request)
-            # Dispatch's own savepoint is the only statement left once sent back.
             read = [each["sql"] for each in queries.captured_queries if "SELECT" in each["sql"]]
             assert (response.status_code, bool(read)) == (
                 (302, False) if redirects else (409, True)
@@ -890,8 +867,7 @@ class TestARefusalRedirectNeedsSomewhereToGo:
 
     @staticmethod
     def refusing(**attributes: Any) -> Any:
-        # ``get_success_url`` overridden, so the base's own check of
-        # ``success_url`` passes and the one answering is the refusal's.
+        # get_success_url is overridden, so the refusal, not the base's success_url check, answers.
         attributes = {
             "template_name": PAGE,
             "route_kwargs": ("pk",),
