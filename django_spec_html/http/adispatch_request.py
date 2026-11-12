@@ -46,7 +46,27 @@ async def adispatch_request(
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT,
     view: Any = None,
 ) -> HttpResponse:
-    """Async [`dispatch_request`][django_spec_html.http.dispatch_request.dispatch_request]."""
+    """[`dispatch_request`][django_spec_html.http.dispatch_request.dispatch_request], async.
+
+    The same principal, arguments, call context, statuses and refusals, and
+    the same ``view``, reached through
+    [`adispatch`][django_service_specs.dispatch.adispatch.adispatch] and
+    [`apresent`][django_service_specs.dispatch.apresent.apresent], so the
+    kernel's async rule holds: nothing that may query runs on the event loop.
+
+    That includes **reading the request**, which is one executor hop of its
+    own before ``adispatch``'s. ``request.user`` is the lazy object
+    AuthenticationMiddleware leaves, and its first read is a session query,
+    which Django refuses on the loop; Django 4.2, the floor, has no
+    ``request.auser()`` to await instead. ``spec.parameters()`` goes in the
+    same hop, because a Validator may read a model to declare what it takes,
+    and so does applying ``server_arguments``, which reads it again.
+
+    A refusal asking for input is checked in a hop of its own for the same
+    reason: the check holds the schema against ``spec.parameters()``, read
+    again for that call. Building the response does not query and stays on
+    the loop.
+    """
     spec = kernel_spec(spec)
     call_context = html_call_context(request, view)
     try:

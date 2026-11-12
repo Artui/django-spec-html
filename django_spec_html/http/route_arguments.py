@@ -13,7 +13,53 @@ def route_arguments(
     *,
     route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    """The kwargs a route captured, as arguments, each one a parameter the spec declares."""
+    """The kwargs a route captured, as arguments, each one a parameter the spec declares.
+
+    How ``request_arguments`` reads the route, public so that a host's own
+    view reading the rest of its arguments some other way - a bound form, a
+    page's own fields - merges the route by the same rule and refuses the
+    same misconfiguration.
+
+    Every URL kwarg is an argument, so a route capturing one its spec does not
+    declare is the host's configuration, wrong for every request the route
+    serves, rather than anything a client sent. It is refused as one - Django
+    answers it 500 and shows it under ``DEBUG`` - where a client's own
+    undeclared argument is a 400. The ``unknown_arguments`` policy does not
+    reach it: that policy is about what a client sends, and no client can send
+    a route kwarg or stop sending one.
+
+    **``route_kwargs`` says which kwargs fill which parameters**, for a route
+    whose kwargs are not all the spec's, as an ``include()`` prefix such as
+    ``<org>/`` reaches every view under it:
+
+    - ``None``, the default, is the strict rule above, unchanged.
+    - A mapping from a captured name to the parameter it fills, or to
+      ``None`` to drop it: ``{"note": "pk", "org": None}``. A captured name
+      the mapping does not mention is still held to the strict rule, so a
+      typo in the route is caught as before.
+    - A tuple of names is an allow-list: each passes under its own name, and
+      every other captured kwarg is dropped.
+
+    Every target a mapping names, and every name an allow-list lists, is a
+    parameter the spec declares, checked whatever the route captured: the
+    setting is the host's, the same on every route the view is mounted on.
+    Two kwargs filling one parameter, a rename onto a name the route also
+    captures, are refused as well, since neither could win honestly. A route
+    kwarg is never a server value, whatever it fills: the client's URL chose
+    it, so a malformed one is the client's 400, as anything a client sent is
+    (``test_a_renamed_kwarg_that_does_not_parse_is_the_clients_400``).
+
+    Returned as a plain copy and uncoerced, so each caller merges it last,
+    where the route wins a clash, and coerces it beside what the client sent:
+    ``coerce_flat(parameters, {**read, **route_arguments(parameters, url_kwargs)})``,
+    so one refusal carries every problem with either.
+
+    Raises:
+        ImproperlyConfigured: naming every undeclared kwarg, target or
+            allowed name, in order; or a parameter more than one kwarg fills.
+        TypeError: ``route_kwargs`` is a bare string, which would otherwise
+            be read as a tuple of its characters.
+    """
     captured = dict(url_kwargs or {})
     declared = parameters.names()
     if route_kwargs is None:
