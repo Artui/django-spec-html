@@ -1,11 +1,3 @@
-"""Confirming an operation: a spec with no Validator, as a page showing its target and a button.
-
-``tests/docs/test_spec_confirm_examples.py`` resolves these routes with
-Django's own resolver and posts to each as a browser would - the CSRF token and
-the submit button included - so the page cannot describe a reading, a redirect
-or a refusal the view does not make.
-"""
-
 from __future__ import annotations
 
 import dataclasses

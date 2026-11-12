@@ -40,6 +40,10 @@ docs/examples/admin.py:specs
 --8<--
 ```
 
+The selector behind the changelist action decides the set: it takes the ticked
+primary keys and keeps only the published books among them, so a row the
+selector does not return is never repriced, whatever was ticked.
+
 Each is a `SpecAction` on the admin's `spec_actions`: a name, the spec, the
 label the admin shows, and the `parameter` of the target selector the admin
 fills. Register the admin as any other:

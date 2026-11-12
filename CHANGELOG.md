@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The walkthrough prose of the docs examples is on the pages**, beside the
+  snippet each one belongs to, where it was a comment inside the example. The
+  examples' comments are cut to the repository's comment budget; no behaviour
+  changes.
+
 ## [0.12.0] — 2026-11-09
 
 ### Changed

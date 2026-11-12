@@ -21,6 +21,9 @@ docs/examples/spec_selector.py:spec
 --8<--
 ```
 
+`BookOut` marks `pk` as the handle, another call's input that a page never
+shows, and `title` as the label, the name a page calls a row by.
+
 and its URLconf, a list page, the same list as a table, a page for one book
 and the page that withdraws it:
 
