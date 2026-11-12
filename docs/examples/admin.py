@@ -1,12 +1,3 @@
-"""The admin face: two specs served as a ``ModelAdmin``'s actions, through their own pages.
-
-``tests/docs/test_admin_examples.py`` serves this URLconf through Django's
-handler as a signed-in staff member, and follows each action from the admin's
-own page - the change form's object tools, the changelist's action dropdown -
-so the page cannot describe a link, a redirect or a refusal the admin does
-not make.
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -76,8 +67,7 @@ class PriceForm(forms.Form):
 
 
 def published(*, pks: list[int]) -> QuerySet[Book]:
-    # The selected rows, and of those only the published ones: the selector
-    # decides the set, whatever was ticked.
+    # Only the published rows, whatever was ticked.
     return Book.objects.filter(pk__in=pks, status=Status.PUBLISHED)
 
 

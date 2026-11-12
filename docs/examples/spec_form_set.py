@@ -1,11 +1,3 @@
-"""Serving a formset: a ``many`` spec validated by a Django form, one form a row.
-
-``tests/docs/test_spec_form_set_examples.py`` resolves these routes with
-Django's own resolver and posts to each as a browser would - the CSRF token,
-the management form and the submit button included - so the page cannot
-describe a reading, a refusal or a success the view does not make.
-"""
-
 from __future__ import annotations
 
 from typing import Any

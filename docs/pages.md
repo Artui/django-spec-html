@@ -32,6 +32,11 @@ docs/examples/spec_form.py:spec
 --8<--
 ```
 
+The service is handed the form's `cleaned_data` as `data`: a `Decimal` price, a
+date and the `Author` row, not the strings a post carried. `shelves` is the
+form's own field and no column of the book, so the service stores only the
+columns it names.
+
 ```python
 --8<--
 docs/examples/spec_form.py:urls
@@ -330,6 +335,11 @@ docs/examples/spec_form.py:target
 --8<--
 ```
 
+`BookOut` marks its fields for the display below: `pk` is a handle, another
+call's input and never shown; `title` is the label, the name a page calls the
+row by; `status` is spoken as its display, "Draft" rather than `draft`; and
+`published_on` is hidden.
+
 The URLconf routes the first as `books/<int:pk>/withdraw/` and the second as
 `books/publish-drafts/`, with `target_display_limit=3`, both with
 `display_target=True` and both rendering this template:
@@ -621,8 +631,12 @@ docs/examples/spec_form.py:request
 --8<--
 ```
 
-The URLconf routes it as `branches/<branch>/books/new/`. `AtABranch`, a
-class-level check, names the `branch` seed, so a branch it does not know is
+The URLconf routes it as `branches/<branch>/books/new/`. Every route under
+that prefix captures `branch`, which the spec reads as a seed rather than an
+argument, so `route_kwargs = {"branch": None}` drops it from the arguments and
+every other kwarg is still held strict. `AtABranch`, a
+class-level check, names the `branch` seed, which `get_pool_seeds` adds and the
+page asks it with before it offers the form, so a branch it does not know is
 `PermissionDenied` on GET and on POST before the form is built. Its status
 renders disabled with `draft` selected, and a posted status is dropped: every
 book it adds is a draft.
@@ -842,6 +856,11 @@ default, and then every post commits, as a page that does not set it always has.
 docs/examples/spec_form.py:refresh
 --8<--
 ```
+
+The form narrows its `book` choices by the author the post names, and offers
+none until it names one. It reads the author from `self.data`, which holds the
+string the page's post carried; in the form the Validator binds, the author is
+the coerced number itself, so the same `__init__` serves both.
 
 The URLconf routes it as `editions/new/`, with `commit_button="add"`, and its
 form is a file of its own, so it renders on any Django:

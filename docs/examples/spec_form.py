@@ -1,11 +1,3 @@
-"""Serving a form: a spec validated by a Django form, as the page a person fills in.
-
-``tests/docs/test_spec_form_examples.py`` resolves these routes with Django's
-own resolver and posts to each as a browser would - the CSRF token and the
-submit button included - so the page cannot describe a reading, a redirect or
-a refusal the view does not make.
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -72,8 +64,7 @@ class IsSignedIn(PermissionCheck):
 
 
 def add_book(*, data: dict[str, Any]) -> Book:
-    # ``data`` is the form's cleaned_data: a Decimal price, a date, the Author
-    # row. ``shelves`` is the form's own, and no column of the book's.
+    # data is the form's cleaned_data; shelves is no column of the book's.
     columns = ("title", "price", "status", "published_on", "author")
     return Book.objects.create(**{name: data[name] for name in columns})
 
@@ -153,8 +144,7 @@ class AtABranch(PermissionCheck):
     message = "There is no such branch."
 
     def has_permission(self, principal: Any, spec: Any, *, branch: str) -> bool:
-        # A seed, named by the class-level check: the page asks it with the
-        # one get_pool_seeds adds, before it offers the form.
+        # branch is a seed, which get_pool_seeds adds.
         return branch in BRANCHES
 
 
@@ -181,12 +171,9 @@ class StockBook(SpecFormView):
     spec = stock_book_spec
     template_name = "spec_form_available.html"
     success_url = reverse_lazy("books")
-    # Every route under ``branches/<branch>/`` captures ``branch``, which this
-    # spec reads as a seed rather than an argument: drop it, and hold every
-    # other kwarg strict.
+    # The route's branch is a seed, not an argument: drop it.
     route_kwargs = {"branch": None}
-    # A book stocked at a branch starts as a draft, whatever the form posts:
-    # the status field renders disabled, and the posted value is dropped.
+    # A book stocked at a branch starts as a draft, whatever the form posts.
     server_arguments = ServerArguments(values={"status": Status.DRAFT})
 
     def get_pool_seeds(self, request: HttpRequest) -> PoolSeeds:
@@ -203,9 +190,9 @@ class BookOut:
     """A book as an operation returns it, and as its page names it."""
 
     pk: Annotated[int, FieldMarking.handle()]  # another call's input: never shown
-    title: Annotated[str, FieldMarking.label()]  # the name a page calls it by
+    title: Annotated[str, FieldMarking.label()]
     price: Decimal
-    status: Status  # spoken as its display: "Draft", not "draft"
+    status: Status
     published_on: Annotated[datetime.date | None, FieldMarking.hidden()]
 
 
@@ -308,9 +295,7 @@ class AddEditionForm(forms.Form):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        # The books of the author the post names, and none until it names
-        # one: a string from the page's post, the number itself in the form
-        # the Validator binds to the coerced arguments.
+        # The books of the author the post names, and none until it names one.
         author = self.data.get(self.add_prefix("author"))
         if str(author).isdigit():
             self.fields["book"].queryset = Book.objects.filter(author_id=author)
@@ -330,8 +315,7 @@ add_edition_spec = ServiceSpec(
 
 # --8<-- [start:validate]
 class CheckedEditionForm(AddEditionForm):
-    # Leaving the number posts the form as choosing an author does, so a
-    # number the book already has is refused as it is typed, not on "Add".
+    # Leaving the number posts the form, so a taken number is refused as typed.
     number = forms.IntegerField(
         min_value=1,
         widget=forms.NumberInput(
@@ -343,8 +327,7 @@ class CheckedEditionForm(AddEditionForm):
             }
         ),
     )
-    # The form's own, and no column of the edition's: a count that does not
-    # parse is refused by the shape check, and the number's error beside it.
+    # The form's own, and no column of the edition's.
     copies = forms.IntegerField(min_value=1, required=False)
 
     def clean(self) -> dict[str, Any]:

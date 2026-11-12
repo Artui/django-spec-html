@@ -38,6 +38,10 @@ docs/examples/http.py:function_view
 --8<--
 ```
 
+The route's `pk` is passed as `url_kwargs` and is an argument beside the body's
+`title`. It is merged last, so a body naming another `pk` cannot move the view
+off note `pk`.
+
 It reads the principal and the arguments, dispatches with the `grant`,
 `pool_seeds` and `unknown_arguments` it is given, and answers. The
 `route_kwargs` and `server_arguments` it also takes are
@@ -257,6 +261,9 @@ docs/examples/http.py:route_arguments
 --8<--
 ```
 
+Merging the route last is what makes it win a clash with a posted field of the
+same name, and the one `coerce_flat` call types both.
+
 ## The principal
 
 The principal is `request.user`, **anonymous included**: the spec's permission
@@ -288,6 +295,14 @@ either may read `self.kwargs` too:
 docs/examples/http.py:request
 --8<--
 ```
+
+Every route under the `teams/<team>/` prefix captures `team`, which the spec
+does not read as an argument: `route_kwargs = {"team": None}` drops it from the
+route's arguments, and every other kwarg is still held strict, while
+`get_pool_seeds` hands it to the call as a seed. The server chooses the order,
+so a client's `?ordering=` is dropped. It is declared, so `as_view()` checks
+the name when the URLconf is imported, and `get_server_arguments` varies the
+value per request while the name stays the declared one.
 
 - **`get_pool_seeds(request)`** answers the seeds the call is resolved
   with, so a tenant, a locale or a team the request carries reaches a
@@ -350,6 +365,10 @@ an action). A callable reads it with the kernel's `call_transport`, whose
 docs/examples/http.py:transport
 --8<--
 ```
+
+The selector answers only where the stamp is this package's. Another transport
+stamps its own name, and a caller that built no context stamps none, so
+`call_transport` answers `None` there and the selector finds nothing.
 
 The `as_view()` checks read a spec's declaration with no context at all, so
 `call_transport` is `None` there and `"html"` on every request, as `request`

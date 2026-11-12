@@ -1,10 +1,3 @@
-"""Serving operations from Django views: the specs, a function view, the class form, their URLconf.
-
-``tests/docs/test_http_examples.py`` resolves these routes with Django's own
-resolver and sends each a request, so the page cannot describe a route, a
-method or an answer the package does not have.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -103,8 +96,6 @@ rename_note_spec = ServiceSpec(
 
 # --8<-- [start:function_view]
 def rename_note(request: HttpRequest, pk: int) -> HttpResponse:
-    # The route's pk is an argument beside the body's title, merged last, so a
-    # body naming another pk cannot move this view off note ``pk``.
     return dispatch_request(rename_note_spec, request, url_kwargs={"pk": pk})
 
 
@@ -117,8 +108,6 @@ async def arename_note(request: HttpRequest, pk: int) -> HttpResponse:
 
 # --8<-- [start:route_arguments]
 def form_arguments(posted: Mapping[str, Any], url_kwargs: Mapping[str, Any]) -> dict[str, Any]:
-    # A view reading its fields some other way merges the route last, so the
-    # route wins a clash, and types everything in one call.
     parameters = rename_note_spec.parameters()
     return coerce_flat(parameters, {**posted, **route_arguments(parameters, url_kwargs)})
 
@@ -146,11 +135,9 @@ team_notes_spec = SelectorSpec(
 
 class TeamNotes(SpecView):
     spec = team_notes_spec
-    # Every route under the ``teams/<team>/`` prefix captures ``team``, which
-    # this spec does not read: drop it, and hold every other kwarg strict.
+    # The route's team is a seed, not an argument: drop it.
     route_kwargs = {"team": None}
-    # The server chooses the order, so a client's ``?ordering=`` is dropped.
-    # Declared, so as_view() checks the name when the URLconf is imported.
+    # The server chooses the order; a client's ?ordering= is dropped.
     server_arguments = ServerArguments(values={"ordering": "title"})
 
     def get_pool_seeds(self, request: HttpRequest) -> PoolSeeds:
@@ -167,9 +154,6 @@ class TeamNotes(SpecView):
 
 # --8<-- [start:call_context]
 def my_notes(*, request: HttpRequest | None) -> QuerySet[Note]:
-    # Handed the request serving this call, read off its context, and ``None``
-    # on a transport with no request: written for one transport, since
-    # ``user`` is the definition every transport can seed.
     if request is None:
         return Note.objects.none()
     return Note.objects.filter(owner=request.user).order_by("title")
@@ -185,8 +169,7 @@ my_notes_spec = SelectorSpec(
 
 class MyNotes(View):
     def get(self, request: HttpRequest) -> HttpResponse:
-        # A host's own view passes itself, so a callable naming ``view`` is
-        # handed it; a function view passes nothing, and it is handed None.
+        # Passing itself hands this view to a callable naming ``view``.
         return dispatch_request(my_notes_spec, request, view=self)
 
 
@@ -195,10 +178,6 @@ class MyNotes(View):
 
 # --8<-- [start:transport]
 def notes_only_on_this_transport(*, call_context: Mapping[str, Any] | None) -> QuerySet[Note]:
-    # Every context this package builds is stamped ``"html"``, for the JSON
-    # views, the pages and the admin's offer alike. Another transport stamps
-    # its own name, and a caller that built no context stamps none, so the
-    # kernel's ``call_transport`` answers ``None`` there.
     if call_transport(call_context) != HTML_TRANSPORT:
         return Note.objects.none()
     return Note.objects.order_by("title")

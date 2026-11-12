@@ -1,12 +1,3 @@
-"""Turning htmx on: the page's own template, and host 403 and 404 handlers that answer htmx.
-
-``tests/docs/test_spec_form_examples.py`` serves the route below to a browser's
-request and to htmx's, and calls the handler with each, so the page cannot
-describe a fragment or a redirect the view and the handler do not answer.
-Below Django 6.0 it serves them under ``TEMPLATES`` as this module sets it,
-the setting a project on an older Django adds.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -70,28 +61,18 @@ urlpatterns = [
 
 # --8<-- [start:denials]
 def handler403(request: HttpRequest, exception: Exception | None = None) -> HttpResponse:
-    """The host's 403: sign in a visitor who is not; for htmx, a header saying where to go."""
     if request.headers.get("HX-Request") != "true":
         if request.user.is_authenticated:
             response = permission_denied(request, exception)
         else:
-            # Nobody to refuse: the page they asked for is one sign-in away.
             response = redirect_to_login(request.get_full_path())
     else:
-        # htmx swaps no 4xx body, but it acts on these two headers whatever
-        # the status, so the 403 keeps its status and still reaches the visitor.
         response = HttpResponse(status=403)
         if request.user.is_authenticated:
-            # Signed in and still refused: reload. A page that refuses this
-            # principal on GET answers the reload with its 403 page; a denial
-            # only the operation raises does not recur on GET, so the reload
-            # shows the form again, empty.
             response["HX-Refresh"] = "true"
         else:
-            # Sign in, then come back to the page the form is on.
             here = request.headers.get("HX-Current-URL", request.get_full_path())
             response["HX-Redirect"] = redirect_to_login(here).url
-    # One URL, two answers: a cache must not hand one to the other.
     patch_vary_headers(response, ("HX-Request",))
     return response
 
@@ -101,8 +82,6 @@ def handler404(request: HttpRequest, exception: Exception | None = None) -> Http
     if request.headers.get("HX-Request") != "true":
         response = page_not_found(request, exception)
     else:
-        # A row's action on a page that has gone stale: htmx swaps no 4xx body
-        # and would show nothing, so the page is reloaded to show what is there now.
         response = HttpResponse(status=404)
         response["HX-Refresh"] = "true"
     patch_vary_headers(response, ("HX-Request",))

@@ -1,15 +1,3 @@
-"""Serving a read: a selector spec as a list page, a table and an instance page.
-
-The module is a whole URLconf over the shipped templates, so it serves real
-pages: set ``ROOT_URLCONF = "docs.examples.spec_selector"``, add
-``django_tables2`` and ``tests.adapter_app`` to ``INSTALLED_APPS`` beside
-``django_spec_html``, run ``migrate --run-syncdb`` (the test app ships no
-migrations), call ``seed()`` once, open ``/books/``. ``tests/docs/test_spec_selector_examples.py``
-requests each page as a browser would and follows the links it renders, so
-``docs/selectors.md`` cannot describe a page, a link or a query count the
-view does not make.
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -51,7 +39,7 @@ class BookOut:
     """A book as a page names it."""
 
     pk: Annotated[int, FieldMarking.handle()]  # another call's input: never shown
-    title: Annotated[str, FieldMarking.label()]  # the name a page calls it by
+    title: Annotated[str, FieldMarking.label()]
     status: Status
 
 
@@ -131,12 +119,10 @@ book_spec = SelectorSpec(
 # --8<-- [start:table]
 class BookTable(tables.Table):
     title = tables.Column()
-    # Not among the OrderingFilter's fields, so its header must not link a
-    # sort: dispatch would refuse ``o=author``, and the link would answer 400.
+    # Not among the OrderingFilter's fields, so its header links no sort.
     author = tables.Column(accessor="author__name", verbose_name="Author", orderable=False)
     price = tables.Column()
-    # The button where the row may be withdrawn, and otherwise why not: the
-    # reason of the first condition the row does not meet.
+    # The button where the row may be withdrawn, and otherwise why not.
     withdraw = tables.TemplateColumn(
         '{% load django_spec_html %}{% with why=record|unavailable:"withdraw" %}'
         "{% if why %}<span>{{ why.reason }}</span>"
@@ -203,16 +189,13 @@ class RememberedBooks(SpecSelectorView):
     """The book list, opened where this session's last visit left it."""
 
     def get_query(self, request: HttpRequest) -> QueryDict:
-        # ?reset=1 forgets the saved query: the way out of one the spec
-        # refuses, since it is saved before dispatch judges it.
+        # ?reset=1 forgets the saved query.
         if "reset" in request.GET:
             request.session.pop("books_query", None)
             return QueryDict()
-        # A visit that sends anything is the query, and is remembered...
         if request.GET:
             request.session["books_query"] = request.GET.urlencode()
             return request.GET
-        # ...and a bare visit reads the last one: its filters, sort and page.
         return QueryDict(request.session.get("books_query", ""))
 
 
