@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   snippet each one belongs to, where it was a comment inside the example. The
   examples' comments are cut to the repository's comment budget; no behaviour
   changes.
+- **The API reference's docstrings are restored**: the ones a `:::` page
+  renders are the full text again, where the comment budget had cut them to one
+  line. No behaviour changes.
 
 ## [0.12.0] — 2026-11-09
 

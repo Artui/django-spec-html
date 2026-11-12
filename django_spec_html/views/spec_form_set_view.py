@@ -36,7 +36,140 @@ from django_spec_html.views.utils import (
 
 
 class SpecFormSetView(SpecPageBase):
-    """A ``many`` ``ServiceSpec`` validated by a form, served as a formset, one form a row."""
+    """A ``many`` ``ServiceSpec`` validated by a form, served as a formset, one form a row.
+
+    A ``many`` spec takes a list of rows under its ``many_argument``, and the
+    kernel validates the call **per row**: the shape check and the Validator
+    run on each row, and a refusal is addressed by the row's index. So the
+    page is a formset of the spec's form class, and the formset is this
+    page's alone: ``FormValidator`` never sees one. The spec's Validator must
+    be a
+    [`FormValidator`][django_service_specs.adapters.forms.form_validator.FormValidator]:
+
+        urlpatterns = [
+            path(
+                "books/new/",
+                SpecFormSetView.as_view(spec=add_books_spec, success_url=reverse_lazy("books")),
+            ),
+        ]
+
+    **GET** renders ``template_name`` with an unbound formset under
+    ``formset``, beside ``view`` and ``spec``, once the spec's class-level
+    check admits the principal, as ``SpecFormView``'s page does. The formset
+    shows ``extra`` blank forms, after the spec's ``many_min_length`` forms,
+    which a person must fill; and never more than ``many_max_length``. The
+    template renders ``{{ formset }}`` - its management form included - inside
+    a POST form with its token.
+
+    **The page's template is optional**, as on ``SpecFormView``:
+    ``django_spec_html/spec_form_set.html`` by default, which this package
+    ships, with its formset in ``django_spec_html/spec_form_set_fragment.html``.
+    It renders the management form, the formset's non-form errors, each form
+    as a fieldset of its own with its errors, and the submit button posting
+    ``commit_button``'s name where one is set, then the ``add_button``, which
+    skips the browser's checks since its post commits nothing. No target
+    pane. Found, refused at ``as_view()`` and overridden as ``SpecFormView``'s
+    is.
+
+    **No target pane.** A ``many`` spec declares no target selector, which the
+    kernel refuses when the spec is built, so there is no row or set to
+    show: the context carries no ``target``, ``target_count`` or
+    ``target_display``, and ``display_target`` is refused at ``as_view()``.
+
+    **Every form is built as the Validator builds a row's**, with what its
+    ``form_kwargs`` answers, through the kernel's ``form_keywords``: asked
+    once per request, with the principal, the request's seeds and its one
+    call context, and handed to every form as the formset's
+    ``form_kwargs``. There is no target to hand it, so the answer is the
+    same for every row, and asking once is asking what each row would be
+    asked. A form whose ``__init__`` takes a keyword is served.
+
+    **POST** reads each form the formset bound, in the formset's order, as
+    ``SpecFormView`` reads its one form - through its own widgets, a blank
+    field absent, a disabled one not read - and sends the rows as one list
+    under ``many_argument``. The route's kwargs are read and coerced once for
+    the call, beside the list, never inside a row. The management form's
+    keys are the formset's, and never become arguments, as the CSRF token
+    never does. **An extra form left unchanged sends no row**: the form
+    Django would let through empty is not sent, so a page offering three
+    blank forms posts only those a person filled in. The first
+    ``many_min_length`` forms are sent however they are left, so the
+    kernel refuses a row left blank where the spec requires it. A post whose
+    management form is missing or tampered with is refused before
+    dispatch, in Django's own words, at 400.
+
+    **A refusal is split back onto the forms.** One addressed to row *i* of
+    the list lands on the form that posted it, through
+    [`add_argument_errors`][django_spec_html.http.add_argument_errors.add_argument_errors],
+    so a dropped blank form shifts nothing; one about the list as a whole -
+    its length, a message about the rows together - and one about a route
+    value land on the formset's ``non_form_errors()``, a route value
+    prefixed with its name as on the single page. Beside an
+    ``InvalidArguments`` each sent form is validated too, under the kernel's
+    ``clean_held_to_their_columns``, so every row's own checks answer in the
+    same post; on a partial spec, and for any other refusal, the forms carry
+    the refusal alone. Any other refusal's message is a non-form error, at the
+    status ``SpecFormView`` answers it with.
+
+    **A question is answered by its message alone.** An
+    ``AdditionalInputRequired`` is checked by the kernel's
+    ``check_requested_input`` as on every page, so a schema no route could
+    hear answered - a key declared only inside a row among them - raises
+    ``ImproperlyConfigured`` and is never rendered. Then the formset is
+    re-rendered at 422 with the message as a non-form error and
+    ``requested_input``, its ``message`` and ``schema``, in the context, with
+    no ``fields``: a ``many`` call's top level is the list and the spec's
+    ``reads``, which no form declares, and the page builds no widget from a
+    schema, so a once-for-the-call confirmation is not built on this page.
+
+    **A post that does not commit**, **the fragment wrapper**, **the
+    request hooks**, **the URL a success returns to** under
+    ``redirect_field_name`` and **denials** are ``SpecFormView``'s, by the
+    same code:
+    see that page. With ``commit_button`` set, ``add_button`` names a second
+    submit button whose post is the page again with one more form, bound to
+    everything posted, never past ``many_max_length``, and nothing dispatched.
+
+    **A success message** is ``success_message`` formatted with
+    ``{"count": n}``, the number of rows the call carried, so
+    ``"%(count)d books were added."`` reads the post's own count. The single
+    page formats with the cleaned data, and a ``many`` call's is a list,
+    which ``%`` with a name cannot read. Override ``get_success_message`` to
+    read ``result.data``, the rows' cleaned data, or ``result.value``.
+
+    ``as_view()`` refuses, when the URLconf is imported, a spec whose
+    Validator is not a ``FormValidator``, a spec that is not ``many``, a
+    view displaying its target, an ``extra`` that is not a non-negative int,
+    an ``add_button`` that is not a button's name, that is set without a
+    ``commit_button``, or that is the ``commit_button``; a
+    ``redirect_field_name`` that is either button; and either button or the
+    ``redirect_field_name`` named under the formset's ``form-`` prefix, which
+    every post carries.
+
+    **Sync only**, in this release. **CSRF is the host's middleware.**
+
+    Attributes:
+        spec: The ``many`` operation served. Required.
+        template_name: The page's template, as for any Django template view:
+            ``django_spec_html/spec_form_set.html``, the one this package
+            ships, by default.
+        success_url: Where a successful post redirects, read by
+            ``get_success_url``.
+        extra: How many blank forms the page offers beside those the spec's
+            ``many_min_length`` requires: a non-negative int, 1 by default,
+            checked at ``as_view()``. Django's ``formset_factory`` reads it.
+        add_button: The ``name`` of the submit button whose post re-renders
+            the page with one more form: ``None``, the default, offers none;
+            otherwise a non-empty string, beside a ``commit_button`` it is
+            not, checked at ``as_view()``.
+        commit_button: The ``name`` of the submit button whose post commits,
+            as on ``SpecFormView``.
+        redirect_field_name: The key a post or its query carries the URL a
+            success returns to under, as on ``SpecFormView``: ``None``, the
+            default, reads none.
+        success_message: The message a successful post sends, formatted by
+            ``get_success_message`` with the rows' ``count``.
+    """
 
     template_name = "django_spec_html/spec_form_set.html"
     extra: int = 1
@@ -168,7 +301,18 @@ class SpecFormSetView(SpecPageBase):
         return self._rendered(self.get_context_data(formset=form, **context), status=status)
 
     def get_success_message(self, result: DispatchResult) -> str:
-        """The message a successful post sends: ``success_message`` with the rows' ``count``."""
+        """The message a successful post sends: ``success_message`` with the rows' ``count``.
+
+        ``%`` with ``{"count": n}``, ``n`` the number of rows ``result.data``
+        holds, so ``"%(count)d books were added."`` says how many
+        (test_the_default_message_is_formatted_with_the_rows_count). A
+        ``many`` call's cleaned data is a list, which ``%`` with a name
+        cannot read, so the single page's formatting would raise once the
+        write had run
+        (test_the_single_page_s_formatting_would_raise_once_the_write_ran).
+        Override it to read the rows, under ``result.data``,
+        or the result, under ``result.value``.
+        """
         return self.success_message % {"count": len(result.data)}
 
 

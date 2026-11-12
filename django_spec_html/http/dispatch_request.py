@@ -45,7 +45,57 @@ def dispatch_request(
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT,
     view: Any = None,
 ) -> HttpResponse:
-    """Dispatch ``spec`` for ``request`` and answer it as JSON: the function a view calls."""
+    """Dispatch ``spec`` for ``request`` and answer it as JSON: the function a view calls.
+
+    1. **The principal is** ``request.user``, anonymous included, since the
+       spec's permission check is what decides whether anonymous may act. An
+       authenticated user whose ``is_active`` is false is refused as
+       ``PrincipalUnavailable``: a backend other than ``ModelBackend`` can log
+       one in, and a deactivated principal never acts. Dispatch refuses one by
+       the same rule; refusing here as well keeps the request unread for it.
+    2. **The arguments** are
+       [`request_arguments`][django_spec_html.http.request_arguments.request_arguments]
+       for ``spec.parameters()``, with ``url_kwargs`` merged last under the
+       names ``route_kwargs`` maps them to, and ``server_arguments`` applied
+       over them by the kernel's
+       [`apply_server_arguments`][django_service_specs.dispatch.apply_server_arguments.apply_server_arguments]:
+       its bound values outrank whatever the client sent, and its withheld
+       names are dropped. A URL kwarg filling one of its names is refused,
+       as the host's misconfiguration. The binding is not checked here:
+       a host's own view calls
+       [`check_server_arguments`][django_service_specs.dispatch.check_server_arguments.check_server_arguments]
+       once, when it is built, as ``SpecView.as_view()`` does.
+    3. [`dispatch`][django_service_specs.dispatch.dispatch.dispatch], with
+       ``grant``, ``pool_seeds`` and ``unknown_arguments`` as given, and a
+       call context of its own holding ``request`` and ``view``. So a spec
+       callable naming ``request`` - a seed's resolver, a selector, a
+       permission check, an affordance condition, a ``form_kwargs``, the
+       service - is handed this very request, and one naming ``view`` is
+       handed ``view``: the host's own view, which passes itself, as
+       ``SpecView`` does, and ``None`` where it passes nothing
+       (``TestTheRequestAndTheView`` in ``test_dispatch_request``).
+    4. **The answer.** A not-found result is 404 with a ``detail``. Otherwise
+       the presented value, bare, at ``success_status`` if given, else 204 for
+       a service with nothing to present and 200 for everything else - the
+       defaults djangorestframework-services answers with. A 204 has no body.
+
+    A refusal of either family, from any of the four steps, is answered by
+    [`error_response`][django_spec_html.http.error_response.error_response].
+    Anything else propagates, a configuration error included: it is wrong for
+    every caller, so it belongs to the host's error handling rather than to one
+    client's response. A URL kwarg ``spec`` does not declare, and that
+    ``route_kwargs`` neither renames nor drops, is one, raised as
+    ``ImproperlyConfigured``: every URL kwarg is an argument, and the route
+    is the host's. So is a bound value its parameter refuses: the client
+    neither sent it nor can see it.
+
+    ``spec`` may be a
+    [`SpecSource`][django_service_specs.specs.spec_source.SpecSource]: it is
+    compiled once, first, and every step reads the spec it compiles to.
+
+    **CSRF is the host's middleware**, as for any Django view: nothing here
+    exempts a view, and ``csrf_exempt`` is one line for a host that wants it.
+    """
     spec = kernel_spec(spec)
     call_context = html_call_context(request, view)
     try:

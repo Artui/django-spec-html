@@ -46,7 +46,179 @@ from django_spec_html.views.utils import (
 
 
 class SpecSelectorView(SpecRequestBase):
-    """A ``SelectorSpec`` served as a page: a list's rows a page at a time, or one row."""
+    """A ``SelectorSpec`` served as a page: a list's rows a page at a time, or one row.
+
+    The read side of the pages: what a person browses, filters and picks a
+    row from, declared once on the spec every other reader serves too. A
+    ``LIST`` spec is a list page and a ``RETRIEVE`` spec the page of one row:
+
+        urlpatterns = [
+            path("books/", SpecSelectorView.as_view(spec=books_spec)),
+            path(
+                "books/<int:pk>/",
+                SpecSelectorView.as_view(spec=book_spec, route_kwargs=("pk",)),
+            ),
+        ]
+
+    It is a spec's read page, not a model's list view: what it lists, who
+    may see it, which filters it takes and what may be done to each row are
+    the spec's, and the page adds only the paging and the wrapper.
+
+    **GET**, and HEAD, which Django answers by the same handler, are the
+    methods it answers; anything else is 405. A request is:
+
+    1. **admitted**, as every page admits it: the route checked against the
+       spec's parameters, then the principal the class-level check admits,
+       a denial raised for the host's 403 or 404 page. The seeds the
+       spec's checks name are resolved there, once, by the kernel's
+       ``resolve_seeds``, and that check is asked on them;
+    2. **read** by
+       [`request_arguments`][django_spec_html.http.request_arguments.request_arguments]'
+       query-string branch - the URL kwargs under ``route_kwargs``, the names
+       ``server_arguments`` answers for dropped and then bound - as the JSON
+       views read it, so a list page and a JSON list read each value the
+       same way. A key the spec does not declare is ignored here, where the
+       JSON views refuse it (see ``unknown_arguments``). On a list, the
+       paging keys are taken off first, so ``?page=2`` never reaches the
+       spec;
+    3. **dispatched** by the kernel's ``dispatch``, with the grant the
+       admission made, so the class-level check is asked once, and the
+       seeds it resolved, so the checks dispatch asks and the selector see
+       the values the class-level check saw;
+    4. **rendered** with the raw rows dispatch answered, and no
+       ``present()``: a template reads the rows themselves.
+
+    **The context.** Beside ``view`` and ``spec``:
+
+    - ``rows``: the rows served, a list. On a list page they are the page's
+      rows, read in one query; on an instance page, the one row, or none for
+      a ``RETRIEVE`` with ``allow_none`` that found nothing.
+    - ``row``: the one row, on an instance page that found one.
+    - ``page``: on a list page, the kernel's ``OutputPage`` - ``page``,
+      ``limit``, ``total``, ``total_pages``, ``has_next`` - its ``items``
+      the same list as ``rows``, so a template reading either reads no row
+      twice. ``previous_page_query`` and ``next_page_query``, where those
+      pages exist, are the query the page read with the page key replaced,
+      every filter kept, for a link's ``?``.
+    - ``filter``: the spec's ``filter_set``, a django-filter ``FilterSet``,
+      bound to the query for display only, where the spec declares one.
+    - ``table``: ``table_class`` built over ``rows``, where it is set.
+    - ``row_displays``: with ``display_rows`` on and no ``table_class``,
+      each row as its Output marks it for a person - ``label``, ``fields``
+      and ``pairs``, as the form page's ``target_display`` - with the raw
+      row itself as ``row``, so a template shows the one and asks
+      ``available`` of the other.
+
+    **Each row carries its affordances.** Dispatch answers every row's
+    affordances in bulk, as the spec's ``affordances`` declare them, and the
+    page reads each row's answers once, so ``{% load django_spec_html %}``
+    and ``{% if row|available:"rename" %}`` asks a row what the operation's
+    own dispatch would enforce, in no query of its own. See
+    [`available`][django_spec_html.templatetags.django_spec_html.available].
+
+    **Paging.** A list is paged by the kernel's ``paginate_output``: the
+    page named by ``page_kwarg``, ``paginate_by`` rows to a page, never more
+    than ``max_page_size``. A page that is not a whole number is page 1, and
+    one past the last is the last, rather than a refusal: a public page
+    clamps a link someone edited, and the page served says which it is. A
+    client chooses the page size only where ``page_size_kwarg`` names the
+    key it sends, bounded by ``max_page_size``, which ``as_view()`` then
+    requires; a value that is not a whole number is ``paginate_by``, and a
+    whole number below one is a page of one row, as ``paginate_output``
+    clamps it.
+
+    **The query a page reads is ``get_query(request)``**, the request's own
+    query string unless a subclass answers another: a list that opens where
+    the last visit left it reads a query the host kept in the session. The
+    paging, the filter form, the spec's arguments and the links all read
+    that one answer, and the template's ``request`` carries it as ``GET``.
+
+    **The filters are the spec's.** ``filter.form`` is the ``FilterSet``'s
+    form bound to the query for display, its own validation never run:
+    dispatch reads the query, through the filter set's parameters, and is
+    the one reader that decides, since two readers of one query string could
+    disagree - django-filter's comma-separated filters split a value their
+    own way.
+
+    **A refusal is the page again**, at the status of the one map: an
+    argument refusal at 400, a precondition's ``ServiceError`` at 422, and
+    so on, with ``errors``, every message the refusal holds as a string, a
+    message about a parameter prefixed with its path, and ``code`` for a
+    refusal carrying one. The refusal is placed on ``filter.form`` too, an
+    argument refusal at the fields it names. A denial is raised, for the
+    host's 403 or 404 page, and a ``RETRIEVE`` that finds no row is
+    ``Http404``.
+
+    **The fragment.** An htmx request, unless boosted or a history restore,
+    is answered with the results alone, at 200 whatever the outcome, as
+    every page answers a fragment: ``fragment_template_name``, or the
+    ``spec-results`` fragment of ``template_name``, or the shipped page's
+    own fragment file. Every answer varies on the three headers that choice
+    reads. A filter form's ``hx-get`` answered with it is a live search, and
+    a next-page link's is a load-more.
+
+    **A django-tables2 table is composed, never imported.** ``table_class``
+    is built with the page's rows and ``order_by=()``, so the table neither
+    pages nor orders them: the spec ordered them, and ``paginate_output``
+    paged them. Its columns are not orderable unless
+    ``table_order_by_field`` names the spec's own ordering parameter, which
+    a header link then sets, for dispatch to read like any filter.
+
+    **The page's template is optional**:
+    ``django_spec_html/spec_selector.html`` by default, which this package
+    ships, its results in ``django_spec_html/spec_selector_fragment.html``.
+    It renders the filter form's fields, the table or each row's display,
+    and the previous and next links. Found, refused at ``as_view()`` and
+    overridden as ``SpecFormView``'s is.
+
+    ``as_view()`` refuses, when the URLconf is imported, a spec that is not
+    a ``SelectorSpec`` and does not compile to one; the request hooks as
+    every page refuses them; paging attributes of the wrong type, a client
+    page size with no ceiling, and a list spec declaring a parameter under a
+    paging key, whose value could never reach it; a
+    ``table_order_by_field`` the spec does not declare, since no header
+    link would then sort the rows; and ``display_rows`` on a spec whose Output
+    cannot display a row.
+
+    Attributes:
+        spec: The read served: a ``SelectorSpec``, or a ``SpecSource``
+            compiling to one. Required.
+        template_name: The page's template, as for any Django template view:
+            ``django_spec_html/spec_selector.html`` by default.
+        fragment_template_name: The template an htmx request is answered
+            with; ``None`` addresses ``<template_name>#spec-results``, or a
+            shipped page's own fragment file.
+        route_kwargs: Which URL kwargs fill which parameters, as
+            ``route_arguments`` reads it.
+        pool_seeds: The seeds the spec's callables are resolved with, unless
+            ``get_pool_seeds`` answers others for a request.
+        server_arguments: The kernel's ``ServerArguments`` the server answers
+            for, checked at ``as_view()``.
+        unknown_arguments: What dispatch does with a query key the spec does
+            not declare: ignored by default, since the query string of a
+            page a person reads is written by links the page does not
+            control - a tracking parameter, a bookmark from before a filter
+            was renamed. ``UnknownArguments.REJECT`` refuses it at 400, as
+            the JSON views do; the form and confirmation pages never send
+            dispatch a query key at all. A route kwarg the spec
+            does not declare raises ``ImproperlyConfigured`` under either
+            (test_a_route_capture_the_spec_does_not_declare_is_refused).
+        page_kwarg: The query key naming the page, ``"page"``, as Django's
+            ``ListView`` names it.
+        paginate_by: Rows to a page; ``None`` is the kernel's
+            ``DEFAULT_PAGE_SIZE``.
+        max_page_size: The most rows a page holds, whatever ``paginate_by``
+            or a client asks; ``None`` sets no ceiling.
+        page_size_kwarg: The query key a client chooses the page size by;
+            ``None``, the default, lets no client choose.
+        table_class: A django-tables2 ``Table`` class, built over the
+            page's rows as ``table``; ``None`` builds none.
+        table_order_by_field: The spec's ordering parameter, which the
+            table's header links set; ``None`` builds the table with no
+            orderable column.
+        display_rows: Whether the context carries ``row_displays``, which
+            the shipped template renders a row by when there is no table.
+    """
 
     spec: SelectorSpec | SpecSource | None = None
     template_name = "django_spec_html/spec_selector.html"
@@ -64,7 +236,13 @@ class SpecSelectorView(SpecRequestBase):
 
     @classonlymethod
     def as_view(cls, **initkwargs: Any) -> Callable[..., HttpResponseBase]:
-        """Django's ``as_view``, then the spec, hooks, paging, table and templates checked, once."""
+        """Django's ``as_view``, then the spec, hooks, paging, table and templates checked, once.
+
+        The spec first, so a view with no spec is refused as one whatever
+        else it sets; then the request hooks, by the code every page and the
+        JSON views check them with; then this page's own attributes, each
+        read against the spec; and the shipped templates last.
+        """
         view = super().as_view(**initkwargs)
         label = cls.__name__
         spec = _selector(label, initkwargs.get("spec", cls.spec))
@@ -157,7 +335,35 @@ class SpecSelectorView(SpecRequestBase):
         return self._rendered(self.get_context_data(**context), status=200)
 
     def get_query(self, request: HttpRequest) -> QueryDict:
-        """The query string the page reads: ``request.GET`` unless overridden."""
+        """The query string the page reads: ``request.GET`` unless overridden.
+
+        Asked once per request, and its answer is the one query the page
+        reads: the paging keys taken off it, the filter form bound to it, the
+        spec's arguments read from it, and the links built from it. The
+        template is handed a ``request`` whose ``GET`` is this answer, so a
+        tag building a link from ``request.GET``, as django-tables2's header
+        sort does, keeps it. A list that remembers its last filter, sort and
+        page answers the session's copy on a bare visit, and saves a visit
+        that sends anything:
+
+            class Remembered(SpecSelectorView):
+                def get_query(self, request):
+                    if request.GET:
+                        request.session["books"] = request.GET.urlencode()
+                        return request.GET
+                    return QueryDict(request.session.get("books", ""))
+
+        A hook like this one saves the query before dispatch judges it, so a
+        saved query the spec refuses - a filter value no longer valid - is
+        refused on every bare visit until the host forgets it; the selector
+        guide's example forgets it on ``?reset=1``.
+
+        A plain ``def``, as ``as_view()`` requires of every request hook: the
+        page does not await it. The answer must be a ``QueryDict``, since the
+        paging keys are popped off a copy of it as lists; anything else is a
+        ``TypeError`` naming the hook. The answer is never changed in place
+        (test_the_hook_s_answer_is_left_as_it_came).
+        """
         return request.GET
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:

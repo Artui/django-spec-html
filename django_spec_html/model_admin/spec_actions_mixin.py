@@ -66,7 +66,86 @@ _SLUG: Final = re.compile(r"[-a-zA-Z0-9_]+\Z")
 
 
 class SpecActionsMixin(admin.ModelAdmin):
-    """A ``ModelAdmin`` offering each spec in ``spec_actions`` as an action."""
+    """A ``ModelAdmin`` offering each spec in ``spec_actions`` as an action, on the spec's page.
+
+    Mixed in ahead of ``admin.ModelAdmin``, or of any subclass of it, with
+    one ``SpecAction`` per operation:
+
+        @admin.register(Book)
+        class BookAdmin(SpecActionsMixin, admin.ModelAdmin):
+            spec_actions = (
+                SpecAction("withdraw", withdraw_book_spec, "Withdraw", parameter="pk"),
+                SpecAction("publish", publish_books_spec, "Publish", parameter="pks"),
+            )
+
+    **Which kind of action** is the spec's target's answer. A spec with an
+    ``instance_selector_spec`` is an **object action**: a link among the
+    change page's object tools, to ``<object_id>/actions/<name>/``, whose
+    ``object_id`` fills the selector's ``parameter`` through the page's
+    ``route_kwargs``, unquoted as the admin quotes it. A spec with a
+    ``collection_selector_spec`` is a **changelist action**: an entry in the
+    action dropdown, which redirects to ``actions/<name>/`` with the
+    selected rows' primary keys in the query string, repeated under
+    ``parameter``. The page binds them to that parameter as
+    ``server_arguments``, read from the query string on GET and on the post
+    the page sends back to its own URL, so nothing posted stands in for the
+    selection; and the collection selector still decides the set, so a key
+    it does not answer is not acted on.
+
+    **The admin's scope comes first**, as for its own actions and its change
+    page: a page is served only to a principal holding the admin's view or
+    change permission, the row's on an object action, and acts only on rows
+    in the admin's ``get_queryset()``. An object action's row outside it is
+    a 404, and a changelist action's selection is narrowed to it before it
+    is bound, so a key outside it never reaches the selector. Within that
+    scope the spec's own checks run, and its selector decides the set.
+
+    **Each page is the spec's own**: ``SpecFormView`` for a spec validating
+    with a ``FormValidator``, ``SpecConfirmView`` for one with none, built
+    once when the admin is registered, so ``as_view()`` refuses then what it
+    refuses of any page. Its URL is added by ``get_urls()`` ahead of the
+    admin's own, wrapped in ``admin_site.admin_view()``, so only a signed-in
+    staff member the site admits reaches it; the page then admits the
+    principal by the admin's permission and the spec's own checks, as on
+    any route, and answers the rest with the host's 403 page. Its templates,
+    ``django_spec_html/admin/spec_form.html`` and
+    ``django_spec_html/admin/spec_confirm.html``, extend
+    ``admin/base_site.html`` with the admin's breadcrumbs and title around
+    the very fragment the shipped page includes, so an htmx request is
+    answered with that fragment, as on any page. A success returns to the
+    row's change page or to the changelist, with the page's
+    ``success_message`` among the admin's messages.
+
+    **Offered only to a principal both admit.** The object-tools link and
+    the dropdown entry are shown only where the kernel's ``authorize``, the
+    spec's class-level check, admits the request's principal, asked with
+    the page's own seeds and call context, and the admin's view or change
+    permission does too. The admin's model permissions say nothing about
+    the spec's, so they are not the whole gate: the spec's checks are asked
+    as well, and the page asks both again, the object-level ones included,
+    on every request. An entry not offered is
+    not in ``get_actions()``, which the changelist reads again on the post
+    that runs an action, so posting its name runs nothing.
+
+    The change page is rendered from
+    ``django_spec_html/admin/change_form.html``, which extends
+    ``admin/change_form.html`` and lists the links ahead of the admin's own
+    tools: a ``ModelAdmin`` setting a ``change_form_template`` of its own
+    extends that template to keep them.
+
+    ``ImproperlyConfigured`` is raised when the admin is registered for a
+    declaration that is not a ``SpecAction``, a name that is not a slug, is
+    used twice or is one of the admin's own URL names, a label that does not
+    format with the model's names, a spec that is not a
+    ``ServiceSpec``, a ``many`` spec, a spec with no target, a ``parameter``
+    its target selector does not read or, on a changelist action, one that
+    is not an ``array``, and a ``page_kwargs`` key the mixin answers for.
+
+    Attributes:
+        spec_actions: The actions, each a ``SpecAction``.
+        change_form_template: ``django_spec_html/admin/change_form.html``,
+            which carries the object actions' links.
+    """
 
     spec_actions: Sequence[SpecAction] = ()
     change_form_template = "django_spec_html/admin/change_form.html"
@@ -89,7 +168,12 @@ class SpecActionsMixin(admin.ModelAdmin):
             )
 
     def get_urls(self) -> list[URLPattern]:
-        """Every action's page at an admin URL of its own, ahead of the admin's."""
+        """Every action's page at an admin URL of its own, ahead of the admin's.
+
+        Ahead, since the admin's last pattern takes any ``<object_id>/`` and
+        redirects it to the change page
+        (test_each_page_is_served_at_its_own_url).
+        """
         info = f"{self.opts.app_label}_{self.opts.model_name}"
         own = [
             path(
@@ -104,7 +188,12 @@ class SpecActionsMixin(admin.ModelAdmin):
         return [*own, *super().get_urls()]
 
     def get_actions(self, request: HttpRequest, action_location: Any = None) -> dict[str, Any]:
-        """The admin's actions, less each changelist action whose spec refuses this principal."""
+        """The admin's actions, less each changelist action whose spec refuses this principal.
+
+        ``action_location`` is Django 6.1's, handed on only where Django
+        hands it, so a Django that has none is called as it expects, and one
+        that has it reads this signature as its own.
+        """
         located = {} if action_location is None else {"action_location": action_location}
         actions = super().get_actions(request, **located)
         for page in self._spec_pages:
@@ -123,7 +212,12 @@ class SpecActionsMixin(admin.ModelAdmin):
         form_url: str = "",
         extra_context: Mapping[str, Any] | None = None,
     ) -> HttpResponse:
-        """The change page, carrying ``spec_object_actions`` as its object actions."""
+        """The change page, its context carrying ``spec_object_actions``, the object actions.
+
+        Each a mapping of its ``label``, formatted as the page's title is
+        (test_a_label_is_formatted_alike_on_the_link_and_the_page), and its
+        ``url``, for the change form's object tools, in declaration order.
+        """
         info = f"{self.opts.app_label}_{self.opts.model_name}"
         offered = [
             {
