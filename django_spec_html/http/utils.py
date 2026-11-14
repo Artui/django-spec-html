@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import inspect
+import io
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Final, cast
 
 from django.core.exceptions import ImproperlyConfigured
-from django.http import HttpRequest, HttpResponse, HttpResponseBase, JsonResponse
+from django.http import (
+    FileResponse,
+    HttpRequest,
+    HttpResponse,
+    HttpResponseBase,
+    JsonResponse,
+    StreamingHttpResponse,
+)
 from django.utils.decorators import classonlymethod
+from django.utils.http import content_disposition_header
 from django.utils.translation import gettext
 from django.views import View
 from django_service_specs import (
@@ -15,6 +24,7 @@ from django_service_specs import (
     ActionUnavailable,
     AdditionalInputRequired,
     DispatchError,
+    FileResult,
     InvalidArguments,
     NotPermitted,
     PermissionCheckDenied,
@@ -32,6 +42,7 @@ from django_service_specs import (
     build_call_context,
     check_requested_input,
     check_server_arguments,
+    file_output,
     kernel_spec,
 )
 
@@ -135,8 +146,10 @@ def not_found_response() -> JsonResponse:
 
 def success_response(
     spec: ServiceSpec | SelectorSpec, body: Any, success_status: int | None
-) -> HttpResponse:
+) -> HttpResponseBase:
     """The presented body, bare, at the caller's status or at the default one."""
+    if isinstance(body, FileResult):
+        return file_response(body, status=success_status or 200)
     nothing = isinstance(spec, ServiceSpec) and body is None
     if success_status is None:
         success_status = 204 if nothing else 200
@@ -145,6 +158,30 @@ def success_response(
         del response["Content-Type"]
         return response
     return JsonResponse(body, status=success_status, safe=False)
+
+
+def file_response(
+    file: FileResult, *, as_attachment: bool = True, status: int = 200
+) -> StreamingHttpResponse:
+    """``file`` as a download: a ``FileResponse``, or a streamed one for an iterable of bytes."""
+    content = io.BytesIO(file.content) if isinstance(file.content, bytes) else file.content
+    if hasattr(content, "read"):
+        response: StreamingHttpResponse = FileResponse(
+            content,
+            as_attachment=as_attachment,
+            filename=file.filename,
+            content_type=file.content_type,
+            status=status,
+        )
+    else:
+        response = StreamingHttpResponse(
+            content, content_type=file.content_type or "application/octet-stream", status=status
+        )
+        disposition = content_disposition_header(as_attachment, file.filename)
+        response["Content-Disposition"] = cast("str", disposition)
+    if file.size is not None:
+        response["Content-Length"] = str(file.size)
+    return response
 
 
 def answered_methods(spec: Any, methods: Sequence[str] | None, *, label: str) -> tuple[str, ...]:
@@ -187,6 +224,7 @@ class SpecViewBase(View):
         view = super().as_view(**initkwargs)
         spec = initkwargs.get("spec", cls.spec)
         answered_methods(spec, initkwargs.get("methods", cls.methods), label=cls.__name__)
+        file_output(spec)
         check_request_hooks(
             cls,
             initkwargs,

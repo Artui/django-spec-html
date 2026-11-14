@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from asgiref.sync import sync_to_async
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponseBase
 from django_service_specs import (
     DEFAULT_POOL_SEEDS,
     DispatchError,
@@ -45,7 +45,7 @@ async def adispatch_request(
     pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS,
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT,
     view: Any = None,
-) -> HttpResponse:
+) -> HttpResponseBase:
     """[`dispatch_request`][django_spec_html.http.dispatch_request.dispatch_request], async.
 
     The same principal, arguments, call context, statuses and refusals, and
