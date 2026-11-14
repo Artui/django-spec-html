@@ -20,6 +20,7 @@ from django_service_specs import (
     ServiceSpec,
     bind_arguments,
     coerce_flat,
+    flat_arguments,
     refusal_messages,
     server_owned_keys,
 )
@@ -80,11 +81,25 @@ class SpecConfirmView(SpecPageBase):
 
     **POST** dispatches with the route's kwargs, read by ``route_kwargs`` and
     coerced as a form page's are, under the binding and with the request's
-    seeds. **Nothing the post carries becomes an argument**: not the CSRF
-    token, not the button, not ``redirect_field_name``'s key and not a key
-    named like a parameter, so the closed argument set holds with nothing to
-    check. A success redirects to ``get_redirect_url()`` where the request
-    names a safe URL to return to, else to ``get_success_url(result)``, or
+    seeds. **Nothing the post carries becomes an argument** unless
+    ``posted_arguments`` names it: not the CSRF token, not the button, not
+    ``redirect_field_name``'s key and not any other key named like a
+    parameter, so the closed argument set holds with nothing to check.
+
+    **A bulk action reads its selection from the post.** A list's button
+    posting the ticked rows' checkboxes beside it, through ``hx-include``,
+    names their key in ``posted_arguments``: ``("ids",)`` for a spec taking
+    ``ids``. Each name is read from ``request.POST`` as a query string is
+    read, every value of an array parameter and the last of anything else,
+    a comma list split as the kernel's ``flat_arguments`` splits it and a
+    blank absent, then merged with the route's and coerced by its
+    declaration. A value refused, by coercion or by the shape check, is a
+    refused post like any other: the page at 400, or under
+    ``refusal_redirect`` its message and a redirect. Never a 404, which
+    ``route_refusal_404`` keeps for the route.
+
+    A success redirects to ``get_redirect_url()`` where the request names a
+    safe URL to return to, else to ``get_success_url(result)``, or
     under htmx answers ``HX-Redirect`` to the same URL or the ``spec-result``
     fragment, with ``success_message`` sent through ``django.contrib.messages``
     where its middleware runs.
@@ -129,7 +144,9 @@ class SpecConfirmView(SpecPageBase):
     ``route_kwargs`` names a kwarg into, since the URL pattern is not known
     when ``as_view()`` runs - by a seed the declared ``pool_seeds`` registers,
     as ``server_owned_keys`` reads them, or by a value ``server_arguments``
-    binds. It refuses ``refusal_redirect`` on a page with no ``success_url``
+    binds, or named in ``posted_arguments``. A name there must be a
+    parameter of the spec, and not one ``route_kwargs`` fills from the URL.
+    It refuses ``refusal_redirect`` on a page with no ``success_url``
     that does not override ``get_refusal_url``, since a refused post naming
     no URL to return to would have nowhere to go.
 
@@ -146,6 +163,8 @@ class SpecConfirmView(SpecPageBase):
         route_refusal_404: Whether a route capture the shape check refuses
             raises ``Http404``, on GET and POST alike, as a URL converter that
             did not match would; ``False`` answers it as 0.12.0 did.
+        posted_arguments: The parameters a post supplies, read from
+            ``request.POST`` by name: ``()``, the default, reads none.
         pool_seeds: The seeds the spec's callables are resolved with, unless
             ``get_pool_seeds`` answers others for a request.
         server_arguments: The kernel's ``ServerArguments`` the server answers
@@ -171,6 +190,7 @@ class SpecConfirmView(SpecPageBase):
 
     template_name = "django_spec_html/spec_confirm.html"
     refusal_redirect: bool = False
+    posted_arguments: tuple[str, ...] = ()
 
     @classmethod
     def _check_spec(cls, label: str, spec: ServiceSpec) -> None:
@@ -191,13 +211,17 @@ class SpecConfirmView(SpecPageBase):
 
     @classmethod
     def _check_page(cls, label: str, spec: ServiceSpec, initkwargs: Mapping[str, Any]) -> None:
-        """That the call can be made without a post: every parameter it demands is supplied."""
+        """That every parameter the call demands is supplied, a posted one among the spec's."""
+        route_kwargs = initkwargs.get("route_kwargs", cls.route_kwargs)
+        posted = initkwargs.get("posted_arguments", cls.posted_arguments)
+        _check_posted(label, spec, posted, route_kwargs)
         _check_supplied(
             label,
             spec,
-            initkwargs.get("route_kwargs", cls.route_kwargs),
+            route_kwargs,
             initkwargs.get("server_arguments", cls.server_arguments),
             initkwargs.get("pool_seeds", cls.pool_seeds),
+            frozenset(posted),
         )
         if (
             initkwargs.get("refusal_redirect", cls.refusal_redirect)
@@ -218,10 +242,12 @@ class SpecConfirmView(SpecPageBase):
     def _arguments(
         self, form: None, spec: ServiceSpec, url_kwargs: Mapping[str, Any], served: Served
     ) -> Mapping[str, Any]:
-        """The route's kwargs, as arguments coerced by their declarations, and nothing posted."""
+        """The route's kwargs and the posted ``posted_arguments``, coerced by their declarations."""
         parameters = spec.parameters(call_context=served.call_context)
         route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
-        return coerce_flat(parameters, route)
+        read = flat_arguments(parameters, self.request.POST)
+        posted = {name: read[name] for name in self.posted_arguments if name in read}
+        return coerce_flat(parameters, {**posted, **route})
 
     def _render_page(self, form: None, refreshed: bool, /, **context: Any) -> HttpResponse:
         """The page GET renders, and an uncommitted post, at 200: the base's context, no form."""
@@ -299,8 +325,9 @@ def _check_supplied(
     route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
     server: ServerArguments | None,
     seeds: PoolSeeds,
+    posted: frozenset[str],
 ) -> None:
-    """Refuse a spec demanding a parameter of the caller that only a post could supply."""
+    """Refuse a spec demanding a parameter of the caller that no post or source supplies."""
     try:
         bind_arguments(spec, {}, principal=None)
     except InvalidArguments as refused:
@@ -311,11 +338,36 @@ def _check_supplied(
         server_owned_keys(spec, pool_seeds=seeds)
         | frozenset({} if server is None else server.values)
         | route_targets(route_kwargs)
+        | posted
     )
     missing = sorted(demanded - supplied)
     if missing:
         raise ImproperlyConfigured(
             f"{label} requires {', '.join(missing)}, which no post to a confirmation carries: "
             "fill each from the route, naming it in route_kwargs, or from a pool seed, a "
-            "kwargs provider or server_arguments."
+            "kwargs provider or server_arguments, or name it in posted_arguments."
+        )
+
+
+def _check_posted(
+    label: str,
+    spec: ServiceSpec,
+    posted: Any,
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
+) -> None:
+    """Refuse a ``posted_arguments`` not the spec's parameter names, or naming a route's."""
+    if not isinstance(posted, tuple) or not all(isinstance(name, str) for name in posted):
+        raise ImproperlyConfigured(
+            f"{label}.posted_arguments must be a tuple of parameter names; got {posted!r}."
+        )
+    unknown = sorted(frozenset(posted) - frozenset(spec.parameters().names()))
+    if unknown:
+        raise ImproperlyConfigured(
+            f"{label}.posted_arguments names {', '.join(unknown)}, which the spec does not declare."
+        )
+    routed = sorted(frozenset(posted) & route_targets(route_kwargs))
+    if routed:
+        raise ImproperlyConfigured(
+            f"{label}.posted_arguments names {', '.join(routed)}, which route_kwargs fills "
+            "from the URL: a parameter is the route's or the post's, never both."
         )

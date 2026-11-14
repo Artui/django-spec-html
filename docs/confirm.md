@@ -5,7 +5,8 @@ it: what the operation acts on, and a button. Withdrawing a book, archiving a
 note, closing every stale ticket. Every argument the operation takes comes
 from the server's side - the route, a pool seed, a `kwargs` provider or
 `server_arguments` - so the page posts nothing but its token and the button,
-and **nothing a post carries becomes an argument**.
+and **nothing a post carries becomes an argument** but the selection a bulk
+action names in [`posted_arguments`](#a-bulk-action-over-ticked-rows).
 
 `SpecConfirmView` serves a spec whose Validator is `None`. It shares
 everything with [`SpecFormView`](pages.md) but the form: the admission, the
@@ -103,8 +104,9 @@ stylesheet, script or htmx attribute:
 
 **POST dispatches with the route's kwargs alone**, read by `route_kwargs` and
 coerced by their declarations, with the request's seeds and the binding laid
-over them, as a form page's are. The post's own data is never read: not the
-CSRF token, not the button, not a key named like a parameter. A post carrying
+over them, as a form page's are. The post's own data is never read but for
+the names `posted_arguments` lists: not the CSRF token, not the button, not
+any other key named like a parameter. A post carrying
 `pk=7` to `/books/3/withdraw/` withdraws book 3. So the closed argument set
 holds with nothing to check, and a post cannot fill a parameter the route, a
 seed or `server_arguments` fills, nor one nobody declared.
@@ -113,14 +115,68 @@ seed or `server_arguments` fills, nor one nobody declared.
 `withdraw` runs the operation, and any other post is the page again, with
 `refreshed` in its context.
 
+### A bulk action over ticked rows
+
+A list whose rows carry checkboxes and whose one button archives the ticked
+ones posts the selection itself: the rows are the person's choice, not the
+route's. **`posted_arguments` names the parameters a post supplies**, and
+nothing else the post carries is read. Here `archive_notes_spec` reads
+`Parameter("ids", "array", items="integer")` and archives those notes:
+
+```python
+from django.urls import path, reverse_lazy
+
+urlpatterns = [
+    path(
+        "notes/archive/",
+        SpecConfirmView.as_view(
+            spec=archive_notes_spec,
+            success_url=reverse_lazy("notes"),
+            posted_arguments=("ids",),
+        ),
+        name="archive-notes",
+    ),
+]
+```
+
+The list renders a checkbox per row and a button that posts them with
+htmx's `hx-include`, so the boxes need no form of their own:
+
+```html
+<table>
+  {% for note in notes %}
+    <tr><td><input type="checkbox" name="ids" value="{{ note.pk }}"></td><td>{{ note }}</td></tr>
+  {% endfor %}
+</table>
+<button hx-post="{% url 'archive-notes' %}" hx-include="[name=ids]:checked"
+        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' name="archive">Archive</button>
+```
+
+- **Each name is read as a query string is**, by the kernel's
+  `flat_arguments`: every value of an array parameter, so `ids=3&ids=5` is
+  `[3, 5]`, a comma list split (`ids=3,5`), the last value of anything else,
+  and a blank absent, so a post with nothing ticked carries no `ids`. It is
+  then merged with the route's arguments and coerced by its declaration.
+- **Any other posted key never reaches the service**, a parameter of the spec
+  included, so the closed argument set stays closed.
+- **A refused value is a refused post**: `ids=x` answers 400 with
+  `"ids.0: Enter a whole number."` in `errors`, as does a list the shape
+  check refuses (too short for a `min_length`), or under `refusal_redirect`
+  that message and a redirect back to the list. It is never a 404:
+  `route_refusal_404` is the route's alone.
+- **`as_view()` checks the names**: each must be a parameter of the spec, and
+  none may be one `route_kwargs` fills from the URL, since a parameter is
+  the route's or the post's, never both. `posted_arguments` must be a tuple.
+
 ## Every required parameter has a source
 
-**`as_view()` refuses a spec demanding a parameter that only a post could
-supply**, since no post to this page carries one. Which parameters the call
+**`as_view()` refuses a spec demanding a parameter that nothing but a post
+could supply**, since no post to this page carries one unless
+`posted_arguments` names it. Which parameters the call
 demands is the kernel's answer, read through `bind_arguments` on a call
 carrying nothing: a parameter that is optional or declares a default is not
 demanded, and nor is a key a typed `kwargs` provider fills or may decline,
-or any read an untyped provider reaches. Each one left must be supplied by one of three
+or any read an untyped provider reaches. Each one left must be supplied by one of four
 sources, as they stand when the URLconf is imported:
 
 | Source | Supplies |
@@ -128,6 +184,7 @@ sources, as they stand when the URLconf is imported:
 | the route | each parameter `route_kwargs` names a kwarg into: a tuple's names, a mapping's targets |
 | the seeds | each name the kernel's `server_owned_keys` reads off the declared `pool_seeds`, such as a `reflected` read a registered seed fills |
 | the binding | each name `server_arguments` binds a value to |
+| the post | each name `posted_arguments` lists |
 
 **The route must say what it fills.** `as_view()` is called while the
 URLconf is being built, before the pattern it is mounted on exists, so under
@@ -139,7 +196,7 @@ counted until it is mapped to itself: `{"org": None, "pk": "pk"}`. Without
 any:
 
 ```text
-SpecConfirmView requires pk, which no post to a confirmation carries: fill each from the route, naming it in route_kwargs, or from a pool seed, a kwargs provider or server_arguments.
+SpecConfirmView requires pk, which no post to a confirmation carries: fill each from the route, naming it in route_kwargs, or from a pool seed, a kwargs provider or server_arguments, or name it in posted_arguments.
 ```
 
 A seed only `get_pool_seeds` adds per request is not seen either, since

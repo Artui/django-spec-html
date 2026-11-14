@@ -368,6 +368,12 @@ service on the set it finds then, and a refused post counts the set again. A
 successful post counts nothing. So nothing about the count belongs in a hidden
 input.
 
+**A set the person ticks is posted, not selected.** A list whose checkboxes
+choose the rows a button acts on serves the action with `SpecConfirmView` and
+its `posted_arguments`, which read the ticked ids off the post that
+`hx-include` sends: the recipe is
+[a bulk action over ticked rows](confirm.md#a-bulk-action-over-ticked-rows).
+
 ### The target's display
 
 **A page that sets `display_target = True` shows its target as a person
