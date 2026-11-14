@@ -49,11 +49,13 @@ formset in `django_spec_html/spec_form_set_fragment.html`, the file an htmx
 request is answered with. It is found, refused at `as_view()` when no engine
 finds it, and overridden as [the form page's is](pages.md#the-pages-template):
 list `django_spec_html` in `INSTALLED_APPS` with `APP_DIRS` on. It renders,
-escaped and with no stylesheet, script or htmx attribute, the management
-form, the non-form errors - a question's message among them - and each form
-as a fieldset of its own with its errors, then the submit button, posting
+escaped and with no stylesheet or script, the management form, the non-form
+errors - a question's message among them - and each form as a fieldset of its
+own with its errors, through `django_spec_html/spec_form_set_row.html` inside
+`<div id="spec-form-set-rows">`, then the submit button, posting
 `commit_button`'s name where one is set, and the `add_button`, which skips the
-browser's checks, since its post commits nothing. It has no target pane: a
+browser's checks, since its post commits nothing. The add button's htmx
+attributes, [below](#adding-a-row), are its only ones, inert without htmx. It has no target pane: a
 `many` spec has no target.
 
 ## The formset
@@ -162,6 +164,21 @@ offers a fourth blank form with the first three as they were filled in. At the
 spec's `many_max_length` it offers none, since the list takes no more. Every
 other post that does not commit is the page again with the forms it posted,
 validated by nothing, as on [the single page](pages.md#a-post-that-does-not-commit).
+
+**Over htmx, the shipped add button appends one row.** It carries `hx-post`,
+`hx-target="#spec-form-set-rows"` and `hx-swap="beforeend"`, so a page that
+loads htmx posts the formset and is answered, at 200, with the new form alone,
+rendered by `django_spec_html/spec_form_set_row.html`, then the management
+form's `TOTAL_FORMS` input, one higher, with `hx-swap-oob="true"`, which htmx
+swaps over the page's own. The new form is the formset's `empty_form` at the
+next index, built with the same `form_kwargs` as every other form. At
+`many_max_length` the answer is 204 with no body, and htmx swaps nothing.
+The answer is chosen by the request's `HX-Target`: an htmx add aimed anywhere
+else than `spec-form-set-rows`, such as a whole form posted with
+`hx-swap="outerHTML"` as in the template above, is the formset again with one
+more form, and so is an add without htmx. A project's own template that wants
+the row answer gives its rows that `id` and its add button that target, and
+overrides the row template as any shipped template is overridden.
 
 ## A success
 

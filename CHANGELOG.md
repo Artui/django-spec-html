@@ -29,6 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answers `inline`. Both refuse at `as_view()` a file spec the kernel's
   `file_output` refuses, such as a `LIST` one. `dispatch_request` and
   `adispatch_request` are annotated as answering `HttpResponseBase`.
+- **The formset page adds a row over htmx without re-rendering the formset.**
+  The shipped fragment renders each form through a new
+  `django_spec_html/spec_form_set_row.html` inside
+  `<div id="spec-form-set-rows">`, and its add button carries `hx-post`,
+  `hx-target="#spec-form-set-rows"` and `hx-swap="beforeend"`, inert without
+  htmx. An htmx add aimed at that `id` is answered 200 with the new form alone,
+  the formset's `empty_form` at the next index built with the same
+  `form_kwargs`, then the management form's `TOTAL_FORMS` input one higher with
+  `hx-swap-oob="true"`; at `many_max_length` it is a 204 with no body. An add
+  aimed anywhere else, with htmx or without, is the formset again with one more
+  form, as before.
 
 ### Changed
 - **The kernel floor is 0.33.0.** Its `FormValidator` binds the form to a
