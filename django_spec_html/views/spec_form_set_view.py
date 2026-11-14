@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any, Final, cast
 
 from django import forms
 from django.core.exceptions import ImproperlyConfigured
 from django.forms.formsets import TOTAL_FORM_COUNT, BaseFormSet
 from django.http import HttpResponse
+from django.template.loader import get_template
 from django_service_specs import (
     NON_FIELD_ERRORS,
     NON_FIELD_KEYS,
@@ -33,6 +34,11 @@ from django_spec_html.views.utils import (
     refusal_tree,
     without_errors,
 )
+
+_ROWS: Final = "spec-form-set-rows"
+"""The ``id`` of the shipped fragment's rows, which its add button targets over htmx."""
+
+_ROW_TEMPLATE: Final = "django_spec_html/spec_form_set_row.html"
 
 
 class SpecFormSetView(SpecPageBase):
@@ -65,11 +71,14 @@ class SpecFormSetView(SpecPageBase):
     ``django_spec_html/spec_form_set.html`` by default, which this package
     ships, with its formset in ``django_spec_html/spec_form_set_fragment.html``.
     It renders the management form, the formset's non-form errors, each form
-    as a fieldset of its own with its errors, and the submit button posting
+    as a fieldset of its own with its errors, through
+    ``django_spec_html/spec_form_set_row.html`` inside
+    ``id="spec-form-set-rows"``, and the submit button posting
     ``commit_button``'s name where one is set, then the ``add_button``, which
-    skips the browser's checks since its post commits nothing. No target
-    pane. Found, refused at ``as_view()`` and overridden as ``SpecFormView``'s
-    is.
+    skips the browser's checks since its post commits nothing, and carries
+    ``hx-post``, ``hx-target="#spec-form-set-rows"`` and
+    ``hx-swap="beforeend"``, inert without htmx. No target pane. Found,
+    refused at ``as_view()`` and overridden as ``SpecFormView``'s is.
 
     **No target pane.** A ``many`` spec declares no target selector, which the
     kernel refuses when the spec is built, so there is no row or set to
@@ -129,6 +138,12 @@ class SpecFormSetView(SpecPageBase):
     see that page. With ``commit_button`` set, ``add_button`` names a second
     submit button whose post is the page again with one more form, bound to
     everything posted, never past ``many_max_length``, and nothing dispatched.
+    An htmx add whose ``HX-Target`` is ``spec-form-set-rows``, the shipped
+    button's, is answered 200 with the new form alone - ``formset.empty_form``
+    at the next index, built with the same ``form_kwargs`` and rendered by
+    the row template - then the management form's ``TOTAL_FORMS`` input with
+    ``hx-swap-oob="true"``; at ``many_max_length`` the answer is 204 with no
+    body. Any other add, htmx included, is the formset again.
 
     **A success message** is ``success_message`` formatted with
     ``{"count": n}``, the number of rows the call carried, so
@@ -272,11 +287,36 @@ class SpecFormSetView(SpecPageBase):
 
     def _render_page(self, form: BaseFormSet, refreshed: bool, /, **context: Any) -> HttpResponse:
         """The page GET renders, a refreshed formset's error state, and each form's, set to none."""
+        added = self._added_row(form)
+        if added is not None:
+            return added
         if refreshed:
             for each in form.forms:
                 without_errors(each)
             _set_formset_errors(form, [])
         return self._rendered(self.get_context_data(formset=form, **context), status=200)
+
+    def _added_row(self, form: BaseFormSet) -> HttpResponse | None:
+        """The new row and its out-of-band total for an htmx add into the rows, or ``None``."""
+        request = self.request
+        if self.add_button not in request.POST:
+            return None
+        if request.headers.get("HX-Target") != _ROWS:
+            return None
+        if not self.wants_fragment(request):
+            return None
+        before = type(form)(data=request.POST)
+        if not before.management_form.is_valid():
+            return None
+        index = before.total_form_count()
+        if form.total_form_count() <= index:
+            return HttpResponse(status=204)
+        row = form.empty_form
+        row.prefix = form.add_prefix(index)
+        template = get_template(_ROW_TEMPLATE, using=self.template_engine)
+        rendered = template.render({"form": row, "number": index + 1}, request)
+        total = form.management_form[TOTAL_FORM_COUNT].as_widget(attrs={"hx-swap-oob": "true"})
+        return HttpResponse(f"{rendered}{total}\n", content_type=self.content_type)
 
     def _render_refused(
         self,

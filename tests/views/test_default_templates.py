@@ -435,7 +435,10 @@ class TestTheManyPage:
         view = built(SpecFormSetView, many_spec(), commit_button="save", add_button="add")
         rendered = body(get(view, ada))
         commit = '<button type="submit" name="save">Save</button>'
-        add = '<button type="submit" name="add" formnovalidate>Add another</button>'
+        add = (
+            '<button type="submit" name="add" formnovalidate hx-post="" '
+            'hx-target="#spec-form-set-rows" hx-swap="beforeend">Add another</button>'
+        )
         assert rendered.index(commit) < rendered.index(add)
 
     def test_the_add_button_s_post_is_one_more_row(self, ada: Any) -> None:

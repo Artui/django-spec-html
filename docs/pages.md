@@ -873,6 +873,13 @@ URL that does not answer 403 or 404. The view's `Vary` never reaches a denial, w
 answered, so each handler sets its own on `HX-Request`, since it answers the
 two kinds of request differently.
 
+### Adding a formset row over htmx
+
+The formset page's shipped add button posts into the rows and appends the one
+form it is answered with, beside an out-of-band `TOTAL_FORMS`; a post at the
+list's maximum is a 204. [Adding a row](formsets.md#adding-a-row) has what
+chooses that answer and how a project's own template takes it.
+
 ## Coming from Django's `FormView`
 
 A refused post answers **400** here where Django's `FormView` answers 200:

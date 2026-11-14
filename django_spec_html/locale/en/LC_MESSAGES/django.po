@@ -49,11 +49,11 @@ msgstr ""
 msgid "Forms"
 msgstr ""
 
-#, python-format
-msgid "Row %(number)s"
+msgid "Add another"
 msgstr ""
 
-msgid "Add another"
+#, python-format
+msgid "Row %(number)s"
 msgstr ""
 
 msgid "Results"
