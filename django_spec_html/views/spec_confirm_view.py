@@ -64,8 +64,9 @@ class SpecConfirmView(SpecPageBase):
     ``target_count`` and ``target_counted_at``, and ``target_display`` on a
     page that sets ``display_target`` - the affordances asked on GET as
     ``unavailable``, ``commit_button``, the fragment wrapper under htmx, the
-    request hooks, ``success_url``, ``redirect_field_name`` and
-    ``success_message``, each as ``SpecFormView`` documents it.
+    request hooks, ``success_url``, ``redirect_field_name``,
+    ``success_message`` and a file's answer with ``as_attachment``, each as
+    ``SpecFormView`` documents it.
 
     **GET** renders ``template_name`` with that context, beside ``view`` and
     ``spec``, and **no** ``form``: there is nothing to fill in, so the
