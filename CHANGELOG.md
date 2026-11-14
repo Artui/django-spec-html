@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **One form page serves several operations, one per submit button.**
+  `SpecFormView` and `SpecConfirmView` take `actions`, a mapping of a submit
+  button's name to the `ServiceSpec` it runs, in place of `spec`: a committing
+  post runs the action whose key it carries, and one naming none or several is
+  a 400 (`BadRequest`). GET renders the first action's spec. `success_url` and
+  `success_message` stay page-wide; the success hooks read the action that ran
+  as `self.action_name`. The shipped form and confirmation templates render one
+  button per action. `as_view()` checks each action as it checks `spec`, and
+  refuses `actions` beside `spec`, form actions that post different form
+  classes, a key that is a field of the form, and a `commit_button` or
+  `redirect_field_name` that is an action's key.
 - **A confirmation reads a bulk action's selection from the post.**
   `SpecConfirmView.posted_arguments`, a tuple of parameter names, is read from
   `request.POST` as a query string is, every value of an array, merged with

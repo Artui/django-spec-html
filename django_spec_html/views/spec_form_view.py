@@ -361,19 +361,38 @@ class SpecFormView(SpecPageBase):
     fields a post leaves out off its own form, and the page's form, validated
     whole, would call each one required.
 
+    **One form, several operations.** ``actions`` maps each submit button's
+    name to the spec it runs, in place of ``spec``. A committing post runs the
+    action whose key ``request.POST`` carries, and one naming none or several
+    is Django's ``BadRequest``; GET, and a post that does not commit, render
+    the first action's. ``success_url`` and ``success_message`` are
+    page-wide, and ``get_success_url`` and ``get_success_message`` read the
+    action that ran as ``self.action_name``. The shipped template renders one
+    button per action, named by its key. Every action is checked as ``spec``
+    is, and validated by a ``FormValidator`` of one form class.
+
     ``as_view()`` refuses, when the URLconf is imported, a view with no
     ``ServiceSpec``, a spec whose Validator is not a ``FormValidator``, a
     ``many`` spec, whose list of rows no form posts, a view with no
     ``success_url`` that does not override ``get_success_url``, a
     ``commit_button`` that is not a button's name or is one of the form's
     fields, and a ``redirect_field_name`` that is not a key's name, is one of
-    the form's fields or is the ``commit_button``.
+    the form's fields or is the ``commit_button``; and ``actions`` beside a
+    ``spec``, empty, keyed by anything but a non-empty string or by a field of
+    the form, posting different form classes, or keyed by the
+    ``commit_button`` or the ``redirect_field_name``.
 
     **Sync only**, in this release. **CSRF is the host's middleware**, as for
     any Django view, and the template renders ``{% csrf_token %}``.
 
     Attributes:
-        spec: The operation served. Required.
+        spec: The operation served. Required, unless ``actions`` is set.
+        actions: The operations served, by the name of the submit button that
+            runs each: a non-empty mapping, in place of ``spec``. ``None`` by
+            default.
+        action_name: The key of the action a committing post runs, set before
+            it is dispatched, for the success hooks to read; ``None`` on GET,
+            on a post that does not commit, and on a page without ``actions``.
         template_name: The page's template, as for any Django template view:
             ``django_spec_html/spec_form.html``, the one this package ships,
             by default.
@@ -431,6 +450,27 @@ class SpecFormView(SpecPageBase):
     template_name = "django_spec_html/spec_form.html"
     asked_fields: tuple[str, ...] = ()
     validate_on_refresh: bool = False
+    _takes_actions = True
+
+    @classmethod
+    def _check_actions(cls, label: str, actions: Mapping[str, ServiceSpec]) -> None:
+        """Refuse actions posting different forms, or one named like a field of the form."""
+        first, *rest = actions.items()
+        form_class = _form_class(first[1])
+        for key, spec in rest:
+            other = _form_class(spec)
+            if other is not form_class:
+                raise ImproperlyConfigured(
+                    f"{label}.actions[{key!r}] validates with {other.__name__}, and the page's "
+                    f"form is {form_class.__name__}, the first action's: every action posts the "
+                    "page's one form."
+                )
+        named = sorted(frozenset(actions) & frozenset(_declared(form_class)))
+        if named:
+            raise ImproperlyConfigured(
+                f"{label}.actions names {named[0]!r}, a field {form_class.__name__} declares: a "
+                "field is posted by every submit, so it cannot say which action runs."
+            )
 
     @classmethod
     def _check_spec(cls, label: str, spec: ServiceSpec) -> None:

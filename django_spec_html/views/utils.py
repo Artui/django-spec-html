@@ -226,12 +226,15 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
     """Everything a spec served as a page shares, whatever the page renders for its post."""
 
     spec: ServiceSpec | None = None
+    actions: Mapping[str, ServiceSpec] | None = None
+    action_name: str | None = None
     success_url: Any = None
     display_target: bool = False
     target_display_limit: int = 10
     commit_button: str | None = None
     success_message: str = ""
     redirect_field_name: str | None = None
+    _takes_actions: ClassVar[bool] = False
 
     @classonlymethod
     def as_view(cls, **initkwargs: Any) -> Callable[..., HttpResponseBase]:
@@ -242,10 +245,14 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
             raise ImproperlyConfigured(
                 f"{cls.__qualname__} does not supply the page's hooks: {missing}."
             )
-        _check_configuration(cls, initkwargs)
-        spec = initkwargs.get("spec", cls.spec)
-        check_request_hooks(cls, initkwargs, spec)
-        cls._check_page(cls.__name__, spec, initkwargs)
+        specs = _page_specs(cls, initkwargs)
+        _check_configuration(cls, initkwargs, specs)
+        for label, spec in specs:
+            check_request_hooks(cls, initkwargs, spec)
+            cls._check_page(label, spec, initkwargs)
+        actions = initkwargs.get("actions", cls.actions)
+        if actions is not None:
+            cls._check_actions(cls.__name__, actions)
         check_shipped_templates(cls, initkwargs)
         return view
 
@@ -287,6 +294,8 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         """Dispatch the posted form: a redirect on success, the form re-rendered on a refusal."""
         if not self.commits(request):
             return self._page(request, kwargs, data=request.POST, files=request.FILES)
+        if self.actions is not None:
+            self.action_name = _chosen(self.actions, request)
         spec = self.served_spec()
         served = self._served(request)
         principal, grant, seeds = admitted(spec, request, kwargs, served)
@@ -486,8 +495,15 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         """Set the error state of the form a post that does not commit renders."""
 
     def served_spec(self) -> ServiceSpec:
-        """``spec``, which ``as_view`` refused to build a view without."""
-        return cast("ServiceSpec", self.spec)
+        """``spec``, or the action ``action_name`` names, the first before a post chose one."""
+        actions = self.actions
+        if actions is None:
+            return cast("ServiceSpec", self.spec)
+        return actions[self.action_name or next(iter(actions))]
+
+    @classmethod
+    def _check_actions(cls, label: str, actions: Mapping[str, ServiceSpec]) -> None:
+        """Refuse, at ``as_view()``, actions this page cannot serve together; none by default."""
 
     # The hooks: each a step that differs with what the page renders, so a
     # subclass supplies every one.
@@ -552,16 +568,62 @@ class Served:
     """
 
 
-def _check_configuration(cls: type[SpecPageBase], initkwargs: Mapping[str, Any]) -> None:
-    """Refuse a view that could not serve its first request, naming what is missing."""
+def _page_specs(cls: type[SpecPageBase], initkwargs: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    """Each spec the page serves, as the label its refusals name: ``spec``, or every action."""
     label = cls.__name__
     spec = initkwargs.get("spec", cls.spec)
-    if not isinstance(spec, ServiceSpec):
+    actions = initkwargs.get("actions", cls.actions)
+    if actions is None:
+        return [(label, spec)]
+    if not cls._takes_actions:
         raise ImproperlyConfigured(
-            f"{label}.as_view() needs a ServiceSpec, the write a form posts; "
-            f"got {type(spec).__name__}."
+            f"{label} takes no actions: only SpecFormView and SpecConfirmView dispatch one "
+            "spec per submit button."
         )
-    cls._check_spec(label, spec)
+    if spec is not None:
+        raise ImproperlyConfigured(
+            f"{label} sets both spec and actions: a page serves one spec, or one per action, "
+            "never both."
+        )
+    if not isinstance(actions, Mapping) or not actions:
+        raise ImproperlyConfigured(
+            f"{label}.actions must be a non-empty mapping of submit button names to the "
+            f"ServiceSpec each runs; got {actions!r}."
+        )
+    for key in actions:
+        if not isinstance(key, str) or not key:
+            raise ImproperlyConfigured(
+                f"{label}.actions keys are the names of the submit buttons that run them, "
+                f"non-empty strings; got {key!r}."
+            )
+    return [(f"{label}.actions[{key!r}]", each) for key, each in actions.items()]
+
+
+def _chosen(actions: Mapping[str, ServiceSpec], request: HttpRequest) -> str:
+    """The one action whose button ``request`` posted, else Django's ``BadRequest``."""
+    named = [key for key in actions if key in request.POST]
+    if not named:
+        raise BadRequest(f"The post names none of the page's actions: {', '.join(actions)}.")
+    if len(named) > 1:
+        raise BadRequest(f"The post names more than one action: {', '.join(named)}.")
+    return named[0]
+
+
+def _check_configuration(
+    cls: type[SpecPageBase], initkwargs: Mapping[str, Any], specs: list[tuple[str, Any]]
+) -> None:
+    """Refuse a view that could not serve its first request, naming what is missing."""
+    label = cls.__name__
+    shown = initkwargs.get("display_target", cls.display_target)
+    for named, spec in specs:
+        if not isinstance(spec, ServiceSpec):
+            raise ImproperlyConfigured(
+                f"{named}.as_view() needs a ServiceSpec, the write a form posts; "
+                f"got {type(spec).__name__}."
+            )
+        cls._check_spec(named, spec)
+        if shown:
+            check_display(named, spec)
     redirects = initkwargs.get("get_success_url", cls.get_success_url)
     if (
         initkwargs.get("success_url", cls.success_url) is None
@@ -576,13 +638,21 @@ def _check_configuration(cls: type[SpecPageBase], initkwargs: Mapping[str, Any])
         raise ImproperlyConfigured(
             f"{label}.target_display_limit must be a positive int; got {limit!r}."
         )
-    if initkwargs.get("display_target", cls.display_target):
-        check_display(label, spec)
     button = initkwargs.get("commit_button", cls.commit_button)
     _check_commit_button(label, button)
-    _check_redirect_field_name(
-        label, initkwargs.get("redirect_field_name", cls.redirect_field_name), button
-    )
+    redirect = initkwargs.get("redirect_field_name", cls.redirect_field_name)
+    _check_redirect_field_name(label, redirect, button)
+    actions = initkwargs.get("actions", cls.actions) or {}
+    if button in actions:
+        raise ImproperlyConfigured(
+            f"{label}.commit_button names {button!r}, one of its actions: the button that "
+            "commits is one press, and an action's is another."
+        )
+    if redirect in actions:
+        raise ImproperlyConfigured(
+            f"{label}.redirect_field_name names {redirect!r}, one of its actions: the URL to "
+            "return to is posted by every submit, so every post would name that action."
+        )
 
 
 def check_shipped_templates(cls: type[SpecRequestBase], initkwargs: Mapping[str, Any]) -> None:
