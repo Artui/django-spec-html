@@ -1005,6 +1005,28 @@ prefilled form a row, a deleted row sent whole with `DELETE` true, a row
 left out left alone. [Editing a set](formsets.md#editing-a-set) has the
 example and what a post sends.
 
+### A formset over any Validator
+
+A `many` spec whose Validator is not a `FormValidator` gets a formset page by
+naming its row form, **`form_class`**, as the [form page](#a-form-over-any-validator)
+does:
+
+```python
+SpecFormSetView.as_view(spec=add_books_spec, form_class=BookForm, success_url="/books/")
+```
+
+The page builds one `formset_factory` of it, within the spec's
+`many_min_length` and `many_max_length`, every form built with
+`get_form_kwargs()`. Each form renders and is read, and is never validated:
+a row's refusal lands on the form that sent it, and a refusal of the whole
+set is the formset's non-form errors. **The rule over the set is the
+Validator's own `validated_many`**, which raises it under `non_field_errors`;
+the page adds none. `as_view()` checks the row form against each row's
+parameters, not the call's top level, with the form page's checks; a route
+and `server_arguments` fill the top level only, so a required row parameter
+the form leaves out passes only where the server's own keys fill it. Editing
+an existing set through a model formset stays a `FormValidator`'s.
+
 ## Coming from Django's `FormView`
 
 A refused post answers **400** here where Django's `FormView` answers 200:

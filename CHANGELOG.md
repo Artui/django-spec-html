@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A formset page over any Validator.** `SpecFormSetView.form_class` names
+  the row form a `many` spec's page renders when its Validator is not a
+  `FormValidator`, built by `formset_factory` and `get_form_kwargs()`, as the
+  form page's is. Each form renders and is read, never validated: a row's
+  refusal lands on the form that sent the row, and a refusal of the whole set
+  from the Validator's `validated_many` is the formset's non-form errors; the
+  page adds no rule over the set. `as_view()` holds the row form to the rows'
+  parameters with the form page's checks, and only the server's own keys, not
+  the route, fill a required row parameter the form leaves out.
 - **A form page over any Validator.** `SpecFormView.form_class` names the
   form a page renders for a spec whose Validator is not a `FormValidator`,
   such as a `DataclassValidator` or a `PydanticValidator`. The form renders

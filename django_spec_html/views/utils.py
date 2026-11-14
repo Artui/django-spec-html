@@ -53,6 +53,7 @@ from django_service_specs import (
     DispatchError,
     DispatchResult,
     FieldAudience,
+    FormValidator,
     Grant,
     InvalidArguments,
     NotPermitted,
@@ -68,6 +69,7 @@ from django_service_specs import (
     ServiceSpec,
     ServiceValidationError,
     UnknownArguments,
+    Validator,
     apply_server_arguments,
     audience_projection_for_spec,
     authorize,
@@ -1109,3 +1111,99 @@ def refusal_tree(refused: DispatchError | ServiceError) -> Mapping[Any, Any]:
     if isinstance(refused, ServiceValidationError):
         return field_map(refused.detail)
     return {NON_FIELD_ERRORS: [refused.message]}
+
+
+PAGE_FORM_KEYWORDS: Final = frozenset({"data", "files", "instance"})
+"""The keywords a ``form_class`` page builds its form with itself."""
+
+
+def page_form_kwargs(view: Any) -> Mapping[str, Any]:
+    """``view.get_form_kwargs()``, refusing a keyword the page sets itself."""
+    keywords = view.get_form_kwargs()
+    taken = sorted(frozenset(keywords) & PAGE_FORM_KEYWORDS)
+    if taken:
+        raise ImproperlyConfigured(
+            f"{type(view).__name__}.get_form_kwargs() returned {taken[0]!r}, which the page "
+            "sets itself: it returns the form's other keywords."
+        )
+    return keywords
+
+
+def checked_page_form(
+    label: str,
+    validator: Validator | None,
+    form_class: type[forms.BaseForm],
+    declared: Parameters,
+) -> dict[str, Any]:
+    """The fields ``form_class`` posts, refusing a form ``declared`` would not read as declared."""
+    named = f"{label}.form_class {form_class.__name__}"
+    if isinstance(validator, FormValidator):
+        raise ImproperlyConfigured(
+            f"{label} sets form_class over a FormValidator, whose form is already the page's: "
+            "drop form_class."
+        )
+    _check_no_clean(named, form_class)
+    try:
+        posted = {each.name: each for each in FormValidator(form_class).parameters().items}
+    except ImproperlyConfigured as refused:
+        raise ImproperlyConfigured(f"{named} cannot be read off a post: {refused}") from refused
+    unsendable = sorted(validator.unsendable) if validator is not None else []
+    if unsendable:
+        raise ImproperlyConfigured(
+            f"{label}'s spec requires {unsendable[0]!r}, which its Validator cannot declare, so "
+            "no form can post it."
+        )
+    parameters = {each.name: each for each in declared.items}
+    for name, field in posted.items():
+        if name not in parameters:
+            raise ImproperlyConfigured(
+                f"{named} posts {name!r}, which the spec does not declare: it would reach "
+                "dispatch as an unknown argument."
+            )
+        _check_agreement(named, field, parameters[name])
+    return posted
+
+
+def _check_no_clean(named: str, form_class: type[forms.BaseForm]) -> None:
+    """Refuse a ``clean()`` or ``clean_<field>()`` the form defines above Django's own."""
+    for klass in form_class.__mro__:
+        if klass.__module__.startswith("django."):
+            continue
+        own = sorted(name for name in vars(klass) if name == "clean" or name.startswith("clean_"))
+        if own:
+            raise ImproperlyConfigured(
+                f"{named} defines {own[0]}(), which the page never runs: the rule belongs in the "
+                "spec's Validator."
+            )
+
+
+def _check_agreement(named: str, field: Any, parameter: Any) -> None:
+    """Refuse a field whose wire type or ``required`` the spec's parameter does not share."""
+    if parameter.type != "any" and _shape(field, parameter.format) != _shape(
+        parameter, parameter.format
+    ):
+        raise ImproperlyConfigured(
+            f"{named} posts {field.name!r} as {_spelled(field)}, and the spec declares "
+            f"{_spelled(parameter)}."
+        )
+    if field.required != parameter.required:
+        verb = "requires" if field.required else "does not require"
+        spec_verb = "does not" if field.required else "does"
+        raise ImproperlyConfigured(
+            f"{named} {verb} {field.name!r}, and the spec {spec_verb}: the form and the spec "
+            "must agree on whether it may be left out."
+        )
+
+
+def _shape(parameter: Any, fmt: str | None) -> tuple[Any, ...]:
+    """What the type rule compares: the type, an array's element type, a format the spec names."""
+    return (parameter.type, parameter.items, parameter.format if fmt is not None else None)
+
+
+def _spelled(parameter: Any) -> str:
+    """A parameter's wire type as a refusal names it."""
+    if parameter.type == "array":
+        return f"array of {parameter.items}"
+    if parameter.format is not None:
+        return f"{parameter.type} ({parameter.format})"
+    return parameter.type
