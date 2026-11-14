@@ -773,8 +773,7 @@ asks them all as dispatch does. Each seed is resolved twice as well, once for
 the target's lookup and once for the affordances' pool, and once more for
 each of the class-level check and the form's `form_kwargs` that
 [names it](#what-the-request-carries). On a page serving `actions`, every
-action's conditions are asked so, each action's row conditions in a query
-of their own. Write conditions and seed resolvers that may be asked more
+action's conditions are asked so. Write conditions and seed resolvers that may be asked more
 than once and answer the same.
 
 The callable conditions are asked first, without a row, so where both kinds

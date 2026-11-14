@@ -5,7 +5,9 @@ and the button alone, and the URL to return to where the view reads one. A
 question is shown by its message, which is the one entry of ``errors`` it
 brings: the page builds no control from a schema. A page serving actions
 renders one button per action, named by its key, and an unavailable
-action's reason with its button disabled. A post answered with a file is
+action's reason with its button disabled, the page's own reason not repeated
+(test_the_confirm_page_disables_every_button) and given only when unmet
+(test_an_available_confirmation_gives_no_reason). A post answered with a file is
 never boosted: an htmx request cannot save it.
 {% endcomment %}{% include "django_spec_html/target.html" %}
 {% if unavailable and not view.actions %}<p data-code="{{ unavailable.code }}">{{ unavailable.reason }}</p>{% endif %}

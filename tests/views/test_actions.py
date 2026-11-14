@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import pytest
@@ -237,6 +238,10 @@ def row_spec(*affordances: Affordance) -> ServiceSpec:
     )
 
 
+def untitled_notes(*, pk: int) -> Any:
+    return Note.objects.filter(title="")
+
+
 def paused_spec(*affordances: Affordance) -> ServiceSpec:
     return ServiceSpec(service=Record(), permissions=OPEN, affordances=list(affordances))
 
@@ -292,6 +297,19 @@ class TestEachActionAnswersItsOwnAvailability:
         assert "unavailable_actions" not in response.context_data
         assert response.context_data["action_buttons"] == [("publish", None), ("save", None)]
         assert " disabled" not in rendered(response)
+
+    def test_every_action_is_asked_of_the_row_the_page_shows(self, note: Note) -> None:
+        Note.objects.create(owner=note.owner, title="")
+        elsewhere = dataclasses.replace(
+            row_spec(TITLED),
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=untitled_notes, reads=PK
+            ),
+        )
+        view = SpecFormView.as_view(
+            actions={"save": row_spec(), "publish": elsewhere}, success_url="/done/"
+        )
+        assert on_note(view, note).context_data["unavailable_actions"] == {"publish": TITLED}
 
     def test_a_post_running_the_available_action_succeeds(self, note: Note) -> None:
         publish, save = row_spec(TITLED), row_spec()
@@ -371,6 +389,12 @@ class TestASingleSpecPageIsUnchanged:
         html = rendered(response)
         assert '<p data-code="paused">Archiving is paused.</p>' in html
         assert '<button type="submit" disabled>Confirm</button>' in html
+
+    def test_an_available_confirmation_gives_no_reason(self) -> None:
+        view = SpecConfirmView.as_view(spec=paused_spec(), success_url="/done/")
+        html = rendered(view(request_for()))
+        assert "<p data-code" not in html
+        assert '<button type="submit">Confirm</button>' in html
 
 
 def refused(view_class: type[Any], **initkwargs: Any) -> str:
