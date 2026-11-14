@@ -214,6 +214,14 @@ so a selector's own rows are left as they were. A row that cannot carry an
 attribute, such as a tuple from `values_list()`, is served without answers,
 and either filter raises for it.
 
+A row that wraps its model instance, a frozen dataclass for one, is answered
+as well when the spec declares `row_object`, which the kernel reads once for
+every transport: the answers are put on the wrapper past its frozen guard, so
+`row|available:"withdraw"` and `row|unavailable:"withdraw"` read it unchanged,
+and the answers come from the same one query dispatch already made for every
+row. A wrapper with `__slots__` has no place to carry them and is served
+without answers, as a tuple is.
+
 ### Why a row's action is unavailable
 
 The `unavailable` filter reads the same answers and says why: the row's
