@@ -5,7 +5,7 @@ import datetime
 import json
 import math
 from abc import ABCMeta, abstractmethod
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from decimal import Decimal
 from types import MappingProxyType
@@ -729,11 +729,21 @@ def _sendable(trigger: Any) -> bool:
     return all(isinstance(name, str) and name for name in trigger)
 
 
+def renders_no_page(methods: Iterable[str], refusal_redirect: bool) -> bool:
+    """Whether a page serving no GET or HEAD, redirecting its refusals, renders nothing."""
+    return bool(refusal_redirect) and not {m.lower() for m in methods} & {"get", "head"}
+
+
 def check_shipped_templates(cls: type[SpecRequestBase], initkwargs: Mapping[str, Any]) -> None:
     """Refuse a page rendering a shipped template the view's engine does not find."""
     page = initkwargs.get("template_name", cls.template_name)
     names = initkwargs.get("get_template_names", cls.get_template_names)
     if page not in _SHIPPED_FRAGMENTS or names is not TemplateResponseMixin.get_template_names:
+        return
+    if renders_no_page(
+        initkwargs.get("http_method_names", cls.http_method_names),
+        initkwargs.get("refusal_redirect", getattr(cls, "refusal_redirect", False)),
+    ):
         return
     engine = initkwargs.get("template_engine", cls.template_engine)
     fragment = initkwargs.get("fragment_template_name", cls.fragment_template_name)

@@ -517,6 +517,16 @@ The page renders the empty dialog only before a question, so whichever way
 the page is rendered there is one element with its id. An id that matches
 no element on the page swaps nothing.
 
+### A confirmation that only posts
+
+A button in a list's row posts to a confirmation that never renders a page:
+set `http_method_names = ["post"]` with `refusal_redirect = True`, and
+`as_view()` does not look for the shipped template, so the page's templates
+need not be installed. A refusal goes back to the list as a message. Where
+messages are unavailable, it answers the refusal's status with an empty body
+rather than a 500. A page that serves GET or HEAD, or whose refusal is not
+redirected, is still checked at `as_view()`.
+
 ### Not a gate on an agent route
 
 **The question is a page's affordance, never a security boundary.** On an
