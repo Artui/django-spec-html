@@ -1092,7 +1092,7 @@ def answered_rows(spec: SelectorSpec, rows: list[Any]) -> list[Any]:
         answers = row_affordance_answers(spec, row)
         carrier = _AnsweredRow(row) if isinstance(row, Mapping) else row
         with suppress(AttributeError):
-            setattr(carrier, _ANSWERS, answers)
+            object.__setattr__(carrier, _ANSWERS, answers)
         answered.append(carrier)
     return answered
 

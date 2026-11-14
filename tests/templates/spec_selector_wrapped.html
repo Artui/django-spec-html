@@ -1,0 +1,3 @@
+{% load django_spec_html %}{% for row in rows %}
+{{ row.note.title }}:{% with why=row|unavailable:"rename" %}{% if why %}{{ why.reason }}{% else %}ok{% endif %}{% endwith %}
+{% endfor %}

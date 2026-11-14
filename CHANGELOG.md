@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A row that wraps its model instance carries its affordance answers.**
+  `SpecSelectorView` puts a row's answers on it past a frozen dataclass's
+  guard, where `setattr` raised `FrozenInstanceError` and the row silently
+  carried none, so over rows wrapped through the spec's `row_object` the
+  `available` and `unavailable` filters read each row unchanged, with no new
+  view attribute and no query beyond the one dispatch makes. A row with
+  `__slots__` or a tuple is still served without answers.
 - **One form page serves several operations, one per submit button.**
   `SpecFormView` and `SpecConfirmView` take `actions`, a mapping of a submit
   button's name to the `ServiceSpec` it runs, in place of `spec`: a committing
