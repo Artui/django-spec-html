@@ -20,9 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   form page's is. Each form renders and is read, never validated: a row's
   refusal lands on the form that sent the row, and a refusal of the whole set
   from the Validator's `validated_many` is the formset's non-form errors; the
-  page adds no rule over the set. `as_view()` holds the row form to the rows'
-  parameters with the form page's checks, and only the server's own keys, not
-  the route, fill a required row parameter the form leaves out.
+  page adds no rule over the set. On a spec with a `collection_selector_spec`
+  the page edits the set it resolves: one prefilled form a row posting the
+  row's key, `INITIAL_FORMS` the set's count, each initial row sent with its
+  key and a deleted one whole with `DELETE` true, a key outside the set
+  refused on its row. `as_view()` holds the row form to the rows' parameters
+  with the form page's checks, and only the server's own keys, not the route,
+  fill a required row parameter the form leaves out.
 - **A form page over any Validator.** `SpecFormView.form_class` names the
   form a page renders for a spec whose Validator is not a `FormValidator`,
   such as a `DataclassValidator` or a `PydanticValidator`. The form renders
