@@ -1073,9 +1073,8 @@ spec it runs**, and replaces `spec`:
   more than one, is Django's `BadRequest`, a 400, and nothing runs. The chosen
   spec is the one the post is admitted, finds its target, is validated and
   dispatched by, and the one a refused post's page is rendered with.
-- **GET renders the first action's spec**, and so does a post that does not
-  commit under `commit_button`: the page, its admission, its target and its
-  form are the first action's.
+- **GET renders the first action's spec**: the page, its admission, its
+  target and its form are the first action's.
 - **The success is page-wide.** `success_url` and `success_message` serve
   every action. `get_success_url(result)` and `get_success_message(result)`
   read which one ran as `self.action_name`, the key, set before the post is
@@ -1091,9 +1090,10 @@ Validator: a confirmation's "Archive" and "Delete" buttons are one page.
 Validator, its parameters against the route, the binding, the seeds and a
 confirmation's `posted_arguments` - each refusal naming the action, as in
 `SpecFormView.actions['publish']`. It also refuses `actions` beside `spec`, an
-empty mapping, a key that is not a non-empty string, a `commit_button` or
-`redirect_field_name` that is an action's key, and `actions` on a page that
-takes none, such as `SpecFormSetView`. On `SpecFormView` every action is
+empty mapping, a key that is not a non-empty string, a `redirect_field_name`
+that is an action's key, any `commit_button` beside `actions` (an actions page
+commits only through an action's button, and a post naming none answers 400),
+and `actions` on a page that takes none, such as `SpecFormSetView`. On `SpecFormView` every action is
 validated by a `FormValidator` of one form class, or shares the page's
 [`form_class`](#a-form-over-any-validator), since the page posts one form, and
 no key is the name of one of its fields, which every submit posts.
