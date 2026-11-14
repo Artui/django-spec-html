@@ -4,10 +4,10 @@ from collections.abc import Mapping
 from typing import Any, Final, cast
 
 from django import forms
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db.models import Model, QuerySet
 from django.forms.formsets import DELETION_FIELD_NAME, TOTAL_FORM_COUNT, BaseFormSet
-from django.forms.models import BaseModelFormSet
+from django.forms.models import BaseModelFormSet, model_to_dict
 from django.http import HttpResponse
 from django.template.loader import get_template
 from django_service_specs import (
@@ -172,6 +172,14 @@ class SpecFormSetView(SpecPageBase):
     refusal is the only error its form carries, and a refusal of the whole
     set, which the Validator's ``validated_many`` raises, lands on the
     non-form errors. The page adds no rule over the set of its own.
+    On a spec with a ``collection_selector_spec`` the page edits the set it
+    resolves, as a model formset does: one prefilled form a row, each
+    posting the row's key under the model's primary key name, which the rows
+    must declare, then the extra forms; ``INITIAL_FORMS`` is the set's count.
+    Each initial form's row is sent with its key, a deleted one whole with
+    ``DELETE`` true where the rows declare a boolean ``DELETE``, which offers
+    the box; a row left out is left alone, and a key missing or outside the
+    set refuses its row on the form.
     ``as_view()`` checks the row form against the rows' parameters as
     ``SpecFormView`` checks its form against the spec's, except that a route
     or ``server_arguments`` fills the call's top level and never a row, so
@@ -293,13 +301,15 @@ class SpecFormSetView(SpecPageBase):
             )
         else:
             keywords = page_form_kwargs(self)
-        formset_class = _formset_class(spec, self.form_class, self.extra)
+        formset_class = _formset_class(spec, self.form_class, self.extra, served)
         data = bound.get("data")
         if data is not None and self.add_button in data:
             bound = {**bound, "data": _one_more_form(formset_class, data)}
         edits = _model_formset(formset_class)
         if edits is not None:
             bound["queryset"] = _rows(edits, target)
+        if issubclass(formset_class, _EditedSet) and isinstance(target, QuerySet):
+            bound["rows"] = _keyed_rows(type(self).__name__, spec, target, served)
         return formset_class(**bound, form_kwargs=dict(keywords))
 
     def _arguments(
@@ -318,6 +328,7 @@ class SpecFormSetView(SpecPageBase):
         refused_rows: dict[int, Any] = {}
         for index, row in enumerate(_sent(form)):
             try:
+                _check_key(form, row)
                 rows.append(_row_arguments(row, rows_parameters))
             except InvalidArguments as refused:
                 refused_rows[index] = refused.detail
@@ -442,6 +453,14 @@ def _check_row_form(label: str, spec: ServiceSpec, form_class: Any) -> None:
     rows = _rows_parameters(spec, spec.parameters())
     posted = checked_page_form(label, validator, form_class, rows)
     filled = server_owned_keys(spec)
+    if spec.collection_selector_spec is not None:
+        filled |= {DELETION_FIELD_NAME}
+        deletion = rows.get(DELETION_FIELD_NAME)
+        if deletion is not None and deletion.type != "boolean":
+            raise ImproperlyConfigured(
+                f"{label} edits a set, whose deleted rows carry {DELETION_FIELD_NAME!r} as a "
+                f"boolean, and the spec's rows declare {deletion.type}."
+            )
     for parameter in rows.items:
         name = parameter.name
         if parameter.required and name not in posted and name not in filled:
@@ -452,7 +471,7 @@ def _check_row_form(label: str, spec: ServiceSpec, form_class: Any) -> None:
 
 
 def _formset_class(
-    spec: ServiceSpec, form_class: type[forms.BaseForm] | None, extra: int
+    spec: ServiceSpec, form_class: type[forms.BaseForm] | None, extra: int, served: Served
 ) -> type[BaseFormSet]:
     """The validator's ``formset_class``, else a formset of the row form within the spec's list."""
     validator = spec.validator
@@ -461,6 +480,17 @@ def _formset_class(
         if validator.formset_class is not None:
             return validator.formset_class
         form_class = validator.form_class
+    elif spec.collection_selector_spec is not None:
+        rows = _rows_parameters(spec, spec.parameters(call_context=served.call_context))
+        return forms.formset_factory(
+            form_class,
+            formset=_EditedSet,
+            extra=extra,
+            min_num=spec.many_min_length,
+            max_num=spec.many_max_length,
+            can_delete=DELETION_FIELD_NAME in rows.names(),
+            can_delete_extra=True,
+        )
     return forms.formset_factory(
         form_class,
         extra=extra,
@@ -549,3 +579,49 @@ def _set_formset_errors(formset: BaseFormSet, non_form: list[str]) -> None:
     bound._non_form_errors = formset.error_class(
         non_form, error_class="nonform", renderer=bound.renderer
     )
+
+
+class _EditedSet(BaseFormSet):
+    """A plain formset editing a set: one prefilled form a row, each posting its row's key."""
+
+    def __init__(self, *args: Any, rows: QuerySet[Any] | None = None, **kwargs: Any) -> None:
+        self.rows = rows
+        self.key = None if rows is None else rows.model._meta.pk.name
+        if rows is not None:
+            names = list(self.form.base_fields)
+            kwargs["initial"] = [
+                {**model_to_dict(row, fields=names), self.key: row.pk} for row in rows
+            ]
+        super().__init__(*args, **kwargs)
+
+    def add_fields(self, form: forms.BaseForm, index: int | None) -> None:
+        super().add_fields(form, index)
+        if self.rows is not None and index is not None and index < self.initial_form_count():
+            form.fields[cast(str, self.key)] = forms.ModelChoiceField(
+                queryset=self.rows, widget=forms.HiddenInput
+            )
+
+
+def _keyed_rows(
+    label: str, spec: ServiceSpec, target: QuerySet[Any], served: Served
+) -> QuerySet[Any]:
+    """``target``, refusing rows that do not declare the key each initial form sends."""
+    key = target.model._meta.pk.name
+    rows = _rows_parameters(spec, spec.parameters(call_context=served.call_context))
+    if key not in rows.names():
+        raise ImproperlyConfigured(
+            f"{label} edits the rows its spec's collection_selector_spec resolves, each sent "
+            f"with its key {key!r}, which the spec's rows do not declare."
+        )
+    return target
+
+
+def _check_key(formset: BaseFormSet, form: forms.BaseForm) -> None:
+    """Refuse an edited set's initial form whose key is missing or names no row of the set."""
+    key = getattr(formset, "key", None)
+    if key not in form.fields:
+        return
+    try:
+        form.fields[key].clean(form[key].data)
+    except ValidationError as refused:
+        raise InvalidArguments({key: refused.messages}) from refused

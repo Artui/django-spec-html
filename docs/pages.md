@@ -1024,8 +1024,29 @@ Validator's own `validated_many`**, which raises it under `non_field_errors`;
 the page adds none. `as_view()` checks the row form against each row's
 parameters, not the call's top level, with the form page's checks; a route
 and `server_arguments` fill the top level only, so a required row parameter
-the form leaves out passes only where the server's own keys fill it. Editing
-an existing set through a model formset stays a `FormValidator`'s.
+the form leaves out passes only where the server's own keys fill it.
+
+**A spec with a `collection_selector_spec` edits its set.** GET builds one
+prefilled form a row of the set the selector resolves, each carrying the row's
+key in a hidden field named for the model's primary key, then the extra forms;
+`INITIAL_FORMS` is the set's count. A post sends each initial form's row with
+its key, a deleted one whole with `DELETE` true, and leaves a row it does not
+post alone; an extra form ticked for deletion sends nothing. The rows declare
+the key, optional so a new row sends none, and a boolean `DELETE` where rows
+may be deleted, which offers the box:
+
+```python
+@dataclasses.dataclass
+class EditedNote:
+    title: str
+    id: int | None = None
+    DELETE: bool = False
+```
+
+A key missing from an initial form, or naming a row outside the set, refuses
+that row on its form; the page reads the key and validates nothing else. Rows
+declaring no key are refused when the set is first built, and a `DELETE` that
+is not a boolean at `as_view()`.
 
 ## Coming from Django's `FormView`
 
