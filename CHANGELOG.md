@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-11-14
+
 ### Added
 - **An admin action over any Validator renders a form.** A `SpecAction` whose
   `page_kwargs` carry a `form_class` is served by the admin's form page
@@ -895,7 +897,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/Artui/django-spec-html/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Artui/django-spec-html/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Artui/django-spec-html/compare/v0.10.3...v0.11.0
 [0.10.3]: https://github.com/Artui/django-spec-html/compare/v0.10.2...v0.10.3
