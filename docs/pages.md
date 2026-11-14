@@ -1113,13 +1113,28 @@ spec it runs**, and replaces `spec`:
   "Save" is not, and only "Publish" is refused. A post naming an
   unavailable action is refused at 409 by that action's own dispatch, as on
   a page with one spec.
+- **An action the user may not run is disabled, and says nothing.** GET
+  asks every action after the first the checks its post would run before
+  dispatch: its admission and class-level permissions, then its object
+  check on the row the page shows (its scope check on a set, or on none),
+  and a route capture its own parameters refuse. The context carries
+  `refused_actions`, the frozenset of the refused keys, absent when none
+  is. A refused action's affordances are not asked: it is in neither
+  `unavailable_actions` nor `unavailable`, and its `action_buttons` entry
+  is `None`, so nothing says why. The first action's refusal is still the
+  page's own 403 or 404, and a post naming a refused action is refused as
+  it always was, 403 or 404, before anything runs. So a reader's page
+  shows "Publish" disabled where only an editor may publish. When the first
+  action is unavailable and every other is refused, `unavailable` is not
+  set: every button is disabled and the form's fields are not.
 - **The success is page-wide.** `success_url` and `success_message` serve
   every action. `get_success_url(result)` and `get_success_message(result)`
   read which one ran as `self.action_name`, the key, set before the post is
   dispatched; it is `None` on GET and on a page without `actions`.
 - **The shipped templates render one submit button per action**, named by
   its key and labelled with it capitalised, in the order `actions` lists
-  them, in place of the one button. An unavailable action's button is
+  them, in place of the one button. A refused action's button is disabled
+  with nothing beside it. An unavailable action's button is
   disabled and its reason shown, in a paragraph carrying its key as
   `data-action` and its `code` as `data-code`; the others stay usable, and
   the form's fields are disabled only when no action is available. They loop

@@ -6,7 +6,9 @@ table below Django 5.0. The form renders each field's own ``required``, which
 a partial page's form has switched off; a question's message is the form's
 non-field error and its asked field is in the form, so each is rendered once.
 A page serving actions renders one button per action, named by its key, and
-an unavailable action's reason with its button disabled; the fieldset is
+an unavailable action's reason with its button disabled, a refused one's
+button disabled with no reason (test_the_form_page under
+TestARefusedActionIsDisabledWithNoReason fails without that or); the fieldset is
 disabled only when no action is available, and its reason is each action's
 (test_the_form_page_disables_the_form fails if the page's own repeats one,
 and test_every_condition_met_leaves_the_form_enabled if it shows unmet).
@@ -21,6 +23,6 @@ A post answered with a file is never boosted: an htmx request cannot save it.
 {% csrf_token %}{% if next %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ next }}">{% endif %}
 <fieldset{% if unavailable %} disabled{% endif %}>
 {{ form.as_div }}
-{% for name in view.actions %}<button type="submit" name="{{ name }}"{% if name in unavailable_actions %} disabled{% endif %}>{{ name|capfirst }}</button>{% empty %}<button type="submit"{% if view.commit_button %} name="{{ view.commit_button }}"{% endif %}>{% translate "Save" %}</button>{% endfor %}
+{% for name in view.actions %}<button type="submit" name="{{ name }}"{% if name in unavailable_actions or name in refused_actions %} disabled{% endif %}>{{ name|capfirst }}</button>{% empty %}<button type="submit"{% if view.commit_button %} name="{{ view.commit_button }}"{% endif %}>{% translate "Save" %}</button>{% endfor %}
 </fieldset>
 </form>

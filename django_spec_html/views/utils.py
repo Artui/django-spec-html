@@ -8,6 +8,7 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from decimal import Decimal
+from itertools import islice
 from types import MappingProxyType
 from typing import Any, ClassVar, Final, Literal, cast
 from urllib.parse import unquote
@@ -75,6 +76,7 @@ from django_service_specs import (
     audience_projection_for_spec,
     authorize,
     authorize_scope,
+    authorize_target,
     check_arguments,
     check_requested_input,
     coerce_flat,
@@ -299,10 +301,13 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
                 not_found=self.route_refusal_404,
                 ask_scope=True,
             )
+            denied = _denied(
+                self.actions, request, url_kwargs, served, target, not_found=self.route_refusal_404
+            )
         except InvalidArguments as refused:
             raise BadRequest(str(refused.detail)) from refused
         pool = call_pool(principal, served)
-        context = _availability(self.actions, spec, target, served, pool)
+        context = _availability(self.actions, spec, target, served, pool, denied)
         form = self._form(spec, principal, target, served, **bound)
         if bound:
             context["refreshed"] = True
@@ -939,22 +944,78 @@ def call_pool(principal: Any, served: Served) -> dict[str, Any]:
     return seeded_pool(user=principal, seeds=served.seeds, call_context=served.call_context)
 
 
+def _denied(
+    actions: Mapping[str, ServiceSpec] | None,
+    request: HttpRequest,
+    url_kwargs: Mapping[str, Any],
+    served: Served,
+    target: Any,
+    *,
+    not_found: bool,
+) -> frozenset[str]:
+    """The actions after the first that their own post would deny, each asked of ``target``."""
+    denied = set()
+    for name, each in islice((actions or {}).items(), 1, None):
+        try:
+            principal, grant, seeds = admitted(each, request, url_kwargs, served)
+            _admitted_to(each, principal, grant, seeds, url_kwargs, served, target, not_found)
+        except (PermissionDenied, Http404):
+            denied.add(name)
+    return frozenset(denied)
+
+
+def _admitted_to(
+    spec: ServiceSpec,
+    principal: Any,
+    grant: Grant,
+    seeds: CallSeeds,
+    url_kwargs: Mapping[str, Any],
+    served: Served,
+    target: Any,
+    not_found: bool,
+) -> None:
+    """Ask the object check of a row ``target``, else the scope check, as ``_found`` hands them."""
+    parameters = spec.parameters(call_context=served.call_context)
+    route = coerced_route(parameters, url_kwargs, served, not_found=not_found)
+    arguments = with_binding(spec, route, served)
+    keywords: dict[str, Any] = {
+        "grant": grant,
+        "arguments": arguments,
+        "seeds": seeds,
+        "pool_seeds": served.seeds,
+        "call_context": served.call_context,
+    }
+    try:
+        if isinstance(target, models.Model):
+            authorize_target(spec, principal, target, **keywords)
+        else:
+            authorize_scope(spec, principal, target, **keywords)
+    except NotPermitted as refused:
+        raise denial(refused) from refused
+
+
 def _availability(
     actions: Mapping[str, ServiceSpec] | None,
     spec: ServiceSpec,
     target: Any,
     served: Served,
     pool: dict[str, Any],
+    denied: frozenset[str],
 ) -> dict[str, Any]:
     """``unavailable``, on an actions page only when no action is available, and each action's."""
     if actions is None:
         unavailable = _unavailable(spec, target, served, pool)
         return {} if unavailable is None else {"unavailable": unavailable}
-    buttons = [(name, _unavailable(each, target, served, pool)) for name, each in actions.items()]
+    buttons = [
+        (name, None if name in denied else _unavailable(each, target, served, pool))
+        for name, each in actions.items()
+    ]
     unmet = {name: why for name, why in buttons if why is not None}
     context: dict[str, Any] = {"action_buttons": buttons}
     if unmet:
         context["unavailable_actions"] = unmet
+    if denied:
+        context["refused_actions"] = denied
     if len(unmet) == len(buttons):
         context["unavailable"] = buttons[0][1]
     return context

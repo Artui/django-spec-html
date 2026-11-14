@@ -56,7 +56,8 @@ docs/examples/spec_confirm.py:urls
 `spec`, `target`, a set's `target_count` and `target_counted_at`,
 `target_display` on a page that sets `display_target`, and `unavailable`
 when an affordance is not met, or on a page serving `actions`
-`unavailable_actions` and `action_buttons`, each action's own answer - **and
+`unavailable_actions`, `refused_actions` and `action_buttons`, each action's
+own answer - **and
 no `form`**. A key with nothing to
 hold is absent, as on every page, so a template's `{% if form %}` is false
 rather than `{{ form }}` rendering `None`. The template renders its own
@@ -121,7 +122,10 @@ takes no `commit_button`: `as_view()` refuses the pair, and an action keyed like
 **Each action's button answers its own availability**: the shipped template
 disables an unavailable action's button and shows its reason, the others stay
 usable, and a post naming the unavailable one is refused at 409, as
-[on a form page](pages.md#one-form-several-operations).
+[on a form page](pages.md#one-form-several-operations). An action after the
+first that the user may not run - its permissions refuse them, or its scope
+check refuses the target - is disabled with no reason and no code, its key in
+`refused_actions`, and a post naming it is refused, 403 or 404, as before.
 
 ### A bulk action over ticked rows
 

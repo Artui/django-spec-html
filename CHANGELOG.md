@@ -72,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disable only an unavailable action's button, with its reason. `unavailable`
   is set only when no action is available, and only then are the form's fields
   disabled. A post naming an unavailable action is refused at 409 as before.
+  GET also asks every action after the first the checks its post runs before
+  dispatch (its admission and permissions, of the page's target), and the
+  shipped templates disable a refused action's button with no reason and no
+  code: its key is in `refused_actions`, a frozenset absent when none is
+  refused, its affordances are not asked, and it counts toward neither
+  `unavailable_actions` nor `unavailable`. The first action's refusal is
+  still the page's 403 or 404, and a post naming a refused action is refused
+  as before.
 - **A confirmation reads a bulk action's selection from the post.**
   `SpecConfirmView.posted_arguments`, a tuple of parameter names, is read from
   `request.POST` as a query string is, every value of an array, merged with

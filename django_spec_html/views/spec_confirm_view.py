@@ -112,7 +112,9 @@ class SpecConfirmView(SpecPageBase):
     availability**, in ``unavailable_actions`` and ``action_buttons`` as on
     ``SpecFormView``: the shipped template disables an unavailable action's
     button and shows its reason, and the others stay usable; ``unavailable``
-    is set only when no action is. ``as_view()`` refuses ``actions`` beside a
+    is set only when no action is. An action after the first the user may not
+    run is disabled with no reason, its key in ``refused_actions``, as on
+    ``SpecFormView``. ``as_view()`` refuses ``actions`` beside a
     ``commit_button``: an actions page commits only through an action's button,
     and an action keyed like a ``posted_arguments`` name or ``csrfmiddlewaretoken``,
     which a post carries whichever button it uses.

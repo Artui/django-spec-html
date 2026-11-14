@@ -398,6 +398,20 @@ class SpecFormView(SpecPageBase):
     form's fields are disabled too. A post naming an unavailable action is
     refused at 409 by its own dispatch, as on a page with one spec.
 
+    **An action the user may not run is disabled, and says nothing.** GET
+    asks every action after the first the checks its post runs before
+    dispatch: its admission and class-level permissions, then its object
+    check on the row the page shows, or its scope check on a set or none,
+    and a route capture its own parameters refuse. ``refused_actions`` is
+    the frozenset of the keys refused, absent when none is; a refused
+    action's affordances are not asked, so it is in neither
+    ``unavailable_actions`` nor ``unavailable``, and its ``action_buttons``
+    entry is ``None``. The shipped template disables its button and gives no
+    reason and no code. The first action's refusal is still the page's 403
+    or 404, and a post naming a refused action is refused as before. With
+    the first action unavailable and every other refused, ``unavailable`` is
+    not set: every button is disabled, and the form's fields are not.
+
     **A form over any Validator.** ``form_class`` names the form a page
     renders for a spec whose Validator is not a ``FormValidator``. It is
     built as above, with ``get_form_kwargs()`` in place of ``form_kwargs``,

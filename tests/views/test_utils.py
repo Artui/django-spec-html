@@ -11,7 +11,7 @@ import pytest
 from django import forms
 from django.contrib.messages import get_messages
 from django.contrib.messages.storage.cookie import CookieStorage
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, PermissionDenied
 from django.db.models import Q, QuerySet
 from django.http import (
     FileResponse,
@@ -31,6 +31,7 @@ from django_service_specs import (
     FormValidator,
     Parameter,
     Parameters,
+    PermissionCheck,
     SelectorKind,
     SelectorSpec,
     ServiceSpec,
@@ -41,7 +42,16 @@ from django_spec_html.views.spec_form_set_view import SpecFormSetView
 from django_spec_html.views.spec_form_view import SpecFormView
 from django_spec_html.views.spec_selector_view import SpecSelectorView
 from django_spec_html.views.utils import Served, SpecPageBase
-from tests.dispatch.utils import OPEN, PK, Record, make_user, note_by_pk
+from tests.dispatch.utils import (
+    OPEN,
+    PK,
+    TENANT_SEEDS,
+    OwnerOnly,
+    Record,
+    Refuse,
+    make_user,
+    note_by_pk,
+)
 from tests.dispatch_app.models import Note
 from tests.http.utils import FACTORY, note_spec, signed_in
 
@@ -317,6 +327,7 @@ class TestASingleSpecPageIsUnchanged:
         assert context["unavailable"] is TITLED
         assert "unavailable_actions" not in context
         assert "action_buttons" not in context
+        assert "refused_actions" not in context
         html = rendered(response)
         assert '<p data-code="titled">Only an untitled note is published.</p>' in html
         assert "<fieldset disabled>" in html
@@ -325,6 +336,7 @@ class TestASingleSpecPageIsUnchanged:
         view = SpecConfirmView.as_view(spec=paused_spec(PAUSED), success_url="/done/")
         response = view(request_for())
         assert "unavailable_actions" not in response.context_data
+        assert "refused_actions" not in response.context_data
         html = rendered(response)
         assert '<p data-code="paused">Archiving is paused.</p>' in html
         assert '<button type="submit" disabled>Confirm</button>' in html
@@ -334,6 +346,194 @@ class TestASingleSpecPageIsUnchanged:
         html = rendered(view(request_for()))
         assert "<p data-code" not in html
         assert '<button type="submit">Confirm</button>' in html
+
+
+class SignedIn(PermissionCheck):
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        return bool(principal.is_authenticated)
+
+
+class NoScope(PermissionCheck):
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        return True
+
+    def has_scope_permission(self, principal: Any, spec: Any, scope: Any) -> bool:
+        return False
+
+
+class TenantOfAda(PermissionCheck):
+    """Admits ada's tenant alone, at class and object level, recording each tenant it is offered."""
+
+    def __init__(self) -> None:
+        self.tenants: list[str] = []
+
+    def has_permission(self, principal: Any, spec: Any, tenant: str) -> bool:
+        self.tenants.append(tenant)
+        return tenant == "tenant-of-ada"
+
+    def has_object_permission(self, principal: Any, spec: Any, target: Any, tenant: str) -> bool:
+        self.tenants.append(tenant)
+        return tenant == "tenant-of-ada"
+
+
+def guarded(*permissions: Any, affordances: tuple[Affordance, ...] = ()) -> ServiceSpec:
+    return dataclasses.replace(row_spec(*affordances), permissions=permissions)
+
+
+def guarded_confirm(*permissions: Any) -> ServiceSpec:
+    return ServiceSpec(service=Record(), permissions=permissions)
+
+
+def save_then(publish: ServiceSpec, **initkwargs: Any) -> Any:
+    return SpecFormView.as_view(
+        actions={"save": row_spec(), "publish": publish}, success_url="/done/", **initkwargs
+    )
+
+
+def capped_publish() -> ServiceSpec:
+    capped = Parameters.of(Parameter("pk", "integer", required=True, maximum=0))
+    return dataclasses.replace(
+        row_spec(),
+        instance_selector_spec=SelectorSpec(
+            kind=SelectorKind.RETRIEVE, selector=note_by_pk, reads=capped
+        ),
+    )
+
+
+class TestARefusedActionIsDisabledWithNoReason:
+    def test_the_form_page(self, note: Note) -> None:
+        response = on_note(save_then(guarded(Refuse())), note)
+        context = response.context_data
+        assert context.get("refused_actions") == frozenset({"publish"})
+        assert "unavailable_actions" not in context
+        assert "unavailable" not in context
+        assert context["action_buttons"] == [("save", None), ("publish", None)]
+        html = rendered(response)
+        assert '<button type="submit" name="publish" disabled>Publish</button>' in html
+        assert '<button type="submit" name="save">Save</button>' in html
+        assert "<fieldset>" in html
+        assert "data-action" not in html
+        assert Refuse.message not in html
+
+    def test_its_object_check_is_asked_of_the_row_the_page_shows(self, ada: Any) -> None:
+        shown = Note.objects.create(owner=make_user("bo"), title="Titled")
+        Note.objects.create(owner=ada, title="")
+        check = OwnerOnly()
+        elsewhere = dataclasses.replace(
+            guarded(check),
+            instance_selector_spec=SelectorSpec(
+                kind=SelectorKind.RETRIEVE, selector=untitled_notes, reads=PK
+            ),
+        )
+        response = get(save_then(elsewhere), ada, pk=str(shown.pk))
+        assert response.context_data.get("refused_actions") == frozenset({"publish"})
+        assert check.rows == [shown]
+        assert '<button type="submit" name="publish" disabled>' in rendered(response)
+
+    def test_the_owner_s_row_leaves_it_enabled(self, ada: Any) -> None:
+        own = Note.objects.create(owner=ada, title="Titled")
+        check = OwnerOnly()
+        response = get(save_then(guarded(check)), ada, pk=str(own.pk))
+        assert "refused_actions" not in response.context_data
+        assert check.rows == [own]
+        assert " disabled" not in rendered(response)
+
+    def test_the_first_action_is_asked_once(self, ada: Any) -> None:
+        own = Note.objects.create(owner=ada, title="Titled")
+        check = OwnerOnly()
+        view = SpecFormView.as_view(
+            actions={"publish": guarded(check), "save": row_spec()}, success_url="/done/"
+        )
+        get(view, ada, pk=str(own.pk))
+        assert check.rows == [own]
+
+    def test_a_check_reading_a_seed_is_offered_the_page_s_registry(self, ada: Any) -> None:
+        own = Note.objects.create(owner=ada, title="Titled")
+        check = TenantOfAda()
+        view = save_then(guarded(check), pool_seeds=TENANT_SEEDS)
+        response = get(view, ada, pk=str(own.pk))
+        assert "refused_actions" not in response.context_data
+        assert check.tenants == ["tenant-of-ada", "tenant-of-ada"]
+
+    def test_a_refused_action_s_affordances_are_not_asked(self, note: Note) -> None:
+        response = on_note(save_then(guarded(Refuse(), affordances=(CLOSED,))), note)
+        context = response.context_data
+        assert context.get("refused_actions") == frozenset({"publish"})
+        assert "unavailable_actions" not in context
+        assert context["action_buttons"] == [("save", None), ("publish", None)]
+        html = rendered(response)
+        assert CLOSED.reason not in html
+        assert "data-code" not in html
+
+    def test_the_first_unavailable_and_the_rest_refused_leave_the_fields(self, note: Note) -> None:
+        view = SpecFormView.as_view(
+            actions={"publish": row_spec(TITLED), "save": guarded(Refuse())}, success_url="/done/"
+        )
+        response = on_note(view, note)
+        context = response.context_data
+        assert "unavailable" not in context
+        assert context["unavailable_actions"] == {"publish": TITLED}
+        assert context.get("refused_actions") == frozenset({"save"})
+        html = rendered(response)
+        assert "<fieldset>" in html
+        assert html.count(" disabled>") == 2
+        assert html.count(TITLED.reason) == 1
+
+    @pytest.mark.parametrize("check", [Refuse(), NoScope()], ids=["class", "scope"])
+    def test_the_confirm_page(self, check: Any) -> None:
+        view = confirm_actions(archive=paused_spec(), delete=guarded_confirm(check))
+        response = view(request_for())
+        assert response.context_data.get("refused_actions") == frozenset({"delete"})
+        html = rendered(response)
+        assert '<button type="submit" name="delete" disabled>Delete</button>' in html
+        assert '<button type="submit" name="archive">Archive</button>' in html
+        assert "data-action" not in html
+
+    def test_an_anonymous_visitor_is_refused_what_a_signed_in_one_is_not(self, ada: Any) -> None:
+        view = confirm_actions(archive=paused_spec(), delete=guarded_confirm(SignedIn()))
+        anonymous = view(signed_in(FACTORY.get("/")))
+        signed = view(signed_in(FACTORY.get("/"), ada))
+        assert anonymous.context_data.get("refused_actions") == frozenset({"delete"})
+        assert "refused_actions" not in signed.context_data
+        assert '<button type="submit" name="delete" disabled>' in rendered(anonymous)
+        assert '<button type="submit" name="delete">' in rendered(signed)
+
+    def test_a_route_capture_its_own_parameters_refuse(self, note: Note) -> None:
+        response = on_note(save_then(capped_publish()), note)
+        assert response.context_data.get("refused_actions") == {"publish"}
+
+    def test_the_first_action_refused_still_refuses_the_page(self, note: Note) -> None:
+        view = SpecFormView.as_view(
+            actions={"publish": guarded(Refuse()), "save": row_spec()}, success_url="/done/"
+        )
+        with pytest.raises(PermissionDenied):
+            on_note(view, note)
+
+
+class TestAPostToARefusedActionIsRefused:
+    def test_on_the_form_page(self, note: Note) -> None:
+        save, publish = row_spec(), guarded(Refuse())
+        view = SpecFormView.as_view(actions={"save": save, "publish": publish}, success_url="/")
+        with pytest.raises(PermissionDenied):
+            on_note(view, note, {"title": "Hi", "publish": ""})
+        assert calls(save) == calls(publish) == []
+
+    def test_on_the_form_page_by_its_object_check(self, note: Note) -> None:
+        save, publish = row_spec(), guarded(OwnerOnly())
+        view = SpecFormView.as_view(actions={"save": save, "publish": publish}, success_url="/")
+        with pytest.raises(PermissionDenied):
+            on_note(view, note, {"title": "Hi", "publish": ""})
+        assert calls(save) == calls(publish) == []
+
+    def test_on_the_form_page_by_its_route_capture(self, note: Note) -> None:
+        with pytest.raises(Http404):
+            on_note(save_then(capped_publish()), note, {"title": "Hi", "publish": ""})
+
+    def test_on_the_confirm_page_by_its_scope_check(self) -> None:
+        archive, delete = paused_spec(), guarded_confirm(NoScope())
+        with pytest.raises(PermissionDenied):
+            confirm_actions(archive=archive, delete=delete)(request_for({"delete": ""}))
+        assert calls(archive) == calls(delete) == []
 
 
 def refused(view_class: type[Any], **initkwargs: Any) -> str:
