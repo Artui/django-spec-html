@@ -82,8 +82,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as before. A refused post's page keeps each action's state as GET shows it, asked of the target that post found: the action that
   ran stands where GET's first does and every other, the first included, is
   asked, so a button GET disables stays disabled with its reason, and the
-  fields are disabled only when GET's would be. A page with one spec
-  re-renders a refused post unchanged.
+  fields are disabled only when GET's would be. With `route_refusal_404` off,
+  a post whose route an action's reads refuse carries none of that state. A
+  page with one spec re-renders a refused post unchanged.
 - **A confirmation reads a bulk action's selection from the post.**
   `SpecConfirmView.posted_arguments`, a tuple of parameter names, is read from
   `request.POST` as a query string is, every value of an array, merged with

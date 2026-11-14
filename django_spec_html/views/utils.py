@@ -382,16 +382,17 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
             context: dict[str, Any] = {**refusal_code(refused)}
             if shown_actions is not None:
                 pool = call_pool(principal, served)
-                denied = _denied(
-                    shown_actions,
-                    self.action_name,
-                    request,
-                    kwargs,
-                    served,
-                    target,
-                    not_found=self.route_refusal_404,
-                )
-                context.update(_availability(shown_actions, spec, target, served, pool, denied))
+                with suppress(InvalidArguments):
+                    denied = _denied(
+                        shown_actions,
+                        self.action_name,
+                        request,
+                        kwargs,
+                        served,
+                        target,
+                        not_found=self.route_refusal_404,
+                    )
+                    context.update(_availability(shown_actions, spec, target, served, pool, denied))
             context.update(self._target_context(spec, principal, target, served, pool))
             if requested is not None:
                 context["requested_input"] = {

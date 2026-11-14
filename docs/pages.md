@@ -1139,7 +1139,8 @@ spec it runs**, and replaces `spec`:
   a post naming the unavailable "Publish" answers 409 with its button
   disabled, its reason beside it as well as in the refusal's own error. With
   `route_refusal_404` off, a post whose route the target's reads refuse found
-  no target, and its page carries none of the four. A page with one spec
+  no target, and one whose route another action's reads refuse is asked of
+  none of them; either page carries none of the four. A page with one spec
   re-renders a refused post as it always did, with no `unavailable`.
 - **The success is page-wide.** `success_url` and `success_message` serve
   every action. `get_success_url(result)` and `get_success_message(result)`

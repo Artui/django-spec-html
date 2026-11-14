@@ -641,6 +641,50 @@ class TestARefusedPostKeepsEachActionsState:
         assert '<p data-action="publish" data-code="titled">' in html
         assert html.count(TITLED.reason) == 2
 
+    def test_a_sibling_the_capture_is_invalid_for_leaves_the_page_with_no_state(
+        self, note: Note
+    ) -> None:
+        view = SpecFormView.as_view(
+            actions={"save": text_pk_spec(), "publish": row_spec(TITLED)},
+            success_url="/done/",
+            route_refusal_404=False,
+        )
+        response = view(request_for(BLANK_SAVE), pk="abc")
+        assert response.status_code == 400
+        for key in ("action_buttons", "unavailable_actions", "refused_actions", "unavailable"):
+            assert key not in response.context_data
+
+    def test_the_refused_post_s_fragment_keeps_each_action_s_state(self, note: Note) -> None:
+        raw = FACTORY.post("/", data=BLANK_SAVE, HTTP_HX_REQUEST="true")
+        request = signed_in(raw, make_user("ada"))
+        request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+        response = save_then(row_spec(TITLED))(request, pk=str(note.pk))
+        html = rendered(response)
+        assert "<html" not in html
+        assert '<button type="submit" name="publish" disabled>Publish</button>' in html
+        assert '<button type="submit" name="save">Save</button>' in html
+        assert '<p data-action="publish" data-code="titled">' in html
+        assert html.count(TITLED.reason) == 1
+
+    def test_a_get_serving_a_named_action_asks_it_once_and_the_rest_by_permission(
+        self, ada: Any
+    ) -> None:
+        own = Note.objects.create(owner=ada, title="Titled")
+        check = OwnerOnly()
+        view = SpecFormView.as_view(
+            actions={
+                "save": guarded(Refuse()),
+                "publish": guarded(check, affordances=(TITLED,)),
+                "purge": guarded(Refuse()),
+            },
+            success_url="/done/",
+            action_name="publish",
+        )
+        context = get(view, ada, pk=str(own.pk)).context_data
+        assert context["refused_actions"] == frozenset({"save", "purge"})
+        assert context["unavailable_actions"] == {"publish": TITLED}
+        assert check.rows == [own]
+
     def test_the_confirm_page(self) -> None:
         view = confirm_actions(
             archive=paused_spec(), delete=paused_spec(CLOSED), purge=guarded_confirm(Refuse())
@@ -678,6 +722,17 @@ class TestARefusedPostKeepsEachActionsState:
         assert response.status_code == 409
         assert "unavailable" not in response.context_data
         assert '<button type="submit">Confirm</button>' in rendered(response)
+
+
+def text_pk_spec() -> ServiceSpec:
+    return dataclasses.replace(
+        row_spec(),
+        instance_selector_spec=SelectorSpec(
+            kind=SelectorKind.RETRIEVE,
+            selector=lambda *, pk: Note.objects.all(),
+            reads=Parameters.of(Parameter("pk", "string", required=True)),
+        ),
+    )
 
 
 def refused(view_class: type[Any], **initkwargs: Any) -> str:
