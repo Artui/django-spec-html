@@ -1892,8 +1892,9 @@ class TestConfiguration:
         with pytest.raises(ImproperlyConfigured) as refused_:
             SpecFormView.as_view(spec=spec, success_url="/done/")
         assert str(refused_.value) == (
-            "SpecFormView renders the form its spec validates with, so the spec's validator "
-            f"must be a FormValidator; got {named}."
+            "SpecFormView renders the form its spec validates with, unless form_class names "
+            "one: set form_class, or the spec's validator must be a FormValidator; got "
+            f"{named}."
         )
 
     def test_a_view_with_nowhere_to_redirect_is_refused(self) -> None:

@@ -282,6 +282,76 @@ The URLconf routes it as `books/shelve/`. A signed-in user who is not staff is
 offered only the authors already on the shelves, and a post naming another is
 refused on the author field; staff are offered every author.
 
+## A form over any Validator
+
+A spec validated by a `DataclassValidator`, a `PydanticValidator` or any other
+Validator is served by naming the form the page renders, **`form_class`**:
+
+```python
+@dataclasses.dataclass
+class Book:
+    title: str
+    pages: int | None = None
+
+
+class BookForm(forms.Form):
+    title = forms.CharField()
+    pages = forms.IntegerField(required=False)
+
+
+SpecFormView.as_view(spec=add_book_spec, form_class=BookForm, success_url=reverse_lazy("books"))
+```
+
+**The form renders and reads; the Validator alone decides.** GET builds the
+form as it builds a `FormValidator`'s, a row's values shown. A post is read
+off the form's fields as it always is, through each field's widget, merged
+with the route, coerced by the spec's parameters and dispatched: the Validator
+receives the values as posted, never the form's `cleaned_data`. The form is
+never validated. Its `clean()`, its field validators and a `ModelForm`'s
+uniqueness queries never run, and a refused post's form carries the
+Validator's refusal and nothing else, each error on its field. A
+`validate_on_refresh` refresh follows the same rule.
+
+**The form's keywords are the view's.** `get_form_kwargs()` answers what the
+form's `__init__` is handed beside the post, on GET and on every post; it is
+empty by default, and it may not return `data`, `files` or `instance`, which
+the page sets. A `FormValidator` page keeps its Validator's `form_kwargs`.
+
+**`success_message` reads the Validator's data**: `%` with it where it is a
+mapping, and otherwise with its attributes, so `"%(title)s added"` reads a
+dataclass's or a pydantic model's `title`.
+
+**`as_view()` holds the form to the spec**, refusing, by the page and the
+field:
+
+- a form the post cannot be read off, as `FormValidator(form_class)` refuses
+  it: a `JSONField`, a `MultiValueField` such as `SplitDateTimeField`;
+- an enabled field, or the `<name>-clear` checkbox an optional
+  `ClearableFileInput` adds, that the spec's parameters do not declare: a
+  file field over a Validator declaring no clear checkbox takes a plain
+  `FileInput`;
+- a required parameter the form does not post, where neither the server
+  (`server_owned_keys`, `server_arguments`) nor the route fills it. Only a
+  tuple `route_kwargs` closes the route; under `None` or a mapping any
+  parameter may come from the URL, and dispatch refuses one nobody sent. An
+  optional parameter the form leaves out is allowed;
+- a field whose type disagrees with its parameter's: the same `type`, the same
+  element type for an array, and the same `format` where the parameter
+  declares one. The rule is exact, so an `IntegerField` over a `number`
+  parameter is refused; write a `FloatField`. A parameter of type `any` takes
+  any field;
+- a field whose `required` differs from its parameter's, either way;
+- a Validator naming any field in `unsendable`, which no form can post;
+- `form_class` over a `FormValidator`, whose form is already the page's;
+- a form defining its own `clean()` or `clean_<field>()`, a rule the page
+  would silently not run: it belongs in the Validator. Django's own are
+  allowed.
+
+Choices, lengths, bounds and `nullable` are not compared: the Validator
+refuses at the post, in its own words. Under [`actions`](#one-form-several-operations),
+every action shares the page's `form_class`, over any Validator but a
+`FormValidator`, and each is checked as above.
+
 ## A partial page
 
 A `partial` spec gets the same page, built on the same form. **The page's
@@ -1002,8 +1072,9 @@ confirmation's `posted_arguments` - each refusal naming the action, as in
 empty mapping, a key that is not a non-empty string, a `commit_button` or
 `redirect_field_name` that is an action's key, and `actions` on a page that
 takes none, such as `SpecFormSetView`. On `SpecFormView` every action is
-validated by a `FormValidator` of one form class, since the page posts one
-form, and no key is the name of one of its fields, which every submit posts.
+validated by a `FormValidator` of one form class, or shares the page's
+[`form_class`](#a-form-over-any-validator), since the page posts one form, and
+no key is the name of one of its fields, which every submit posts.
 
 ## A post that does not commit
 
