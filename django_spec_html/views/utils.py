@@ -681,10 +681,10 @@ def _check_configuration(
     redirect = initkwargs.get("redirect_field_name", cls.redirect_field_name)
     _check_redirect_field_name(label, redirect, button)
     actions = initkwargs.get("actions", cls.actions) or {}
-    if button in actions:
+    if actions and button is not None:
         raise ImproperlyConfigured(
-            f"{label}.commit_button names {button!r}, one of its actions: the button that "
-            "commits is one press, and an action's is another."
+            f"{label} sets both actions and commit_button: an actions page commits only "
+            "through an action's button, and a post naming none answers 400."
         )
     if redirect in actions:
         raise ImproperlyConfigured(

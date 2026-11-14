@@ -136,22 +136,6 @@ class TestAFormPostRunsTheActionItNames:
         assert response.context_data["spec"] is conflicted
         assert response.context_data["form"].non_field_errors() == ["Already published."]
 
-    def test_a_post_that_does_not_commit_names_no_action(
-        self, save: ServiceSpec, publish: ServiceSpec
-    ) -> None:
-        view = form_view(save, publish, commit_button="commit")
-        response = view(request_for({"title": "Hi"}))
-        assert (response.status_code, response.context_data["refreshed"]) == (200, True)
-        assert response.context_data["spec"] is save
-        assert calls(save) == calls(publish) == []
-
-    def test_under_a_commit_button_the_action_is_chosen_beside_it(
-        self, save: ServiceSpec, publish: ServiceSpec
-    ) -> None:
-        view = form_view(save, publish, commit_button="commit")
-        view(request_for({"title": "Hi", "commit": "", "publish": ""}))
-        assert (calls(save), len(calls(publish))) == ([], 1)
-
 
 class Told(SpecFormView):
     success_url = "/done/"
@@ -293,15 +277,27 @@ class TestAsViewRefuses:
         message = refused(SpecConfirmView, actions={"archive": confirm_spec(), "x": demanding})
         assert message.startswith("SpecConfirmView.actions['x'] requires reason")
 
-    def test_a_commit_button_that_is_an_action(
-        self, save: ServiceSpec, publish: ServiceSpec
+    @pytest.mark.parametrize("button", ["commit", "publish"])
+    def test_a_commit_button_beside_actions(
+        self, save: ServiceSpec, publish: ServiceSpec, button: str
     ) -> None:
         message = refused(
-            SpecFormView, actions={"save": save, "publish": publish}, commit_button="publish"
+            SpecFormView, actions={"save": save, "publish": publish}, commit_button=button
         )
         assert message == (
-            "SpecFormView.commit_button names 'publish', one of its actions: the button that "
-            "commits is one press, and an action's is another."
+            "SpecFormView sets both actions and commit_button: an actions page commits only "
+            "through an action's button, and a post naming none answers 400."
+        )
+
+    def test_a_confirm_page_with_a_commit_button_beside_actions(self) -> None:
+        message = refused(
+            SpecConfirmView,
+            actions={"archive": confirm_spec(), "delete": confirm_spec()},
+            commit_button="commit",
+        )
+        assert message == (
+            "SpecConfirmView sets both actions and commit_button: an actions page commits only "
+            "through an action's button, and a post naming none answers 400."
         )
 
     def test_a_redirect_field_that_is_an_action(self, save: ServiceSpec) -> None:

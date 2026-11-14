@@ -399,8 +399,8 @@ class SpecFormView(SpecPageBase):
     fields, and a ``redirect_field_name`` that is not a key's name, is one of
     the form's fields or is the ``commit_button``; and ``actions`` beside a
     ``spec``, empty, keyed by anything but a non-empty string or by a field of
-    the form, posting different form classes, or keyed by the
-    ``commit_button`` or the ``redirect_field_name``.
+    the form, posting different form classes, keyed by the
+    ``redirect_field_name``, or beside any ``commit_button``.
 
     **Sync only**, in this release. **CSRF is the host's middleware**, as for
     any Django view, and the template renders ``{% csrf_token %}``.
@@ -452,7 +452,8 @@ class SpecFormView(SpecPageBase):
         commit_button: The ``name`` of the submit button whose post commits,
             read by ``commits``: ``None``, the default, commits every post;
             a non-empty string no field of the form declares, checked at
-            ``as_view()``.
+            ``as_view()``. Refused beside ``actions``, which commit only
+            through their own buttons.
         redirect_field_name: The key a post or its query carries the URL a
             success returns to under, read by ``get_redirect_url``:
             ``None``, the default, reads none; a non-empty string no field of

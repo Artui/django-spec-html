@@ -53,8 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as `self.action_name`. The shipped form and confirmation templates render one
   button per action. `as_view()` checks each action as it checks `spec`, and
   refuses `actions` beside `spec`, form actions that post different form
-  classes, a key that is a field of the form, and a `commit_button` or
-  `redirect_field_name` that is an action's key.
+  classes, a key that is a field of the form, a `redirect_field_name` that is
+  an action's key, and any `commit_button` beside `actions`: an actions page
+  commits only through an action's button.
 - **A confirmation reads a bulk action's selection from the post.**
   `SpecConfirmView.posted_arguments`, a tuple of parameter names, is read from
   `request.POST` as a query string is, every value of an array, merged with
