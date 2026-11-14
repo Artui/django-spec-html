@@ -108,7 +108,9 @@ class SpecConfirmView(SpecPageBase):
     Validator and checked as ``spec`` is. A post naming no action or several
     is a 400, GET renders the first action's spec, and the success hooks read
     ``self.action_name``. ``as_view()`` refuses ``actions`` beside a
-    ``commit_button``: an actions page commits only through an action's button.
+    ``commit_button``: an actions page commits only through an action's button,
+    and an action keyed like a ``posted_arguments`` name or ``csrfmiddlewaretoken``,
+    which a post carries whichever button it uses.
 
     A success redirects to ``get_redirect_url()`` where the request names a
     safe URL to return to, else to ``get_success_url(result)``, or
@@ -205,6 +207,19 @@ class SpecConfirmView(SpecPageBase):
             ``False`` by default.
         success_message: The message a successful post sends, formatted by
             ``get_success_message`` with the target.
+        success_trigger: The event a success answered in place triggers, read
+            by ``get_success_trigger``: an event's name, a mapping of event
+            names to payloads, or ``None`` for none; ``"spec-succeeded"`` by
+            default, checked at ``as_view()``.
+        success_trigger_timing: The header the trigger travels in: ``"receive"``,
+            the default, ``"swap"`` or ``"settle"``, for ``HX-Trigger``,
+            ``HX-Trigger-After-Swap`` and ``HX-Trigger-After-Settle``.
+        success_refresh: Whether a success answered in place is ``HX-Refresh``
+            and an empty body in place of the result fragment: ``False`` by
+            default, checked at ``as_view()``.
+        as_attachment: Whether a spec presenting a file answers its success
+            as a download, the default, or ``inline``, for a browser to show
+            it in place.
     """
 
     template_name = "django_spec_html/spec_confirm.html"
@@ -235,6 +250,7 @@ class SpecConfirmView(SpecPageBase):
         route_kwargs = initkwargs.get("route_kwargs", cls.route_kwargs)
         posted = initkwargs.get("posted_arguments", cls.posted_arguments)
         _check_posted(label, spec, posted, route_kwargs)
+        _check_action_keys(cls.__name__, initkwargs.get("actions", cls.actions), posted)
         _check_supplied(
             label,
             spec,
@@ -373,6 +389,18 @@ def _check_supplied(
             "fill each from the route, naming it in route_kwargs, or from a pool seed, a "
             "kwargs provider or server_arguments, or name it in posted_arguments."
         )
+
+
+def _check_action_keys(
+    label: str, actions: Mapping[str, ServiceSpec] | None, posted: tuple[str, ...]
+) -> None:
+    """Refuse an action named like a posted argument or the CSRF token: every post carries it."""
+    for key in actions or ():
+        if key in posted or key == "csrfmiddlewaretoken":
+            raise ImproperlyConfigured(
+                f"{label}.actions names {key!r}, which every post can carry as "
+                "posted_arguments or the CSRF token: it cannot say which action runs."
+            )
 
 
 def _check_posted(

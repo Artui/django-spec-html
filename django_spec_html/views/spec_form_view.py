@@ -480,6 +480,16 @@ class SpecFormView(SpecPageBase):
         as_attachment: Whether a spec presenting a file answers its success
             as a download, the default, or ``inline``, for a browser to show
             it in place.
+        success_trigger: The event a success answered in place triggers, read
+            by ``get_success_trigger``: an event's name, a mapping of event
+            names to payloads, or ``None`` for none; ``"spec-succeeded"`` by
+            default, checked at ``as_view()``.
+        success_trigger_timing: The header the trigger travels in: ``"receive"``,
+            the default, ``"swap"`` or ``"settle"``, for ``HX-Trigger``,
+            ``HX-Trigger-After-Swap`` and ``HX-Trigger-After-Settle``.
+        success_refresh: Whether a success answered in place is ``HX-Refresh``
+            and an empty body in place of the result fragment: ``False`` by
+            default, checked at ``as_view()``.
     """
 
     template_name = "django_spec_html/spec_form.html"

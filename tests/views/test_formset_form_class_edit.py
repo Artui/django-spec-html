@@ -78,6 +78,11 @@ class TitleRow(forms.Form):
     title = forms.CharField()
 
 
+class KeyedRow(forms.Form):
+    title = forms.CharField()
+    id = forms.IntegerField(required=False)
+
+
 def edit_spec(row: type = EditedNote, **kwargs: Any) -> ServiceSpec:
     kwargs.setdefault("collection_selector_spec", OWN_NOTES)
     return ServiceSpec(
@@ -186,6 +191,23 @@ class TestPost:
         assert post(page(spec), ada, data).status_code == 302
         assert sent(spec) == [{"title": "Emma", "id": notes[0].pk, "DELETE": False}]
 
+    def test_a_stray_delete_on_a_set_that_deletes_nothing_still_sends_the_row(
+        self, ada: Any, notes: Any
+    ) -> None:
+        spec = edit_spec(KeptNote)
+        data = {
+            **management(2, 1),
+            "form-0-id": str(notes[0].pk),
+            "form-0-title": "Emma",
+            "form-1-title": "Sanditon",
+            "form-1-DELETE": "on",
+        }
+        assert post(page(spec), ada, data).status_code == 302
+        assert sent(spec) == [
+            {"title": "Emma", "id": notes[0].pk},
+            {"title": "Sanditon", "id": None},
+        ]
+
     def test_a_row_left_out_is_not_sent(self, ada: Any, notes: Any) -> None:
         spec = edit_spec(KeptNote)
         data = {**management(1, 1), "form-0-id": str(notes[1].pk), "form-0-title": "P"}
@@ -281,3 +303,34 @@ class TestAddingARow:
         content = response.content.decode()
         assert 'name="form-3-title"' in content
         assert "form-3-id" not in content
+
+
+class TestARowFormDeclaringTheKey:
+    def data(self, notes: list[Note], **extra: str) -> dict[str, str]:
+        return {
+            **management(3, 2),
+            "form-0-id": str(notes[0].pk),
+            "form-0-title": "Emma",
+            "form-1-id": str(notes[1].pk),
+            "form-1-title": "Persuasion",
+            "form-2-title": "Hijack",
+            **extra,
+        }
+
+    def view(self, spec: ServiceSpec) -> Any:
+        return SpecFormSetView.as_view(spec=spec, form_class=KeyedRow, success_url="/done/")
+
+    def test_an_extra_form_naming_a_key_outside_the_set_is_refused_on_its_row(
+        self, ada: Any, notes: Any
+    ) -> None:
+        theirs = Note.objects.create(owner=make_user("bob"), title="Not ada's")
+        spec = edit_spec()
+        response = post(self.view(spec), ada, self.data(notes, **{"form-2-id": str(theirs.pk)}))
+        assert response.status_code == 400
+        assert dict(response.context_data["formset"].forms[2].errors) == {"id": [CHOICE]}
+        assert spec.service.calls == []
+
+    def test_an_extra_form_with_an_empty_key_still_creates(self, ada: Any, notes: Any) -> None:
+        spec = edit_spec()
+        assert post(self.view(spec), ada, self.data(notes, **{"form-2-id": ""})).status_code == 302
+        assert sent(spec)[2] == {"title": "Hijack", "id": None, "DELETE": False}

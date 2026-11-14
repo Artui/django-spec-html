@@ -215,7 +215,8 @@ docs/examples/spec_form_set_edit.py:urls
   reads the rows the kernel cleaned: the key as its row for an update,
   `None` for a new row, and `DELETE` true for a row a person deleted, which
   is sent with its values rather than dropped. A row the post leaves out is
-  left alone. A key outside the set is refused on its own form.
+  left alone. A key outside the set is refused on its own form, an extra form's too
+  where the row form declares the key.
 - **An extra form with its `DELETE` box ticked sends no row**, as Django's
   formset skips it, filled in or not.
 - **A model formset needs the collection.** `as_view()` refuses one on a

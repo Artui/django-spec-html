@@ -26,7 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the page edits the set it resolves: one prefilled form a row posting the
   row's key, `INITIAL_FORMS` the set's count, each initial row sent with its
   key and a deleted one whole with `DELETE` true, a key outside the set
-  refused on its row. `as_view()` holds the row form to the rows' parameters
+  refused on its row, an extra form's too where the row form declares the key.
+  `as_view()` holds the row form to the rows' parameters
   with the form page's checks, and only the server's own keys, not the route,
   fill a required row parameter the form leaves out.
 - **A form page over any Validator.** `SpecFormView.form_class` names the
@@ -61,7 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refuses `actions` beside `spec`, form actions that post different form
   classes, a key that is a field of the form, a `redirect_field_name` that is
   an action's key, and any `commit_button` beside `actions`: an actions page
-  commits only through an action's button.
+  commits only through an action's button. A `SpecConfirmView` also refuses an
+  action key equal to a `posted_arguments` name or `csrfmiddlewaretoken`, as a
+  post carrying it would name more than one action.
 - **A confirmation reads a bulk action's selection from the post.**
   `SpecConfirmView.posted_arguments`, a tuple of parameter names, is read from
   `request.POST` as a query string is, every value of an array, merged with
@@ -145,7 +148,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `down`, names nothing, so the form, formset, confirmation and selector pages
   raise `Http404` for it, as a URL converter that did not match would. The route's
   arguments are checked apart from the post's, before anything posted is read,
-  on GET and POST alike; a refused posted argument is answered as before. The
+  on GET and POST alike, except the submit button that chooses the action on
+  a page serving `actions`; a refused posted argument is answered as before. The
   old answers were a 400 on GET (Django's `BadRequest` for a value whose type
   does not parse; a choice went unchecked and the page rendered) and on POST
   the page's refusal, `"direction: Select a valid choice. ..."` prefixed on the
@@ -159,8 +163,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The API reference's docstrings are restored**: the ones a `:::` page
   renders are the full text again, where the comment budget had cut them to one
   line. No behaviour changes.
-
-### Docs
 - **The pages say what they leave out and how to adapt.** Multi-step flows
   (wizards, pay then poll) are out of scope, with what a project does instead;
   a tested recipe chooses the htmx fragment by `HX-Target`; and a note for

@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
+from django.template import TemplateDoesNotExist
 from django.test import override_settings
 from django_service_specs import Affordance
 
@@ -71,3 +72,11 @@ class TestAPostOnlyRedirectingPage:
         request = signed_in(FACTORY.post("/", data=PRESSED), ada)
         response = build(**POST_ONLY)(request, pk=note.pk)
         assert (response.status_code, bool(response.content)) == (409, True)
+
+    def test_a_page_serving_get_leaves_a_missing_template_to_fail(self) -> None:
+        ada = make_user("ada")
+        note = Note.objects.create(owner=ada, title="Buy milk")
+        request = signed_in(FACTORY.post("/", data=PRESSED), ada)
+        response = build(template_name="missing.html")(request, pk=note.pk)
+        with pytest.raises(TemplateDoesNotExist):
+            response.render()

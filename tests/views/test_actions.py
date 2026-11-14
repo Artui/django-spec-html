@@ -314,6 +314,25 @@ class TestAsViewRefuses:
             "by every submit, so it cannot say which action runs."
         )
 
+    def test_a_confirm_action_named_like_a_posted_argument(self) -> None:
+        ids = Parameter("ids", "array", items="integer")
+        message = refused(
+            SpecConfirmView,
+            actions={"ids": confirm_spec(ids), "reject": confirm_spec(ids)},
+            posted_arguments=("ids",),
+        )
+        assert message == (
+            "SpecConfirmView.actions names 'ids', which every post can carry as "
+            "posted_arguments or the CSRF token: it cannot say which action runs."
+        )
+
+    def test_a_confirm_action_named_like_the_csrf_token(self) -> None:
+        message = refused(
+            SpecConfirmView,
+            actions={"csrfmiddlewaretoken": confirm_spec(), "reject": confirm_spec()},
+        )
+        assert message.startswith("SpecConfirmView.actions names 'csrfmiddlewaretoken'")
+
     def test_actions_on_a_page_that_serves_none(self, save: ServiceSpec) -> None:
         message = refused(SpecFormSetView, actions={"save": save})
         assert message == (

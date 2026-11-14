@@ -1114,7 +1114,9 @@ confirmation's `posted_arguments` - each refusal naming the action, as in
 empty mapping, a key that is not a non-empty string, a `redirect_field_name`
 that is an action's key, any `commit_button` beside `actions` (an actions page
 commits only through an action's button, and a post naming none answers 400),
-and `actions` on a page that takes none, such as `SpecFormSetView`. On `SpecFormView` every action is
+on a confirmation an action keyed like a `posted_arguments` name or
+`csrfmiddlewaretoken`, which every post carries, and `actions` on a page that
+takes none, such as `SpecFormSetView`. On `SpecFormView` every action is
 validated by a `FormValidator` of one form class, or shares the page's
 [`form_class`](#a-form-over-any-validator), since the page posts one form, and
 no key is the name of one of its fields, which every submit posts.

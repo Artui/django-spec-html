@@ -228,8 +228,21 @@ class SpecFormSetView(SpecPageBase):
         redirect_field_name: The key a post or its query carries the URL a
             success returns to under, as on ``SpecFormView``: ``None``, the
             default, reads none.
+        route_refusal_404: Whether a route capture the shape check refuses
+            raises ``Http404``, on GET and POST alike, as a URL converter that
+            did not match would; ``False`` answers it as 0.12.0 did.
         success_message: The message a successful post sends, formatted by
             ``get_success_message`` with the rows' ``count``.
+        success_trigger: The event a success answered in place triggers, read
+            by ``get_success_trigger``: an event's name, a mapping of event
+            names to payloads, or ``None`` for none; ``"spec-succeeded"`` by
+            default, checked at ``as_view()``.
+        success_trigger_timing: The header the trigger travels in: ``"receive"``,
+            the default, ``"swap"`` or ``"settle"``, for ``HX-Trigger``,
+            ``HX-Trigger-After-Swap`` and ``HX-Trigger-After-Settle``.
+        success_refresh: Whether a success answered in place is ``HX-Refresh``
+            and an empty body in place of the result fragment: ``False`` by
+            default, checked at ``as_view()``.
     """
 
     template_name = "django_spec_html/spec_form_set.html"
@@ -596,9 +609,14 @@ class _EditedSet(BaseFormSet):
 
     def add_fields(self, form: forms.BaseForm, index: int | None) -> None:
         super().add_fields(form, index)
-        if self.rows is not None and index is not None and index < self.initial_form_count():
-            form.fields[cast(str, self.key)] = forms.ModelChoiceField(
-                queryset=self.rows, widget=forms.HiddenInput
+        if self.rows is None:
+            return
+        key = cast(str, self.key)
+        if index is not None and index < self.initial_form_count():
+            form.fields[key] = forms.ModelChoiceField(queryset=self.rows, widget=forms.HiddenInput)
+        elif key in form.fields:
+            form.fields[key] = forms.ModelChoiceField(
+                queryset=self.rows, required=False, widget=forms.HiddenInput
             )
 
 
@@ -617,7 +635,7 @@ def _keyed_rows(
 
 
 def _check_key(formset: BaseFormSet, form: forms.BaseForm) -> None:
-    """Refuse an edited set's initial form whose key is missing or names no row of the set."""
+    """Refuse an edited set's form whose key is missing or names no row of the set."""
     key = getattr(formset, "key", None)
     if key not in form.fields:
         return

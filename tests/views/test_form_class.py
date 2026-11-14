@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, TypedDict
 
 import pytest
 from django import forms
@@ -337,6 +337,14 @@ class Catalogued:
     isbn: str
 
 
+class Isbned(TypedDict):
+    isbn: str
+
+
+def server_isbn() -> Isbned:
+    return {"isbn": "x"}
+
+
 @dataclasses.dataclass
 class CataloguedBook:
     title: str
@@ -371,6 +379,10 @@ class TestAsViewRefuses:
             "SpecFormView.form_class TitleForm does not post 'isbn', which the spec requires, "
             "and neither the server nor the route fills it."
         )
+
+    def test_a_required_parameter_a_provider_fills_passes(self) -> None:
+        spec = book_spec(DataclassValidator(Catalogued), input_data=server_isbn)
+        page(spec, TitleForm, route_kwargs=())
 
     def test_a_required_parameter_the_route_may_fill_passes(self) -> None:
         page(book_spec(DataclassValidator(Catalogued)), TitleForm)
