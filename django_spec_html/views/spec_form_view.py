@@ -313,10 +313,11 @@ class SpecFormView(SpecPageBase):
     ``reason``; it is absent when every condition is met. On a page serving
     ``actions``, each action's are asked, of the target the first action
     found, and ``unavailable`` is set only when no action is available
-    (below). The POST is unchanged, and dispatch's 409 stays the authority. **A refused post's
-    context carries** ``code``, the ``ActionUnavailable``'s, for a refusal
+    (below). The post is dispatched as before, and dispatch's 409 stays the authority. **A
+    refused post's context carries** ``code``, the ``ActionUnavailable``'s, for a refusal
     carrying one, as ``error_response`` puts it in the JSON body; it is
-    absent for every other.
+    absent for every other. On a page serving ``actions`` it carries each
+    action's state as GET does (below).
 
     **The page shows its target**, on GET and on every refused post it
     re-renders, in the context beside the form: ``target`` is the row an
@@ -412,6 +413,16 @@ class SpecFormView(SpecPageBase):
     or 404, and a post naming a refused action is refused as before. With
     the first action unavailable and every other refused, ``unavailable`` is
     not set: every button is disabled, and the form's fields are not.
+
+    **A refused post's page keeps each action's state.** A post refused at
+    400, 409 or 422 carries ``unavailable_actions``, ``refused_actions``,
+    ``action_buttons`` and ``unavailable`` as GET would, asked of the target
+    that post found: the action that ran stands where GET's first does, and
+    every other, the first included, is asked its checks and affordances as
+    above, so a button GET disables stays disabled. With
+    ``route_refusal_404`` off, a post whose route the target's reads refuse
+    found no target and carries none of them. A page with one spec carries
+    no ``unavailable`` on a refused post.
 
     **A form over any Validator.** ``form_class`` names the form a page
     renders for a spec whose Validator is not a ``FormValidator``. It is

@@ -126,6 +126,8 @@ usable, and a post naming the unavailable one is refused at 409, as
 first that the user may not run - its permissions refuse them, or its scope
 check refuses the target - is disabled with no reason and no code, its key in
 `refused_actions`, and a post naming it is refused, 403 or 404, as before.
+A refused post's page keeps each action's state, asked of the target that post
+found, as [on a form page](pages.md#one-form-several-operations).
 
 ### A bulk action over ticked rows
 
@@ -232,6 +234,9 @@ page that works, and says why.
   (on, it is `Http404`).
 - `code` is there for a refusal carrying one, as on a form page, and the
   target is shown again.
+- On a page serving `actions`, `unavailable_actions`, `refused_actions`,
+  `action_buttons` and `unavailable` are there as GET puts them, asked of the
+  target the post found, so a button GET disables stays disabled.
 - A denial is raised for the host's 403 or 404 page.
 
 A confirmation's denial is the host's to answer, for htmx too, by the

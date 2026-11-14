@@ -773,14 +773,15 @@ asks them all as dispatch does. Each seed is resolved twice as well, once for
 the target's lookup and once for the affordances' pool, and once more for
 each of the class-level check and the form's `form_kwargs` that
 [names it](#what-the-request-carries). On a page serving `actions`, every
-action's conditions are asked so. Write conditions and seed resolvers that may be asked more
+action's conditions are asked so, on GET and again on a refused post's page.
+Write conditions and seed resolvers that may be asked more
 than once and answer the same.
 
 The callable conditions are asked first, without a row, so where both kinds
 are unmet and the row's is declared first, the page names the callable while
 the post is refused with the row's: dispatch asks in declaration order. **The
-page's answer is advice, and the post's refusal is the authority**: the POST
-is unchanged, dispatch asks every condition again, and a condition that
+page's answer is advice, and the post's refusal is the authority**: the post
+is dispatched as before, dispatch asks every condition again, and a condition that
 changed between the two requests is answered by the 409.
 
 **A refused post carries the refusal's `code`** in its context, beside the
@@ -1129,6 +1130,17 @@ spec it runs**, and replaces `spec`:
   shows "Publish" disabled where only an editor may publish. When the first
   action is unavailable and every other is refused, `unavailable` is not
   set: every button is disabled and the form's fields are not.
+- **A refused post's page keeps each action's state.** A post refused at
+  400, 409 or 422 renders `unavailable_actions`, `refused_actions`,
+  `action_buttons` and `unavailable` as a GET of the page would, asked of the
+  target that post found: the action that ran stands where GET's first does,
+  and every other action, the first included, is asked as above. So a "Save"
+  refused for a blank title leaves "Publish" disabled beside its reason, and
+  a post naming the unavailable "Publish" answers 409 with its button
+  disabled, its reason beside it as well as in the refusal's own error. With
+  `route_refusal_404` off, a post whose route the target's reads refuse found
+  no target, and its page carries none of the four. A page with one spec
+  re-renders a refused post as it always did, with no `unavailable`.
 - **The success is page-wide.** `success_url` and `success_message` serve
   every action. `get_success_url(result)` and `get_success_message(result)`
   read which one ran as `self.action_name`, the key, set before the post is

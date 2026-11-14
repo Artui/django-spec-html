@@ -114,7 +114,8 @@ class SpecConfirmView(SpecPageBase):
     button and shows its reason, and the others stay usable; ``unavailable``
     is set only when no action is. An action after the first the user may not
     run is disabled with no reason, its key in ``refused_actions``, as on
-    ``SpecFormView``. ``as_view()`` refuses ``actions`` beside a
+    ``SpecFormView``, and a refused post's page keeps each action's state,
+    asked of the target that post found. ``as_view()`` refuses ``actions`` beside a
     ``commit_button``: an actions page commits only through an action's button,
     and an action keyed like a ``posted_arguments`` name or ``csrfmiddlewaretoken``,
     which a post carries whichever button it uses.
@@ -132,7 +133,8 @@ class SpecConfirmView(SpecPageBase):
     carries ``errors``, every message the refusal holds as a list of
     strings, a message about a parameter prefixed with its path
     (``"pk: Enter a whole number."``), and ``code`` for a refusal carrying
-    one. A denial is raised for the host's 403 or 404 page, as on any page.
+    one, and on a page serving ``actions`` each action's state as GET puts
+    it. A denial is raised for the host's 403 or 404 page, as on any page.
 
     **A refused post may return where it came from instead.** A button in a
     list's row posts to this page, and a refusal rendered here leaves the

@@ -574,6 +574,101 @@ class TestAPostToARefusedActionIsRefused:
         assert calls(archive) == calls(delete) == []
 
 
+BLANK_SAVE = {"title": "", "save": ""}
+
+
+class TestARefusedPostKeepsEachActionsState:
+    def test_an_unavailable_action_stays_disabled_with_its_reason(self, note: Note) -> None:
+        response = on_note(save_then(row_spec(TITLED)), note, BLANK_SAVE)
+        assert response.status_code == 400
+        context = response.context_data
+        assert context.get("unavailable_actions") == {"publish": TITLED}
+        assert context.get("action_buttons") == [("save", None), ("publish", TITLED)]
+        assert "unavailable" not in context
+        html = rendered(response)
+        assert '<button type="submit" name="publish" disabled>Publish</button>' in html
+        assert '<button type="submit" name="save">Save</button>' in html
+        assert '<p data-action="publish" data-code="titled">' in html
+        assert "<fieldset>" in html
+
+    def test_a_refused_action_stays_disabled_with_no_reason(self, note: Note) -> None:
+        response = on_note(save_then(guarded(Refuse())), note, BLANK_SAVE)
+        assert response.status_code == 400
+        context = response.context_data
+        assert context.get("refused_actions") == frozenset({"publish"})
+        assert "unavailable_actions" not in context
+        html = rendered(response)
+        assert '<button type="submit" name="publish" disabled>Publish</button>' in html
+        assert '<button type="submit" name="save">Save</button>' in html
+        assert "data-action" not in html
+        assert Refuse.message not in html
+
+    def test_the_first_action_is_asked_when_another_ran(self, note: Note) -> None:
+        view = SpecFormView.as_view(
+            actions={"publish": guarded(Refuse()), "save": row_spec()}, success_url="/done/"
+        )
+        response = on_note(view, note, BLANK_SAVE)
+        assert response.context_data.get("refused_actions") == frozenset({"publish"})
+        assert '<button type="submit" name="publish" disabled>' in rendered(response)
+
+    def test_the_action_that_ran_is_not_asked_again(self, ada: Any) -> None:
+        own = Note.objects.create(owner=ada, title="Titled")
+        check = OwnerOnly()
+        view = SpecFormView.as_view(
+            actions={"publish": row_spec(), "save": guarded(check)}, success_url="/done/"
+        )
+        response = view(route_posted(BLANK_SAVE, ada), pk=str(own.pk))
+        assert response.status_code == 400
+        assert check.rows == [own]
+
+    def test_every_action_unavailable_disables_the_fields(self, note: Note) -> None:
+        view = SpecFormView.as_view(
+            actions={"publish": row_spec(TITLED), "save": row_spec(CLOSED)}, success_url="/done/"
+        )
+        response = on_note(view, note, {"title": "Hi", "save": ""})
+        assert response.status_code == 409
+        assert response.context_data.get("unavailable") is TITLED
+        assert "<fieldset disabled>" in rendered(response)
+
+    def test_the_confirm_page(self) -> None:
+        view = confirm_actions(
+            archive=paused_spec(), delete=paused_spec(CLOSED), purge=guarded_confirm(Refuse())
+        )
+        response = view(request_for({"delete": ""}))
+        assert response.status_code == 409
+        context = response.context_data
+        assert context.get("unavailable_actions") == {"delete": CLOSED}
+        assert context.get("refused_actions") == frozenset({"purge"})
+        assert "unavailable" not in context
+        html = rendered(response)
+        assert '<button type="submit" name="archive">Archive</button>' in html
+        assert '<button type="submit" name="delete" disabled>Delete</button>' in html
+        assert '<button type="submit" name="purge" disabled>Purge</button>' in html
+        assert '<p data-action="delete" data-code="closed">Saving is closed.</p>' in html
+
+    def test_a_route_capture_left_unresolved_shows_no_action_state(self, note: Note) -> None:
+        view = save_then(row_spec(TITLED), route_refusal_404=False)
+        response = view(request_for(BLANK_SAVE), pk="x")
+        assert response.status_code == 400
+        assert "action_buttons" not in response.context_data
+
+    def test_the_form_page_with_one_spec_is_unchanged(self, note: Note) -> None:
+        view = SpecFormView.as_view(spec=row_spec(TITLED), success_url="/done/")
+        response = on_note(view, note, {"title": "Hi"})
+        assert response.status_code == 409
+        context = response.context_data
+        assert "unavailable" not in context
+        assert "action_buttons" not in context
+        assert "<fieldset>" in rendered(response)
+
+    def test_the_confirm_page_with_one_spec_is_unchanged(self) -> None:
+        view = SpecConfirmView.as_view(spec=paused_spec(PAUSED), success_url="/done/")
+        response = view(request_for({}))
+        assert response.status_code == 409
+        assert "unavailable" not in response.context_data
+        assert '<button type="submit">Confirm</button>' in rendered(response)
+
+
 def refused(view_class: type[Any], **initkwargs: Any) -> str:
     with pytest.raises(ImproperlyConfigured) as raised:
         view_class.as_view(success_url="/done/", **initkwargs)

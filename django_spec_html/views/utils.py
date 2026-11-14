@@ -8,7 +8,6 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from decimal import Decimal
-from itertools import islice
 from types import MappingProxyType
 from typing import Any, ClassVar, Final, Literal, cast
 from urllib.parse import unquote
@@ -302,7 +301,13 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
                 ask_scope=True,
             )
             denied = _denied(
-                self.actions, request, url_kwargs, served, target, not_found=self.route_refusal_404
+                self.actions,
+                self.action_name,
+                request,
+                url_kwargs,
+                served,
+                target,
+                not_found=self.route_refusal_404,
             )
         except InvalidArguments as refused:
             raise BadRequest(str(refused.detail)) from refused
@@ -325,10 +330,12 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         served = self._served(request)
         principal, grant, seeds = admitted(spec, request, kwargs, served)
         target: Any = UNSET
+        shown_actions: Mapping[str, ServiceSpec] | None = None
         with suppress(InvalidArguments):
             target, grant = _found(
                 spec, principal, grant, seeds, kwargs, served, not_found=self.route_refusal_404
             )
+            shown_actions = self.actions
         form = self._form(spec, principal, target, served, data=request.POST, files=request.FILES)
         try:
             read = self._arguments(form, spec, kwargs, served)
@@ -371,10 +378,21 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
             elsewhere = self._refused_elsewhere(refused)
             if elsewhere is not None:
                 return elsewhere
-            context = {
-                **refusal_code(refused),
-                **self._target_context(spec, principal, target, served, None),
-            }
+            pool: dict[str, Any] | None = None
+            context: dict[str, Any] = {**refusal_code(refused)}
+            if shown_actions is not None:
+                pool = call_pool(principal, served)
+                denied = _denied(
+                    shown_actions,
+                    self.action_name,
+                    request,
+                    kwargs,
+                    served,
+                    target,
+                    not_found=self.route_refusal_404,
+                )
+                context.update(_availability(shown_actions, spec, target, served, pool, denied))
+            context.update(self._target_context(spec, principal, target, served, pool))
             if requested is not None:
                 context["requested_input"] = {
                     "message": requested.message,
@@ -946,6 +964,7 @@ def call_pool(principal: Any, served: Served) -> dict[str, Any]:
 
 def _denied(
     actions: Mapping[str, ServiceSpec] | None,
+    chosen: str | None,
     request: HttpRequest,
     url_kwargs: Mapping[str, Any],
     served: Served,
@@ -953,9 +972,12 @@ def _denied(
     *,
     not_found: bool,
 ) -> frozenset[str]:
-    """The actions after the first that their own post would deny, each asked of ``target``."""
+    """The actions but the one served (``chosen``, else the first) their own post would deny."""
     denied = set()
-    for name, each in islice((actions or {}).items(), 1, None):
+    ran = chosen or next(iter(actions or ()), None)
+    for name, each in (actions or {}).items():
+        if name == ran:
+            continue
         try:
             principal, grant, seeds = admitted(each, request, url_kwargs, served)
             _admitted_to(each, principal, grant, seeds, url_kwargs, served, target, not_found)
