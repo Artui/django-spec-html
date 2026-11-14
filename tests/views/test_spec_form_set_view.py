@@ -252,7 +252,7 @@ class TestAsView:
     def test_displaying_the_target_is_refused(self) -> None:
         # Sized so the base's display check passes: an Output marking a field.
         spec = many_spec(presenter=DataclassPresenter(BookOut))
-        with pytest.raises(ImproperlyConfigured, match="no target to display"):
+        with pytest.raises(ImproperlyConfigured, match="leave display_target off"):
             formset_view(spec, display_target=True)
 
     @pytest.mark.parametrize("extra", ["1", None, True, -1], ids=["a-str", "none", "bool", "neg"])

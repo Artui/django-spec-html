@@ -917,6 +917,14 @@ form it is answered with, beside an out-of-band `TOTAL_FORMS`; a post at the
 list's maximum is a 204. [Adding a row](formsets.md#adding-a-row) has what
 chooses that answer and how a project's own template takes it.
 
+### Editing an existing set
+
+The formset page renders a Validator's `formset_class` as it is declared. A
+model formset there edits the spec's `collection_selector_spec`: one
+prefilled form a row, a deleted row sent whole with `DELETE` true, a row
+left out left alone. [Editing a set](formsets.md#editing-a-set) has the
+example and what a post sends.
+
 ## Coming from Django's `FormView`
 
 A refused post answers **400** here where Django's `FormView` answers 200:
