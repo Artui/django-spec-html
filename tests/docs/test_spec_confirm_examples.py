@@ -186,7 +186,7 @@ def test_a_route_parameter_route_kwargs_does_not_name_is_refused() -> None:
     quoted = (
         "SpecConfirmView requires pk, which no post to a confirmation carries: fill each from "
         "the route, naming it in route_kwargs, or from a pool seed, a kwargs provider or "
-        "server_arguments."
+        "server_arguments, or name it in posted_arguments."
     )
     assert str(refused.value) == quoted
     assert quoted in (ROOT / "docs" / "confirm.md").read_text().replace("\n", " ")

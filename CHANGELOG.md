@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A confirmation reads a bulk action's selection from the post.**
+  `SpecConfirmView.posted_arguments`, a tuple of parameter names, is read from
+  `request.POST` as a query string is, every value of an array, merged with
+  the route's arguments and coerced by their declarations, so a button posting
+  the ticked rows' checkboxes through `hx-include` hands a spec taking
+  `ids: list[int]` the ids. Every other posted key is still never read. A
+  value refused is a refused post, a 400 or under `refusal_redirect` a message
+  and a redirect. `as_view()` refuses a name the spec does not declare, one
+  `route_kwargs` fills from the URL, and anything but a tuple; a required
+  parameter a post supplies counts as supplied.
+
 ### Changed
 - **The kernel floor is 0.33.0.** Its `FormValidator` binds the form to a
   `QueryDict` of the spellings a browser posts, so a form or widget written for
