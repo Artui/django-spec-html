@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   renders are the full text again, where the comment budget had cut them to one
   line. No behaviour changes.
 
+### Docs
+- **The pages say what they leave out and how to adapt.** Multi-step flows
+  (wizards, pay then poll) are out of scope, with what a project does instead;
+  a tested recipe chooses the htmx fragment by `HX-Target`; and a note for
+  hosts coming from Django's `FormView` says a refused post answers 400 where
+  `FormView` answers 200.
+
 ### Fixed
 - **A row condition's lazy reason reaches the template as text.** The form and
   confirmation pages put the declared affordance in `unavailable` when a

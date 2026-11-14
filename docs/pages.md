@@ -743,6 +743,33 @@ form: an htmx request to a page naming no template is answered with
 `django_spec_html/spec_form_fragment.html`, with nothing to configure on any
 Django.
 
+**Choosing the fragment by the request's target.** One URL can answer htmx
+requests aimed at different elements with different parts of the page, such as
+a dialog and a panel. Override `get_fragment_template_names()` and read the
+`HX-Target` header off `self.request`; return the shipped answer for every
+target the override does not name:
+
+```python
+--8<--
+docs/examples/htmx_target.py:target
+--8<--
+```
+
+A request for the target `dialog` renders `spec_form_dialog_fragment.html`;
+any other htmx request renders the form fragment the view would have, and a
+request without htmx is the page, since the method is read only for a
+fragment. The override picks a template and nothing else, so the outcome is
+the same in every target.
+
+**Multi-step flows are out of scope for the pages.** A wizard, or a payment
+that is started and then polled, is a sequence of requests whose state the
+page does not carry: the view holds nothing between one post and the next.
+Serve each step as a page of its own, one URL and one spec per step, and keep
+what the steps share in the service, such as a draft row or an order whose
+status each step reads and moves. The next step's page then finds its state
+from its route, as any page finds its target, and a step reached out of order
+is the spec's own refusal.
+
 **Which requests get the fragment.** A request whose `HX-Request` header is
 `true`, unless it is boosted (`HX-Boosted`) or a history restore
 (`HX-History-Restore-Request`): a boosted link or form swaps the whole body,
@@ -830,6 +857,14 @@ keeps failing reloads the page over and over, so such a request should target a
 URL that does not answer 403 or 404. The view's `Vary` never reaches a denial, which is raised rather than
 answered, so each handler sets its own on `HX-Request`, since it answers the
 two kinds of request differently.
+
+## Coming from Django's `FormView`
+
+A refused post answers **400** here where Django's `FormView` answers 200:
+the status is the kernel's refusal status, [the refusals table](http.md#refusals) has
+each row. A host moving a form onto a page of this package updates its tests
+that assert 200 on an invalid post. A post through htmx is unchanged, since
+the fragment answers a refusal at 200.
 
 ## Under ASGI
 
