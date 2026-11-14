@@ -25,6 +25,7 @@ from django_service_specs import (
     coerce_flat,
     form_keywords,
     refusal_messages,
+    server_owned_keys,
 )
 
 from django_spec_html.http.add_argument_errors import add_argument_errors
@@ -32,7 +33,9 @@ from django_spec_html.http.route_arguments import route_arguments
 from django_spec_html.views.utils import (
     Served,
     SpecPageBase,
+    checked_page_form,
     form_values,
+    page_form_kwargs,
     refusal_tree,
     without_errors,
 )
@@ -52,8 +55,9 @@ class SpecFormSetView(SpecPageBase):
     page is a formset of the spec's form class: the Validator's
     ``formset_class`` where it declares one, so the rule over the whole set
     is declared once, else one ``formset_factory`` builds. The spec's
-    Validator must be a
-    [`FormValidator`][django_service_specs.adapters.forms.form_validator.FormValidator]:
+    Validator is a
+    [`FormValidator`][django_service_specs.adapters.forms.form_validator.FormValidator],
+    unless ``form_class`` names the row form:
 
         urlpatterns = [
             path(
@@ -160,6 +164,20 @@ class SpecFormSetView(SpecPageBase):
     ``hx-swap-oob="true"``; at ``many_max_length`` the answer is 204 with no
     body. Any other add, htmx included, is the formset again.
 
+    **A formset over any Validator.** ``form_class`` names the row form a
+    page renders for a spec whose Validator is not a ``FormValidator``, as on
+    ``SpecFormView``: one ``formset_factory`` of it, bounded as above and
+    built with ``get_form_kwargs()`` as every form's ``form_kwargs``. Each
+    form renders and is read as above, and is never validated: a row's
+    refusal is the only error its form carries, and a refusal of the whole
+    set, which the Validator's ``validated_many`` raises, lands on the
+    non-form errors. The page adds no rule over the set of its own.
+    ``as_view()`` checks the row form against the rows' parameters as
+    ``SpecFormView`` checks its form against the spec's, except that a route
+    or ``server_arguments`` fills the call's top level and never a row, so
+    only the server's own keys fill a required row parameter the form leaves
+    out.
+
     **A success message** is ``success_message`` formatted with
     ``{"count": n}``, the number of rows the call carried, so
     ``"%(count)d books were added."`` reads the post's own count. The single
@@ -168,7 +186,8 @@ class SpecFormSetView(SpecPageBase):
     read ``result.data``, the rows' cleaned data, or ``result.value``.
 
     ``as_view()`` refuses, when the URLconf is imported, a spec whose
-    Validator is not a ``FormValidator``, a spec that is not ``many``, a
+    Validator is not a ``FormValidator`` on a page with no ``form_class``, a
+    ``form_class`` the rows would not read, a spec that is not ``many``, a
     view displaying its target, an ``extra`` that is not a non-negative int,
     an ``add_button`` that is not a button's name, that is set without a
     ``commit_button``, or that is the ``commit_button``; a
@@ -180,6 +199,9 @@ class SpecFormSetView(SpecPageBase):
 
     Attributes:
         spec: The ``many`` operation served. Required.
+        form_class: The row form the page renders over a Validator that is
+            not a ``FormValidator``, never validated, checked at
+            ``as_view()``; ``None``, the default, renders the Validator's.
         template_name: The page's template, as for any Django template view:
             ``django_spec_html/spec_form_set.html``, the one this package
             ships, by default.
@@ -203,24 +225,22 @@ class SpecFormSetView(SpecPageBase):
     """
 
     template_name = "django_spec_html/spec_form_set.html"
+    form_class: type[forms.BaseForm] | None = None
     extra: int = 1
     add_button: str | None = None
 
     @classmethod
     def _check_spec(cls, label: str, spec: ServiceSpec) -> None:
-        """Refuse a spec whose Validator is not a ``FormValidator``, and a spec not ``many``."""
-        if not isinstance(spec.validator, FormValidator):
-            raise ImproperlyConfigured(
-                f"{label} renders a formset of the form its spec validates each row with, so "
-                f"the spec's validator must be a FormValidator; "
-                f"got {type(spec.validator).__name__}."
-            )
+        """Refuse a spec not ``many``, and a model formset with no collection to edit."""
         if not spec.many:
             raise ImproperlyConfigured(
                 f"{label} posts a list of rows, and its spec takes one: serve a spec that is "
                 "not many from SpecFormView."
             )
-        edits = _model_formset(spec.validator.formset_class)
+        validator = spec.validator
+        if not isinstance(validator, FormValidator):
+            return
+        edits = _model_formset(validator.formset_class)
         if edits is not None and spec.collection_selector_spec is None:
             raise ImproperlyConfigured(
                 f"{label} renders {edits.__qualname__}, a model formset, over the rows "
@@ -229,7 +249,8 @@ class SpecFormSetView(SpecPageBase):
 
     @classmethod
     def _check_page(cls, label: str, spec: ServiceSpec, initkwargs: Mapping[str, Any]) -> None:
-        """Refuse a target display, ``extra``, ``add_button``, or a button under the prefix."""
+        """Refuse the row form against the spec, a target display, ``extra``, or a button."""
+        _check_row_form(label, spec, initkwargs.get("form_class", cls.form_class))
         if initkwargs.get("display_target", cls.display_target):
             raise ImproperlyConfigured(
                 f"{label} serves a many spec, whose set the formset itself shows, one form a "
@@ -266,10 +287,13 @@ class SpecFormSetView(SpecPageBase):
         self, spec: ServiceSpec, principal: Any, target: Any, served: Served, **bound: Any
     ) -> BaseFormSet:
         """The page's formset of the spec's form, each form built with ``form_kwargs``."""
-        keywords = form_keywords(
-            spec, principal, pool_seeds=served.seeds, call_context=served.call_context
-        )
-        formset_class = _formset_class(spec, self.extra)
+        if self.form_class is None:
+            keywords = form_keywords(
+                spec, principal, pool_seeds=served.seeds, call_context=served.call_context
+            )
+        else:
+            keywords = page_form_kwargs(self)
+        formset_class = _formset_class(spec, self.form_class, self.extra)
         data = bound.get("data")
         if data is not None and self.add_button in data:
             bound = {**bound, "data": _one_more_form(formset_class, data)}
@@ -359,11 +383,15 @@ class SpecFormSetView(SpecPageBase):
         sent = _sent(form)
         for each in form.forms:
             without_errors(each)
-        if isinstance(refused, InvalidArguments) and not spec.partial:
+        if isinstance(refused, InvalidArguments) and self.form_class is None and not spec.partial:
             for row in sent:
                 clean_held_to_their_columns(row)
         _set_formset_errors(form, _split(refusal_tree(refused), sent, spec.many_argument))
         return self._rendered(self.get_context_data(formset=form, **context), status=status)
+
+    def get_form_kwargs(self) -> Mapping[str, Any]:
+        """The keywords a ``form_class`` page builds every row's form with: none by default."""
+        return {}
 
     def get_success_message(self, result: DispatchResult) -> str:
         """The message a successful post sends: ``success_message`` with the rows' ``count``.
@@ -400,13 +428,41 @@ def _check_add_button(label: str, add: Any, commit: Any) -> None:
         )
 
 
-def _formset_class(spec: ServiceSpec, extra: int) -> type[BaseFormSet]:
-    """The validator's ``formset_class``, else a formset of its form bounded by the spec's list."""
-    validator = cast("FormValidator", spec.validator)
-    if validator.formset_class is not None:
-        return validator.formset_class
+def _check_row_form(label: str, spec: ServiceSpec, form_class: Any) -> None:
+    """Refuse a row form the spec's rows would not read, or no form over a non-form Validator."""
+    validator = spec.validator
+    if form_class is None:
+        if not isinstance(validator, FormValidator):
+            raise ImproperlyConfigured(
+                f"{label} renders a formset of the form each row is posted with, unless "
+                "form_class names one: set form_class, or the spec's validator must be a "
+                f"FormValidator; got {type(validator).__name__}."
+            )
+        return
+    rows = _rows_parameters(spec, spec.parameters())
+    posted = checked_page_form(label, validator, form_class, rows)
+    filled = server_owned_keys(spec)
+    for parameter in rows.items:
+        name = parameter.name
+        if parameter.required and name not in posted and name not in filled:
+            raise ImproperlyConfigured(
+                f"{label}.form_class {form_class.__name__} does not post {name!r}, which each "
+                "row requires, and the server does not fill it."
+            )
+
+
+def _formset_class(
+    spec: ServiceSpec, form_class: type[forms.BaseForm] | None, extra: int
+) -> type[BaseFormSet]:
+    """The validator's ``formset_class``, else a formset of the row form within the spec's list."""
+    validator = spec.validator
+    if form_class is None:
+        validator = cast("FormValidator", validator)
+        if validator.formset_class is not None:
+            return validator.formset_class
+        form_class = validator.form_class
     return forms.formset_factory(
-        validator.form_class,
+        form_class,
         extra=extra,
         min_num=spec.many_min_length,
         max_num=spec.many_max_length,
