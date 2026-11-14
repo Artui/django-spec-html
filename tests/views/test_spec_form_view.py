@@ -1654,14 +1654,7 @@ class TestTheFragmentOnASuccess:
 
 @pytest.fixture
 def result_fragment(settings: Any) -> str:
-    """A fragment template defining ``spec-result``, as each Django addresses one.
-
-    From Django 6.0 the address ``fragment.html#spec-result`` names the
-    ``partialdef`` inside ``fragment.html``. Below it - with no
-    django-template-partials installed - the same address is a template name
-    like any other, so the template is registered under it: the view asks for
-    one address on every version, and what answers it is the version's.
-    """
+    """A fragment defining ``spec-result``: a ``partialdef`` from Django 6.0, a name below."""
     form = '<form hx-post="">{{ form }}</form>'
     result = "<p>Saved {{ result.value }} for {{ heading }}.</p>"
     if django.VERSION >= (6, 0):
@@ -4481,12 +4474,7 @@ MESSAGES_STACK = [
 
 @pytest.fixture
 def stack(settings: Any) -> Callable[..., Any]:
-    """Post through Django's handler and the messages middleware, as a project serves the page.
-
-    The session is a signed cookie, which needs no table, since the suite's
-    settings install no sessions app. Each call routes one view, at
-    ``/page/``, through a URLconf of its own.
-    """
+    """Post through Django's handler and the messages middleware, on a signed-cookie session."""
     settings.INSTALLED_APPS = [*settings.INSTALLED_APPS, "django.contrib.messages"]
     settings.MIDDLEWARE = MESSAGES_STACK
     settings.SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
