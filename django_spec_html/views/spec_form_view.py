@@ -402,7 +402,8 @@ class SpecFormView(SpecPageBase):
     asks every action after the first the checks its post runs before
     dispatch: its admission and class-level permissions, then its object
     check on the row the page shows, or its scope check on a set or none,
-    and a route capture its own parameters refuse. ``refused_actions`` is
+    and, with ``route_refusal_404`` on, a route capture its own parameters
+    refuse. ``refused_actions`` is
     the frozenset of the keys refused, absent when none is; a refused
     action's affordances are not asked, so it is in neither
     ``unavailable_actions`` nor ``unavailable``, and its ``action_buttons``

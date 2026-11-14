@@ -376,6 +376,28 @@ class TenantOfAda(PermissionCheck):
         return tenant == "tenant-of-ada"
 
 
+class SetRefused(PermissionCheck):
+    """Admits every principal, then refuses every set, recording each set it is offered."""
+
+    def __init__(self) -> None:
+        self.scopes: list[Any] = []
+
+    def has_permission(self, principal: Any, spec: Any) -> bool:
+        return True
+
+    def has_scope_permission(self, principal: Any, spec: Any, scope: Any) -> bool:
+        self.scopes.append(scope)
+        return False
+
+
+def on_a_set(selector: Any, *permissions: Any) -> ServiceSpec:
+    return ServiceSpec(
+        service=Record(),
+        permissions=permissions or OPEN,
+        collection_selector_spec=SelectorSpec(kind=SelectorKind.LIST, selector=selector),
+    )
+
+
 def guarded(*permissions: Any, affordances: tuple[Affordance, ...] = ()) -> ServiceSpec:
     return dataclasses.replace(row_spec(*affordances), permissions=permissions)
 
@@ -501,6 +523,22 @@ class TestARefusedActionIsDisabledWithNoReason:
     def test_a_route_capture_its_own_parameters_refuse(self, note: Note) -> None:
         response = on_note(save_then(capped_publish()), note)
         assert response.context_data.get("refused_actions") == {"publish"}
+
+    def test_with_route_refusal_404_off_a_capture_is_left_to_its_post(self, note: Note) -> None:
+        view = save_then(capped_publish(), route_refusal_404=False)
+        assert "refused_actions" not in on_note(view, note).context_data
+
+    def test_its_scope_check_is_asked_of_the_set_the_page_shows(self, note: Note) -> None:
+        Note.objects.create(owner=note.owner, title="")
+        check = SetRefused()
+        delete = on_a_set(lambda: Note.objects.filter(title=""), check)
+        view = confirm_actions(archive=on_a_set(lambda: Note.objects.all()), delete=delete)
+        response = view(request_for())
+        assert response.context_data.get("refused_actions") == {"delete"}
+        assert [sorted(each.pk for each in scope) for scope in check.scopes] == [
+            sorted(Note.objects.values_list("pk", flat=True))
+        ]
+        assert '<button type="submit" name="delete" disabled>Delete</button>' in rendered(response)
 
     def test_the_first_action_refused_still_refuses_the_page(self, note: Note) -> None:
         view = SpecFormView.as_view(

@@ -1117,7 +1117,9 @@ spec it runs**, and replaces `spec`:
   asks every action after the first the checks its post would run before
   dispatch: its admission and class-level permissions, then its object
   check on the row the page shows (its scope check on a set, or on none),
-  and a route capture its own parameters refuse. The context carries
+  and, with `route_refusal_404` on, the default, a route capture its own
+  parameters refuse; with it off the capture is left to its post, as it is
+  for the first action. The context carries
   `refused_actions`, the frozenset of the refused keys, absent when none
   is. A refused action's affordances are not asked: it is in neither
   `unavailable_actions` nor `unavailable`, and its `action_buttons` entry
