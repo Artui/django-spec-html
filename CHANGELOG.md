@@ -79,8 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused, its affordances are not asked, and it counts toward neither
   `unavailable_actions` nor `unavailable`. The first action's refusal is
   still the page's 403 or 404, and a post naming a refused action is refused
-  as before. A refused post's page, at 400, 409 or 422, keeps each action's
-  state as GET shows it, asked of the target that post found: the action that
+  as before. A refused post's page keeps each action's state as GET shows it, asked of the target that post found: the action that
   ran stands where GET's first does and every other, the first included, is
   asked, so a button GET disables stays disabled with its reason, and the
   fields are disabled only when GET's would be. A page with one spec

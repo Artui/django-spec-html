@@ -630,6 +630,17 @@ class TestARefusedPostKeepsEachActionsState:
         assert response.context_data.get("unavailable") is TITLED
         assert "<fieldset disabled>" in rendered(response)
 
+    def test_a_post_naming_the_unavailable_action_keeps_its_reason(self, note: Note) -> None:
+        response = on_note(
+            note_actions(row_spec(TITLED), row_spec()), note, {"title": "Hi", "publish": ""}
+        )
+        assert response.status_code == 409
+        html = rendered(response)
+        assert '<button type="submit" name="publish" disabled>Publish</button>' in html
+        assert '<button type="submit" name="save">Save</button>' in html
+        assert '<p data-action="publish" data-code="titled">' in html
+        assert html.count(TITLED.reason) == 2
+
     def test_the_confirm_page(self) -> None:
         view = confirm_actions(
             archive=paused_spec(), delete=paused_spec(CLOSED), purge=guarded_confirm(Refuse())

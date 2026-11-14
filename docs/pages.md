@@ -1130,8 +1130,8 @@ spec it runs**, and replaces `spec`:
   shows "Publish" disabled where only an editor may publish. When the first
   action is unavailable and every other is refused, `unavailable` is not
   set: every button is disabled and the form's fields are not.
-- **A refused post's page keeps each action's state.** A post refused at
-  400, 409 or 422 renders `unavailable_actions`, `refused_actions`,
+- **A refused post's page keeps each action's state.** A refused post's
+  page, and its fragment under htmx, renders `unavailable_actions`, `refused_actions`,
   `action_buttons` and `unavailable` as a GET of the page would, asked of the
   target that post found: the action that ran stands where GET's first does,
   and every other action, the first included, is asked as above. So a "Save"

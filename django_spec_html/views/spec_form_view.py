@@ -414,8 +414,8 @@ class SpecFormView(SpecPageBase):
     the first action unavailable and every other refused, ``unavailable`` is
     not set: every button is disabled, and the form's fields are not.
 
-    **A refused post's page keeps each action's state.** A post refused at
-    400, 409 or 422 carries ``unavailable_actions``, ``refused_actions``,
+    **A refused post's page keeps each action's state.** A refused post's
+    page carries ``unavailable_actions``, ``refused_actions``,
     ``action_buttons`` and ``unavailable`` as GET would, asked of the target
     that post found: the action that ran stands where GET's first does, and
     every other, the first included, is asked its checks and affordances as
