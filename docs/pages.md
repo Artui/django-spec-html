@@ -824,8 +824,39 @@ bodies and a cache keyed on fewer would hand a fragment to a page load.
   `DisallowedRedirect` in both modes. The answer passes back
   through the host's middleware like any other, so a cookie set for the
   request, such as the session a sign-in rotates, is set on it. Override the
-  method for `HX-Location`, or a 204 carrying `HX-Trigger`.
+  method for `HX-Location`.
 - **A denial** is raised in both modes alike, for the host's handlers.
+
+**The event a success triggers is the page's to name.** Three attributes, on
+every page with a post, shape the success answered in place:
+
+| Attribute | Default | Sends |
+| --- | --- | --- |
+| `success_trigger` | `"spec-succeeded"` | an event's name as it is; a mapping of event names to payloads as the JSON htmx reads, each payload the event's `detail`; `None` sends no trigger |
+| `success_trigger_timing` | `"receive"` | the trigger in `HX-Trigger`; `"swap"` in `HX-Trigger-After-Swap`, `"settle"` in `HX-Trigger-After-Settle` |
+| `success_refresh` | `False` | `HX-Refresh: true` and an empty body in place of the result fragment, which the page then need not define, with the trigger beside it |
+
+`get_success_trigger(result)` returns `success_trigger`; override it for a
+payload that depends on the result:
+
+```python
+class NewNote(SpecFormView):
+    success_trigger_timing = "settle"
+
+    def get_success_trigger(self, result):
+        return {"note-saved": {"id": result.value.pk}}
+```
+
+A payload is encoded with Django's `DjangoJSONEncoder`, so a date, a
+`Decimal` or a UUID arrives as a string, and with every character outside ASCII
+escaped, so the header carries it whole. `as_view()` refuses an empty name, a
+mapping with no names or a key that is not one, a timing that is not one of
+the three, and a `success_refresh` that is not a bool. Whether a payload
+encodes is known only when it is sent, so one that does not raises
+`ImproperlyConfigured` then. A refresh with a trigger timed to `"swap"` or
+`"settle"` is refused at `as_view()`: htmx fires `HX-Trigger` and then
+reloads, so a trigger waiting for a swap never fires. None of these reaches a
+post without htmx, which is redirected as before, nor an `HX-Redirect`.
 
 **A template with no fragment at the address** answers htmx with Django's
 `TemplateDoesNotExist` naming it - `spec_form.html#spec-form`, or the

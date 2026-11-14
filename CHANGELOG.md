@@ -51,6 +51,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `hx-swap-oob="true"`; at `many_max_length` it is a 204 with no body. An add
   aimed anywhere else, with htmx or without, is the formset again with one more
   form, as before.
+- **A page names the event its success triggers.** `success_trigger` is an
+  event's name, a mapping of names to JSON payloads, or `None` for no trigger;
+  `success_trigger_timing` sends it in `HX-Trigger` (`"receive"`, the
+  default), `HX-Trigger-After-Swap` or `HX-Trigger-After-Settle`;
+  `success_refresh = True` answers `HX-Refresh: true` in place of the result
+  fragment, which the page then need not define. `get_success_trigger(result)`
+  returns the attribute, for a payload read from the result. `as_view()`
+  refuses each of a wrong type, and a refresh with a trigger timed to a swap
+  or settle that never comes; a payload JSON cannot encode is refused when it
+  is sent. The default answer is unchanged, and a post without htmx is
+  redirected as before.
 
 ### Changed
 - **The kernel floor is 0.33.0.** Its `FormValidator` binds the form to a
