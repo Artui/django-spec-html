@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, cast
 
 from django.core.exceptions import ImproperlyConfigured
-from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBase, QueryDict
+from django.http import Http404, HttpRequest, HttpResponseBase, QueryDict
 from django.utils.decorators import classonlymethod
 from django_service_specs import (
     DispatchError,
@@ -19,14 +19,21 @@ from django_service_specs import (
     SpecSource,
     UnknownArguments,
     dispatch,
+    file_output,
     kernel_spec,
     paginate_output,
+    present,
     refusal_messages,
 )
 
 from django_spec_html.http.add_argument_errors import add_argument_errors
 from django_spec_html.http.request_arguments import request_arguments
-from django_spec_html.http.utils import check_request_hooks, refusal_outcome, refusal_status
+from django_spec_html.http.utils import (
+    check_request_hooks,
+    file_response,
+    refusal_outcome,
+    refusal_status,
+)
 from django_spec_html.types.outcome import Outcome
 from django_spec_html.views.utils import (
     SPEC_RESULTS,
@@ -222,6 +229,9 @@ class SpecSelectorView(SpecRequestBase):
             orderable column.
         display_rows: Whether the context carries ``row_displays``, which
             the shipped template renders a row by when there is no table.
+        as_attachment: Whether a ``RETRIEVE`` spec presenting a file through
+            the kernel's ``FilePresenter`` answers it as a download, the
+            default, or ``inline``, for a browser to show it in place.
     """
 
     spec: SelectorSpec | SpecSource | None = None
@@ -235,6 +245,7 @@ class SpecSelectorView(SpecRequestBase):
     table_class: Any = None
     table_order_by_field: str | None = None
     display_rows: bool = True
+    as_attachment: bool = True
     # Only here does an undeclared key a stranger wrote reach dispatch, unlike REJECT.
     unknown_arguments: UnknownArguments = UnknownArguments.IGNORE
 
@@ -250,6 +261,7 @@ class SpecSelectorView(SpecRequestBase):
         view = super().as_view(**initkwargs)
         label = cls.__name__
         spec = _selector(label, initkwargs.get("spec", cls.spec))
+        presents_file = file_output(spec) is not None
         check_request_hooks(cls, initkwargs, spec)
         if inspect.iscoroutinefunction(initkwargs.get("get_query", cls.get_query)):
             raise ImproperlyConfigured(
@@ -264,7 +276,8 @@ class SpecSelectorView(SpecRequestBase):
             initkwargs.get("table_order_by_field", cls.table_order_by_field),
         )
         if (
-            initkwargs.get("display_rows", cls.display_rows)
+            not presents_file
+            and initkwargs.get("display_rows", cls.display_rows)
             and initkwargs.get("table_class", cls.table_class) is None
         ):
             check_display(
@@ -277,7 +290,7 @@ class SpecSelectorView(SpecRequestBase):
         check_shipped_templates(cls, initkwargs)
         return view
 
-    def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+    def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
         """The page: the spec's rows, or the refusal of the query that asked for them."""
         spec = self.served_spec()
         served = self._served(request)
@@ -333,6 +346,11 @@ class SpecSelectorView(SpecRequestBase):
             rows = answered_rows(spec, list(served_page.items))
             context["page"] = dataclasses.replace(served_page, items=rows)
             context.update(_links(read, self.page_kwarg, served_page))
+        elif file_output(spec) is not None:
+            if result.value is not None:
+                return file_response(present(spec, result), as_attachment=self.as_attachment)
+            context["rows"] = []
+            return self._rendered(self.get_context_data(**context), status=200)
         else:
             rows = [] if result.value is None else answered_rows(spec, [result.value])
             if rows:

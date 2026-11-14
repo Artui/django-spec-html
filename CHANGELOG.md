@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A spec that presents a file is answered the file.** A `RETRIEVE` spec whose
+  presenter is the kernel's `FilePresenter`, served by `SpecSelectorView`,
+  `SpecView` or `AsyncSpecView`, answers a `FileResponse`, or a
+  `StreamingHttpResponse` for an iterable of bytes, with its content type,
+  `Content-Disposition: attachment` naming the file (RFC 5987 quoted outside
+  ASCII) and `Content-Length` where the size is known. The JSON views raised
+  `TypeError` serializing it, and the selector page refused it at `as_view()`
+  for having no Output to display. `SpecSelectorView.as_attachment = False`
+  answers `inline`. Both refuse at `as_view()` a file spec the kernel's
+  `file_output` refuses, such as a `LIST` one. `dispatch_request` and
+  `adispatch_request` are annotated as answering `HttpResponseBase`.
+
 ### Changed
 - **The kernel floor is 0.33.0.** Its `FormValidator` binds the form to a
   `QueryDict` of the spellings a browser posts, so a form or widget written for

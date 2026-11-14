@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponseBase
 
 from django_spec_html.http.dispatch_request import dispatch_request
 from django_spec_html.http.utils import SpecViewBase
@@ -71,7 +71,7 @@ class SpecView(SpecViewBase):
             through ``get_server_arguments``, and its names may not.
     """
 
-    def answer(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+    def answer(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
         """Dispatch the spec for ``request``, the route's kwargs as ``url_kwargs``."""
         server, pool_seeds = self.served_hooks(request)
         return dispatch_request(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from asgiref.sync import sync_to_async
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponseBase
 
 from django_spec_html.http.adispatch_request import adispatch_request
 from django_spec_html.http.utils import SpecViewBase
@@ -30,7 +30,7 @@ class AsyncSpecView(SpecViewBase):
     cannot stand in for a sync one.
     """
 
-    async def answer(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+    async def answer(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
         """Dispatch the spec from async code, the route's kwargs as ``url_kwargs``."""
         server, pool_seeds = await sync_to_async(self.served_hooks, thread_sensitive=True)(request)
         return await adispatch_request(
