@@ -35,6 +35,7 @@ from django_spec_html.views.utils import (
     answered_rows,
     check_display,
     check_shipped_templates,
+    coerced_route,
     denial,
     display_of,
     displayed,
@@ -190,6 +191,9 @@ class SpecSelectorView(SpecRequestBase):
             shipped page's own fragment file.
         route_kwargs: Which URL kwargs fill which parameters, as
             ``route_arguments`` reads it.
+        route_refusal_404: Whether a route capture the shape check refuses
+            raises ``Http404``, as a URL converter that
+            did not match would; ``False`` answers it as 0.12.0 did.
         pool_seeds: The seeds the spec's callables are resolved with, unless
             ``get_pool_seeds`` answers others for a request.
         server_arguments: The kernel's ``ServerArguments`` the server answers
@@ -278,6 +282,9 @@ class SpecSelectorView(SpecRequestBase):
         spec = self.served_spec()
         served = self._served(request)
         principal, grant, seeds = admitted(spec, request, kwargs, served)
+        if self.route_refusal_404:
+            parameters = spec.parameters(call_context=served.call_context)
+            coerced_route(parameters, kwargs, served, not_found=True)
         listing = spec.kind is SelectorKind.LIST
         read = self._query(request)
         query, page, limit = self._paging(read) if listing else (read, None, None)

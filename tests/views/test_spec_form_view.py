@@ -583,7 +583,7 @@ class TestAnUpdatePage:
     def test_a_route_value_the_target_refuses_is_a_bad_request(self, ada: Any) -> None:
         # Its text is the refusal's tree printed as plain strings: a code is for a program.
         with pytest.raises(BadRequest) as caught:
-            get(form_view(row_spec()), ada, pk="first")
+            get(form_view(row_spec(), route_refusal_404=False), ada, pk="first")
         assert str(caught.value) == "{'pk': ['Enter a whole number.']}"
 
     def test_the_class_level_check_runs_once(self, ada: Any) -> None:
@@ -1125,7 +1125,8 @@ class TestRefusals:
             ),
         )
         route = ada.pk if pk == "own" else pk
-        response = post(form_view(spec), ada, {"username": "ada", "last_login": "never"}, pk=route)
+        view = form_view(spec, route_refusal_404=pk == "own")
+        response = post(view, ada, {"username": "ada", "last_login": "never"}, pk=route)
         expected = (
             {"last_login": ["Enter a valid date/time."]}
             if pk == "own"
@@ -1166,7 +1167,8 @@ class TestRefusals:
     ) -> None:
         # One tree carries every problem: the route's and the form's together.
         spec = row_spec(permissions=[OwnerOnly()])
-        response = post(form_view(spec), ada, {"title": "Hi", "count": "x"}, pk="abc")
+        view = form_view(spec, route_refusal_404=False)
+        response = post(view, ada, {"title": "Hi", "count": "x"}, pk="abc")
         assert (response.status_code, refused(response)) == (
             400,
             {"count": [WHOLE], "__all__": [f"pk: {WHOLE}"]},
@@ -1992,7 +1994,7 @@ class TestThePagesRouteKwargs:
         assert spec.service.calls[0]["instance"] == note
 
     def test_a_renamed_kwarg_that_does_not_parse_is_the_clients_400(self, ada: Any) -> None:
-        view = paged(row_spec(), route_kwargs={"note": "pk"}).as_view()
+        view = paged(row_spec(), route_kwargs={"note": "pk"}, route_refusal_404=False).as_view()
         with pytest.raises(BadRequest):
             get(view, ada, note="four")
 
@@ -2673,7 +2675,9 @@ class TestTheFormsKeywords:
     def test_a_post_whose_route_is_refused_is_built_as_no_row(self, ada: Any, note: Note) -> None:
         # The target is never found, so the page's form is asked about none, not a pending marker.
         keywords = Keywords(owned)
-        view = form_view(keyed_note_spec(keywords), pool_seeds=TENANT_SEEDS)
+        view = form_view(
+            keyed_note_spec(keywords), pool_seeds=TENANT_SEEDS, route_refusal_404=False
+        )
         response = post(view, ada, {"title": "Hi"}, pk="abc")
         assert (response.status_code, refused(response)) == (400, {"__all__": [f"pk: {WHOLE}"]})
         assert [each["instance"] for each in keywords.calls] == [None]
@@ -3216,7 +3220,8 @@ class TestTheTargetInTheContext:
 
     def test_a_post_whose_route_is_refused_carries_no_target(self, ada: Any) -> None:
         # The route never found a row, so there is none to show beside the refusal.
-        response = post(form_view(row_spec()), ada, {"title": "Hi"}, pk="first")
+        view = form_view(row_spec(), route_refusal_404=False)
+        response = post(view, ada, {"title": "Hi"}, pk="first")
         assert response.status_code == 400
         assert "target" not in response.context_data
 
@@ -4167,7 +4172,7 @@ class TestAPostThatDoesNotCommit:
         # GET's answer, since the page a refresh re-renders is GET's; a commit goes to dispatch.
         spec = row_spec()
         with pytest.raises(BadRequest):
-            post(committing(spec), ada, {"title": "Hi"}, pk="nope")
+            post(committing(spec, route_refusal_404=False), ada, {"title": "Hi"}, pk="nope")
         assert spec.service.calls == []
 
     def test_asked_fields_are_held_back_as_get_holds_them(self, ada: Any) -> None:

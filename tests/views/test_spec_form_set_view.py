@@ -424,21 +424,22 @@ class TestGet:
     def test_a_post_refused_at_its_top_level_is_answered_before_the_scope_check(
         self, ada: Any
     ) -> None:
-        # As on the single page: a refused route value is a 400, with the scope check unasked.
+        # With route_refusal_404 off, a refused route value is a 400, the scope check unasked.
         check = Scoped(admits=False)
         spec = many_spec(
             permissions=[check],
             reads=Parameters.of(Parameter("shelf", "integer", required=True)),
         )
         data = posted({"title": "One"})
-        response = post(formset_view(spec), ada, data, url_kwargs={"shelf": "x"})
+        view = formset_view(spec, route_refusal_404=False)
+        response = post(view, ada, data, url_kwargs={"shelf": "x"})
         assert (response.status_code, non_form(response)) == (400, ["shelf: Enter a whole number."])
         assert check.scopes == []
 
     def test_a_route_value_the_reads_refuse_is_a_bad_request(self, ada: Any) -> None:
         spec = many_spec(reads=Parameters.of(Parameter("shelf", "integer", required=True)))
         with pytest.raises(BadRequest, match="shelf"):
-            get(formset_view(spec), ada, shelf="x")
+            get(formset_view(spec, route_refusal_404=False), ada, shelf="x")
 
 
 class TestFoldingThePost:
@@ -600,7 +601,8 @@ class TestSplittingTheRefusal:
         # Beside a row's refusal, in the same post.
         spec = many_spec(reads=Parameters.of(Parameter("shelf", "integer", required=True)))
         data = posted({"title": "toolong"})
-        response = post(formset_view(spec), ada, data, url_kwargs={"shelf": "x"})
+        view = formset_view(spec, route_refusal_404=False)
+        response = post(view, ada, data, url_kwargs={"shelf": "x"})
         assert response.status_code == 400
         assert non_form(response) == ["shelf: Enter a whole number."]
         assert row_errors(response) == [{"title": [TOO_LONG]}]
@@ -653,7 +655,8 @@ class TestSplittingTheRefusal:
             partial=True,
             reads=Parameters.of(Parameter("shelf", "integer", required=True)),
         )
-        response = post(formset_view(spec), ada, posted({"author": "x"}), url_kwargs={"shelf": "x"})
+        view = formset_view(spec, route_refusal_404=False)
+        response = post(view, ada, posted({"author": "x"}), url_kwargs={"shelf": "x"})
         assert response.status_code == 400
         assert non_form(response) == ["shelf: Enter a whole number."]
         assert [list(each) for each in row_errors(response)] == [["author"]]

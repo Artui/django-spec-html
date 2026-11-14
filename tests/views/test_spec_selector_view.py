@@ -531,7 +531,7 @@ class TestTheInstancePage:
         assert response.context_data["errors"] == ["page: Unknown argument."]
 
     def test_a_route_value_the_reads_refuse_is_400(self, ada: Any) -> None:
-        response = shown(one(), user=ada, url_kwargs={"pk": "abc"})
+        response = shown(one(), user=ada, url_kwargs={"pk": "abc"}, route_refusal_404=False)
 
         assert response.status_code == 400
         assert response.context_data["errors"] == ["pk: Enter a whole number."]

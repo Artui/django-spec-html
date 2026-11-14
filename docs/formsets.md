@@ -66,7 +66,8 @@ visitor above gets Django's own `PermissionDenied`.
   up, so after the spec's class-level check the page asks the scope check of
   `None`, as dispatch asks it of every `many` call, and a principal the post
   would refuse is never offered the page. A route value the spec's `reads`
-  refuse is a 400, as on every page. A post asks it **once**: dispatch asks
+  refuse is `Http404`, as on every page
+  ([`route_refusal_404`](pages.md#what-the-request-carries)). A post asks it **once**: dispatch asks
   it, and where the page's own reading refuses the post first - its
   management form, a row's coercion - the page asks it before answering, so
   a principal it refuses is denied rather than shown the formset, as the
@@ -128,8 +129,9 @@ back onto the forms:
 - **A refusal of the list as a whole lands on the formset's
   `non_form_errors()`**: its length - six books where the spec takes five -
   and a message the Validator gives about the rows together.
-- **A refusal of a route value** is a non-form error too, prefixed with its
-  name, `"shelf: Enter a whole number."`, in the same post as the rows'.
+- **A refusal of a route value**, with `route_refusal_404` off, is a non-form
+  error too, prefixed with its name, `"shelf: Enter a whole number."`, in the
+  same post as the rows'.
 - **Every row's own checks answer in the same post.** Beside an
   `InvalidArguments`, each sent form is validated as the Validator validates a
   row's, so a row the shape check refused - a required field left blank -

@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The floor also carries `FilePresenter`, `FormValidator(..., formset_class=...)`
   and the `many` spec's `collection_selector_spec`, which this release's pages
   build on.
+- **A route capture the shape check refuses is a 404 on every page.**
+  `/folders/7/reorder/sideways/`, where `direction` is a choice of `up` or
+  `down`, names nothing, so the form, formset, confirmation and selector pages
+  raise `Http404` for it, as a URL converter that did not match would. The route's
+  arguments are checked apart from the post's, before anything posted is read,
+  on GET and POST alike; a refused posted argument is answered as before. The
+  old answers were a 400 on GET (Django's `BadRequest` for a value whose type
+  does not parse; a choice went unchecked and the page rendered) and on POST
+  the page's refusal, `"direction: Select a valid choice. ..."` prefixed on the
+  form, or under a confirmation's `refusal_redirect` that message and a
+  redirect; the selector page answered 400 with it in `errors`. Set
+  `route_refusal_404 = False` to keep them.
 - **The walkthrough prose of the docs examples is on the pages**, beside the
   snippet each one belongs to, where it was a comment inside the example. The
   examples' comments are cut to the repository's comment budget; no behaviour

@@ -126,9 +126,9 @@ selector resolves, or `None` for a create.
 
 - A check refusing it - the object-level check on a row, the scope check on a
   set or on `None` - raises `PermissionDenied`, as the post would be refused;
-  a missing row, or a selector's `ServiceNotFound`, is `Http404`; and a route
-  value the spec's parameters refuse is Django's `BadRequest`, which the
-  host's 400 page answers.
+  a missing row, or a selector's `ServiceNotFound`, is `Http404`; and so is a
+  route value the spec's parameters refuse
+  ([`route_refusal_404`](#what-the-request-carries)).
 - The form stays unbound, and shows the row's values for its own fields. A
   `ModelForm` of the row's model is built on a copy of the row, as the
   [`FormValidator`][django_service_specs.adapters.forms.form_validator.FormValidator]
@@ -170,9 +170,10 @@ asks no check twice, and the request's
 [`CallSeeds`][django_service_specs.dispatch.call_seeds.CallSeeds], so the
 service runs on the values of the seeds the class-level check and the
 object-level or scope check were offered
-([one resolution per request](#what-the-request-carries)). One case is left to dispatch: a route value the
-target's reads refuse, which comes back in dispatch's one refusal beside the
-form's own, as a non-field error. A create resolves `None` and a collection target
+([one resolution per request](#what-the-request-carries)). A route value the
+spec's parameters refuse is `Http404` before the form is built. With
+`route_refusal_404` off it is left to dispatch, and comes back in dispatch's one
+refusal beside the form's own, as a non-field error. A create resolves `None` and a collection target
 its set, each handed on the same way.
 
 **POST** then binds the form to the post and reads the arguments **through
@@ -250,8 +251,8 @@ title and no date is told both. The page's form is validated as the Validator
 validates its own, under the kernel's `clean_held_to_their_columns`, so a
 value no column holds - a key past 64 bits - is refused in the field's own
 words and never reaches the database driver, whose SQLite raises
-`OverflowError` for it. A post whose route value the target's reads refuse
-never found its row, so its form is not judged as one, and carries the
+`OverflowError` for it. With `route_refusal_404` off, a post whose route value
+the target's reads refuse never found its row, so its form is not judged as one, and carries the
 refusal alone. Any other refusal - a conflict, a service's own rule,
 an unavailable action - is no verdict on the arguments, and the re-rendered
 form carries it alone. The statuses are
@@ -532,6 +533,20 @@ do, with the same attributes and hooks, checked by the same code:
   bare string and a target or an allowed name the spec does not declare, and
   two kwargs filling one parameter are refused on the request that captures
   both.
+- **`route_refusal_404`**, on by default on every page, answers a route
+  capture the shape check refuses with `Http404`, as a URL converter that did
+  not match would: `/folders/7/reorder/sideways/`, where `direction` is a
+  choice of `up` or `down`, names nothing. The route's arguments are read and
+  checked apart from the post's, after the class-level check and before
+  anything is posted, on GET and POST alike, so the page knows the refused key
+  came from the URL rather than guessing from its name. A refused posted
+  argument is answered as before. `route_refusal_404 = False` restores the
+  answers of 0.12.0: a route value refused on GET is Django's `BadRequest`
+  where its type does not parse, and a choice is not checked until the post;
+  on POST it is the page's refusal, with the message prefixed by its name
+  (`"direction: Select a valid choice. ..."`), or under a confirmation's
+  `refusal_redirect` that message and a redirect; and the selector page
+  answers 400 with it in `errors`.
 - **`get_pool_seeds(request)`**, `pool_seeds` unless overridden, answers the
   seeds this request's call is resolved with. It is asked once per request,
   and every step that resolves a spec callable is handed what it answered:

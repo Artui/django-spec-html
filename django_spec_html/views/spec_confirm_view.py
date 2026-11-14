@@ -143,6 +143,9 @@ class SpecConfirmView(SpecPageBase):
         route_kwargs: Which URL kwargs fill which parameters, as
             ``route_arguments`` reads it. The parameters it names a kwarg
             into are the ones ``as_view()`` counts the route as supplying.
+        route_refusal_404: Whether a route capture the shape check refuses
+            raises ``Http404``, on GET and POST alike, as a URL converter that
+            did not match would; ``False`` answers it as 0.12.0 did.
         pool_seeds: The seeds the spec's callables are resolved with, unless
             ``get_pool_seeds`` answers others for a request.
         server_arguments: The kernel's ``ServerArguments`` the server answers

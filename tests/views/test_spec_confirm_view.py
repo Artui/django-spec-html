@@ -340,7 +340,7 @@ class TestThePage:
 
     def test_a_route_value_the_reads_refuse_is_a_bad_request_on_get(self, ada: Any) -> None:
         with pytest.raises(BadRequest):
-            get(confirm_view(archive_spec()), ada, pk="seven")
+            get(confirm_view(archive_spec(), route_refusal_404=False), ada, pk="seven")
 
     def test_htmx_gets_the_fragment(self, ada: Any, note: Note) -> None:
         view = confirm_view(archive_spec(), fragment_template_name=FRAGMENT)
@@ -474,7 +474,7 @@ class TestARefusal:
         assert response.context_data["errors"] == ["Not now.", "where.city: Unknown."]
 
     def test_a_route_value_the_reads_refuse_is_named_on_post(self, ada: Any) -> None:
-        response = post(confirm_view(archive_spec()), ada, pk="seven")
+        response = post(confirm_view(archive_spec(), route_refusal_404=False), ada, pk="seven")
         assert response.status_code == 400
         assert response.context_data["errors"] == ["pk: Enter a whole number."]
         assert "target" not in response.context_data
@@ -735,7 +735,8 @@ class TestARefusalRedirect:
     def test_each_outcome_the_page_renders_returns_with_each_message(
         self, ada: Any, note: Note, spec: Any, pk: Any, sent: list[str]
     ) -> None:
-        view = ReturnsToTheList.as_view(spec=spec())
+        # Off, so a refused route is a message too; it changes nothing for the other rows.
+        view = ReturnsToTheList.as_view(spec=spec(), route_refusal_404=False)
         response, request = from_a_row(view, ada, note.pk if pk is None else pk)
         assert (response.status_code, response.url) == (302, "/list/?page=3")
         assert stored(request) == [(messages.ERROR, each, "") for each in sent]
