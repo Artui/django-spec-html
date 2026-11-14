@@ -74,6 +74,15 @@ The answer:
   the caller named it, and an empty re-read already has a meaning, the value
   `None`. A read whose value is `None` (an `allow_none`
   retrieve that found nothing) answers `null`, since `None` is its value.
+- **A file** is the download, where the spec presents its result through the
+  kernel's `FilePresenter`: a `FileResponse` of the bytes or the file object,
+  or a `StreamingHttpResponse` for an iterable of bytes, with the presented
+  `content_type`, `Content-Disposition: attachment` naming the file (RFC 5987
+  quoted for a name outside ASCII), and `Content-Length` wherever the size is
+  known. The status is the caller's `success_status`, or 200. `as_view()`
+  refuses a spec the kernel's `file_output` refuses: a file presented by a
+  `LIST` selector spec, or by one declaring `many`, `returns_many` or
+  rendered `affordances`, since a list of files has no answer.
 - **A refusal of either family** is
   [`error_response`](#refusals)'s answer. Anything else propagates, a
   configuration error included: it is wrong for every caller, so it belongs to

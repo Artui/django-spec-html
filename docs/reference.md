@@ -33,6 +33,7 @@ This package defines none. The argument reader reads one of the kernel's:
         - wants_fragment
         - commits
         - get_fragment_template_names
+        - get_success_trigger
         - fragment_success
         - served_spec
 ::: django_spec_html.views.spec_confirm_view.SpecConfirmView
@@ -50,6 +51,7 @@ This package defines none. The argument reader reads one of the kernel's:
         - wants_fragment
         - commits
         - get_fragment_template_names
+        - get_success_trigger
         - fragment_success
         - served_spec
 ::: django_spec_html.views.spec_form_set_view.SpecFormSetView
@@ -67,6 +69,7 @@ This package defines none. The argument reader reads one of the kernel's:
         - wants_fragment
         - commits
         - get_fragment_template_names
+        - get_success_trigger
         - fragment_success
         - served_spec
 ::: django_spec_html.views.spec_selector_view.SpecSelectorView

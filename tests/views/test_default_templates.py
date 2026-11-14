@@ -211,6 +211,28 @@ class TestTheShippedNames:
         assert page.startswith("<body class=ours><form class=ours><input")
         assert fragment.startswith("<form class=ours><input")
 
+    def test_a_project_s_row_template_overrides_the_shipped_row(
+        self, ada: Any, tmp_path: Path
+    ) -> None:
+        (tmp_path / "django_spec_html").mkdir()
+        (tmp_path / "django_spec_html" / "spec_form_set_row.html").write_text(
+            "<div class=ours>{{ number }}: {{ form.title }}</div>"
+        )
+        templates = [
+            {
+                "BACKEND": "django.template.backends.django.DjangoTemplates",
+                "DIRS": [str(tmp_path)],
+                "APP_DIRS": True,
+            }
+        ]
+        with override_settings(TEMPLATES=templates):
+            view = built(SpecFormSetView, many_spec(), extra=2)
+            page = body(get(view, ada))
+            fragment = body(get(view, ada, HTMX))
+        for rendered in (page, fragment):
+            assert '<div class=ours>1: <input type="text" name="form-0-title"' in rendered
+            assert "<legend>" not in rendered
+
     def test_a_page_s_own_template_wins(self, ada: Any) -> None:
         # The suite's ``spec_form.html`` is a form tag and nothing else.
         rendered = body(get(built(SpecFormView, form_spec(), template_name="spec_form.html"), ada))
@@ -435,7 +457,10 @@ class TestTheManyPage:
         view = built(SpecFormSetView, many_spec(), commit_button="save", add_button="add")
         rendered = body(get(view, ada))
         commit = '<button type="submit" name="save">Save</button>'
-        add = '<button type="submit" name="add" formnovalidate>Add another</button>'
+        add = (
+            '<button type="submit" name="add" formnovalidate hx-post="" '
+            'hx-target="#spec-form-set-rows" hx-swap="beforeend">Add another</button>'
+        )
         assert rendered.index(commit) < rendered.index(add)
 
     def test_the_add_button_s_post_is_one_more_row(self, ada: Any) -> None:

@@ -214,6 +214,14 @@ so a selector's own rows are left as they were. A row that cannot carry an
 attribute, such as a tuple from `values_list()`, is served without answers,
 and either filter raises for it.
 
+A row that wraps its model instance, a frozen dataclass for one, is answered
+as well when the spec declares `row_object`, which the kernel reads once for
+every transport: the answers are put on the wrapper past its frozen guard, so
+`row|available:"withdraw"` and `row|unavailable:"withdraw"` read it unchanged,
+and the answers come from the same one query dispatch already made for every
+row. A wrapper with `__slots__` has no place to carry them and is served
+without answers, as a tuple is.
+
 ### Why a row's action is unavailable
 
 The `unavailable` filter reads the same answers and says why: the row's
@@ -280,6 +288,42 @@ The shipped page includes the table's template rather than calling
 renders without the page's context, and a `{% csrf_token %}` in one renders
 nothing. A form posting from a column belongs on a template of the project's
 own that renders the table with `{% render_table table %}`.
+
+## A file
+
+A `RETRIEVE` spec whose presenter is the kernel's `FilePresenter` is a
+download rather than a page: the row it finds is presented through the
+presenter, and the answer is the file, a `FileResponse` of its bytes or file
+object, or a `StreamingHttpResponse` for an iterable of bytes, with the
+presenter's content type and `Content-Length` wherever the size is known.
+
+```python
+invoice_pdf = SelectorSpec(
+    kind=SelectorKind.RETRIEVE,
+    selector=invoice_by_pk,
+    reads=Parameters.of(Parameter("pk", "integer", required=True)),
+    presenter=FilePresenter(
+        "application/pdf",
+        filename=lambda invoice: f"invoice-{invoice.pk}.pdf",
+        render=render_invoice_pdf,
+    ),
+)
+
+path(
+    "invoices/<int:pk>/pdf/",
+    SpecSelectorView.as_view(spec=invoice_pdf, route_kwargs=("pk",)),
+)
+```
+
+`Content-Disposition` is `attachment`, naming the file, quoted by RFC 5987
+for a name outside ASCII; `as_attachment = False` answers `inline`, so a
+browser shows a PDF in place. An htmx request is answered the file too. The
+admission, the route and every refusal are the page's as for any other read;
+an `allow_none` spec that finds nothing renders the page with no row, and no
+display is asked of a spec whose Output is a file.
+
+`as_view()` refuses a file presented by a `LIST` spec, through the kernel's
+`file_output`: a list of files has no answer on any transport.
 
 ## An htmx request
 

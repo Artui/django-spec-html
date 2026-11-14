@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import json
 import math
 from abc import ABCMeta, abstractmethod
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from decimal import Decimal
 from types import MappingProxyType
-from typing import Any, ClassVar, Final, cast
+from typing import Any, ClassVar, Final, Literal, cast
 from urllib.parse import unquote
 
 from django import forms
@@ -19,6 +20,7 @@ from django.core.exceptions import (
     PermissionDenied,
     ValidationError,
 )
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.forms.utils import ErrorDict
 from django.forms.widgets import FILE_INPUT_CONTRADICTION
@@ -51,9 +53,12 @@ from django_service_specs import (
     DispatchError,
     DispatchResult,
     FieldAudience,
+    FileResult,
+    FormValidator,
     Grant,
     InvalidArguments,
     NotPermitted,
+    Parameters,
     PoolSeeds,
     PresentationContext,
     Presenter,
@@ -65,14 +70,19 @@ from django_service_specs import (
     ServiceSpec,
     ServiceValidationError,
     UnknownArguments,
+    Validator,
     apply_server_arguments,
     audience_projection_for_spec,
     authorize,
     authorize_scope,
+    authorize_target,
+    check_arguments,
     check_requested_input,
     coerce_flat,
     dispatch,
     enforce_affordances,
+    file_output,
+    present,
     project_payload,
     resolve_seeds,
     resolve_target,
@@ -88,6 +98,7 @@ from django_spec_html.http.utils import (
     checked_binding,
     checked_seeds,
     field_map,
+    file_response,
     html_call_context,
     refusal_outcome,
     refusal_status,
@@ -130,6 +141,15 @@ fragment, so the two never differ."""
 _SUCCEEDED: Final = "spec-succeeded"
 """The event ``HX-Trigger`` names on a success answered in place, for the rest of the page."""
 
+_TRIGGER_HEADERS: Final = MappingProxyType(
+    {
+        "receive": "HX-Trigger",
+        "swap": "HX-Trigger-After-Swap",
+        "settle": "HX-Trigger-After-Settle",
+    }
+)
+"""The header each ``success_trigger_timing`` sends its trigger in."""
+
 _TRIGGER_NAME: Final = "HX-Trigger-Name"
 """The ``name`` of the element an htmx 2 request was issued from: a form, or a control of its own.
 
@@ -157,6 +177,7 @@ class SpecRequestBase(TemplateResponseMixin, ContextMixin, View):
     pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT
     route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None
+    route_refusal_404: bool = True
     server_arguments: ServerArguments | None = None
 
     def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
@@ -223,12 +244,19 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
     """Everything a spec served as a page shares, whatever the page renders for its post."""
 
     spec: ServiceSpec | None = None
+    actions: Mapping[str, ServiceSpec] | None = None
+    action_name: str | None = None
     success_url: Any = None
     display_target: bool = False
     target_display_limit: int = 10
     commit_button: str | None = None
     success_message: str = ""
     redirect_field_name: str | None = None
+    success_trigger: str | Mapping[str, Any] | None = _SUCCEEDED
+    success_trigger_timing: Literal["receive", "swap", "settle"] = "receive"
+    success_refresh: bool = False
+    as_attachment: bool = True
+    _takes_actions: ClassVar[bool] = False
 
     @classonlymethod
     def as_view(cls, **initkwargs: Any) -> Callable[..., HttpResponseBase]:
@@ -239,10 +267,14 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
             raise ImproperlyConfigured(
                 f"{cls.__qualname__} does not supply the page's hooks: {missing}."
             )
-        _check_configuration(cls, initkwargs)
-        spec = initkwargs.get("spec", cls.spec)
-        check_request_hooks(cls, initkwargs, spec)
-        cls._check_page(cls.__name__, spec, initkwargs)
+        specs = _page_specs(cls, initkwargs)
+        _check_configuration(cls, initkwargs, specs)
+        for label, spec in specs:
+            check_request_hooks(cls, initkwargs, spec)
+            cls._check_page(label, spec, initkwargs)
+        actions = initkwargs.get("actions", cls.actions)
+        if actions is not None:
+            cls._check_actions(cls.__name__, actions)
         check_shipped_templates(cls, initkwargs)
         return view
 
@@ -258,12 +290,29 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         served = self._served(request)
         principal, grant, seeds = admitted(spec, request, url_kwargs, served)
         try:
-            target, _ = _found(spec, principal, grant, seeds, url_kwargs, served, ask_scope=True)
+            target, _ = _found(
+                spec,
+                principal,
+                grant,
+                seeds,
+                url_kwargs,
+                served,
+                not_found=self.route_refusal_404,
+                ask_scope=True,
+            )
+            denied = _denied(
+                self.actions,
+                self.action_name,
+                request,
+                url_kwargs,
+                served,
+                target,
+                not_found=self.route_refusal_404,
+            )
         except InvalidArguments as refused:
             raise BadRequest(str(refused.detail)) from refused
         pool = call_pool(principal, served)
-        unavailable = _unavailable(spec, target, served, pool)
-        context: dict[str, Any] = {} if unavailable is None else {"unavailable": unavailable}
+        context = _availability(self.actions, spec, target, served, pool, denied)
         form = self._form(spec, principal, target, served, **bound)
         if bound:
             context["refreshed"] = True
@@ -271,16 +320,22 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         context.update(self._target_context(spec, principal, target, served, pool))
         return self._render_page(form, bool(bound), **context)
 
-    def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+    def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
         """Dispatch the posted form: a redirect on success, the form re-rendered on a refusal."""
         if not self.commits(request):
             return self._page(request, kwargs, data=request.POST, files=request.FILES)
+        if self.actions is not None:
+            self.action_name = _chosen(self.actions, request)
         spec = self.served_spec()
         served = self._served(request)
         principal, grant, seeds = admitted(spec, request, kwargs, served)
         target: Any = UNSET
+        shown_actions: Mapping[str, ServiceSpec] | None = None
         with suppress(InvalidArguments):
-            target, grant = _found(spec, principal, grant, seeds, kwargs, served)
+            target, grant = _found(
+                spec, principal, grant, seeds, kwargs, served, not_found=self.route_refusal_404
+            )
+            shown_actions = self.actions
         form = self._form(spec, principal, target, served, data=request.POST, files=request.FILES)
         try:
             read = self._arguments(form, spec, kwargs, served)
@@ -298,7 +353,16 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         except (DispatchError, ServiceError) as refused:
             if spec.many and isinstance(refused, InvalidArguments):
                 with suppress(InvalidArguments):
-                    _found(spec, principal, grant, seeds, kwargs, served, ask_scope=True)
+                    _found(
+                        spec,
+                        principal,
+                        grant,
+                        seeds,
+                        kwargs,
+                        served,
+                        not_found=False,
+                        ask_scope=True,
+                    )
             outcome = refusal_outcome(refused)
             if outcome is Outcome.DENIED:
                 raise denial(refused) from refused
@@ -314,10 +378,22 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
             elsewhere = self._refused_elsewhere(refused)
             if elsewhere is not None:
                 return elsewhere
-            context = {
-                **refusal_code(refused),
-                **self._target_context(spec, principal, target, served, None),
-            }
+            pool: dict[str, Any] | None = None
+            context: dict[str, Any] = {**refusal_code(refused)}
+            if shown_actions is not None:
+                pool = call_pool(principal, served)
+                with suppress(InvalidArguments):
+                    denied = _denied(
+                        shown_actions,
+                        self.action_name,
+                        request,
+                        kwargs,
+                        served,
+                        target,
+                        not_found=self.route_refusal_404,
+                    )
+                    context.update(_availability(shown_actions, spec, target, served, pool, denied))
+            context.update(self._target_context(spec, principal, target, served, pool))
             if requested is not None:
                 context["requested_input"] = {
                     "message": requested.message,
@@ -331,14 +407,20 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
                 requested=requested,
                 **context,
             )
+        presented = present(spec, result) if file_output(spec) is not None else None
+        if isinstance(presented, FileResult):
+            return file_response(presented, as_attachment=self.as_attachment)
         messages.success(request, self.get_success_message(result), fail_silently=True)
         if self.wants_fragment(request):
             return self.fragment_success(result)
         return HttpResponseRedirect(self.get_redirect_url() or self.get_success_url(result))
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
-        """Django's context, with the ``spec`` served and the way back."""
+        """Django's context: the ``spec`` served, whether a post answers a file, the way back."""
         kwargs.setdefault("spec", self.served_spec())
+        specs = [self.served_spec()] if self.actions is None else self.actions.values()
+        if any(file_output(each) is not None for each in specs):
+            kwargs.setdefault("presents_file", True)
         way_back = self.get_redirect_url()
         if way_back:
             kwargs.setdefault("redirect_field_name", self.redirect_field_name)
@@ -374,8 +456,16 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         another = trigger != button and trigger in request.POST
         return button in request.POST and not another
 
+    def get_success_trigger(self, result: DispatchResult) -> str | Mapping[str, Any] | None:
+        """The event a success answered in place triggers: ``success_trigger`` by default."""
+        return self.success_trigger
+
     def fragment_success(self, result: DispatchResult) -> HttpResponse:
         """A success, answered to the htmx request that posted it."""
+        if self.success_refresh:
+            response = HttpResponse()
+            response["HX-Refresh"] = "true"
+            return self._triggered(response, result)
         try:
             template = select_template(
                 [_address(name, _SPEC_RESULT) for name in self.get_fragment_template_names()],
@@ -392,7 +482,21 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
             using=self.template_engine,
             content_type=self.content_type,
         )
-        response["HX-Trigger"] = _SUCCEEDED
+        return self._triggered(response, result)
+
+    def _triggered(self, response: HttpResponse, result: DispatchResult) -> HttpResponse:
+        """``response`` carrying the success's trigger, in the header its timing names."""
+        trigger = self.get_success_trigger(result)
+        if trigger is None:
+            return response
+        if not isinstance(trigger, str):
+            try:
+                trigger = json.dumps(trigger, cls=DjangoJSONEncoder)
+            except TypeError as unsent:
+                raise ImproperlyConfigured(
+                    f"{type(self).__name__}'s success trigger cannot be sent as JSON: {unsent}"
+                ) from unsent
+        response[_TRIGGER_HEADERS[self.success_trigger_timing]] = trigger
         return response
 
     def _target_context(
@@ -463,8 +567,15 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         """Set the error state of the form a post that does not commit renders."""
 
     def served_spec(self) -> ServiceSpec:
-        """``spec``, which ``as_view`` refused to build a view without."""
-        return cast("ServiceSpec", self.spec)
+        """``spec``, or the action ``action_name`` names, the first before a post chose one."""
+        actions = self.actions
+        if actions is None:
+            return cast("ServiceSpec", self.spec)
+        return actions[self.action_name or next(iter(actions))]
+
+    @classmethod
+    def _check_actions(cls, label: str, actions: Mapping[str, ServiceSpec]) -> None:
+        """Refuse, at ``as_view()``, actions this page cannot serve together; none by default."""
 
     # The hooks: each a step that differs with what the page renders, so a
     # subclass supplies every one.
@@ -529,16 +640,63 @@ class Served:
     """
 
 
-def _check_configuration(cls: type[SpecPageBase], initkwargs: Mapping[str, Any]) -> None:
-    """Refuse a view that could not serve its first request, naming what is missing."""
+def _page_specs(cls: type[SpecPageBase], initkwargs: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    """Each spec the page serves, as the label its refusals name: ``spec``, or every action."""
     label = cls.__name__
     spec = initkwargs.get("spec", cls.spec)
-    if not isinstance(spec, ServiceSpec):
+    actions = initkwargs.get("actions", cls.actions)
+    if actions is None:
+        return [(label, spec)]
+    if not cls._takes_actions:
         raise ImproperlyConfigured(
-            f"{label}.as_view() needs a ServiceSpec, the write a form posts; "
-            f"got {type(spec).__name__}."
+            f"{label} takes no actions: only SpecFormView and SpecConfirmView dispatch one "
+            "spec per submit button."
         )
-    cls._check_spec(label, spec)
+    if spec is not None:
+        raise ImproperlyConfigured(
+            f"{label} sets both spec and actions: a page serves one spec, or one per action, "
+            "never both."
+        )
+    if not isinstance(actions, Mapping) or not actions:
+        raise ImproperlyConfigured(
+            f"{label}.actions must be a non-empty mapping of submit button names to the "
+            f"ServiceSpec each runs; got {actions!r}."
+        )
+    for key in actions:
+        if not isinstance(key, str) or not key:
+            raise ImproperlyConfigured(
+                f"{label}.actions keys are the names of the submit buttons that run them, "
+                f"non-empty strings; got {key!r}."
+            )
+    return [(f"{label}.actions[{key!r}]", each) for key, each in actions.items()]
+
+
+def _chosen(actions: Mapping[str, ServiceSpec], request: HttpRequest) -> str:
+    """The one action whose button ``request`` posted, else Django's ``BadRequest``."""
+    named = [key for key in actions if key in request.POST]
+    if not named:
+        raise BadRequest(f"The post names none of the page's actions: {', '.join(actions)}.")
+    if len(named) > 1:
+        raise BadRequest(f"The post names more than one action: {', '.join(named)}.")
+    return named[0]
+
+
+def _check_configuration(
+    cls: type[SpecPageBase], initkwargs: Mapping[str, Any], specs: list[tuple[str, Any]]
+) -> None:
+    """Refuse a view that could not serve its first request, naming what is missing."""
+    label = cls.__name__
+    shown = initkwargs.get("display_target", cls.display_target)
+    for named, spec in specs:
+        if not isinstance(spec, ServiceSpec):
+            raise ImproperlyConfigured(
+                f"{named}.as_view() needs a ServiceSpec, the write a form posts; "
+                f"got {type(spec).__name__}."
+            )
+        cls._check_spec(named, spec)
+        file_output(spec)
+        if shown:
+            check_display(named, spec)
     redirects = initkwargs.get("get_success_url", cls.get_success_url)
     if (
         initkwargs.get("success_url", cls.success_url) is None
@@ -553,13 +711,64 @@ def _check_configuration(cls: type[SpecPageBase], initkwargs: Mapping[str, Any])
         raise ImproperlyConfigured(
             f"{label}.target_display_limit must be a positive int; got {limit!r}."
         )
-    if initkwargs.get("display_target", cls.display_target):
-        check_display(label, spec)
     button = initkwargs.get("commit_button", cls.commit_button)
     _check_commit_button(label, button)
-    _check_redirect_field_name(
-        label, initkwargs.get("redirect_field_name", cls.redirect_field_name), button
-    )
+    redirect = initkwargs.get("redirect_field_name", cls.redirect_field_name)
+    _check_redirect_field_name(label, redirect, button)
+    actions = initkwargs.get("actions", cls.actions) or {}
+    if actions and button is not None:
+        raise ImproperlyConfigured(
+            f"{label} sets both actions and commit_button: an actions page commits only "
+            "through an action's button, and a post naming none answers 400."
+        )
+    if redirect in actions:
+        raise ImproperlyConfigured(
+            f"{label}.redirect_field_name names {redirect!r}, one of its actions: the URL to "
+            "return to is posted by every submit, so every post would name that action."
+        )
+    _check_success_trigger(label, cls, initkwargs)
+
+
+def _check_success_trigger(
+    label: str, cls: type[SpecPageBase], initkwargs: Mapping[str, Any]
+) -> None:
+    """Refuse a success trigger, timing or refresh the page could not send."""
+    trigger = initkwargs.get("success_trigger", cls.success_trigger)
+    if not _sendable(trigger):
+        raise ImproperlyConfigured(
+            f"{label}.success_trigger must be None, an event's name, or a mapping of event "
+            f"names to their JSON payloads; got {trigger!r}."
+        )
+    timing = initkwargs.get("success_trigger_timing", cls.success_trigger_timing)
+    if timing not in _TRIGGER_HEADERS:
+        raise ImproperlyConfigured(
+            f"{label}.success_trigger_timing must be one of "
+            f"{', '.join(map(repr, _TRIGGER_HEADERS))}; got {timing!r}."
+        )
+    refresh = initkwargs.get("success_refresh", cls.success_refresh)
+    if not isinstance(refresh, bool):
+        raise ImproperlyConfigured(f"{label}.success_refresh must be a bool; got {refresh!r}.")
+    if refresh and trigger is not None and timing != "receive":
+        raise ImproperlyConfigured(
+            f"{label} refreshes on success, so a trigger timed to {timing!r} never fires: "
+            "htmx reloads the page before any swap. Time it to 'receive'."
+        )
+
+
+def _sendable(trigger: Any) -> bool:
+    """Whether ``trigger`` is None, a name, or a mapping keyed by names."""
+    if trigger is None:
+        return True
+    if isinstance(trigger, str):
+        return bool(trigger)
+    if not isinstance(trigger, Mapping) or not trigger:
+        return False
+    return all(isinstance(name, str) and name for name in trigger)
+
+
+def renders_no_page(methods: Iterable[str], refusal_redirect: bool) -> bool:
+    """Whether a page serving no GET or HEAD, redirecting its refusals, renders nothing."""
+    return bool(refusal_redirect) and not {m.lower() for m in methods} & {"get", "head"}
 
 
 def check_shipped_templates(cls: type[SpecRequestBase], initkwargs: Mapping[str, Any]) -> None:
@@ -567,6 +776,11 @@ def check_shipped_templates(cls: type[SpecRequestBase], initkwargs: Mapping[str,
     page = initkwargs.get("template_name", cls.template_name)
     names = initkwargs.get("get_template_names", cls.get_template_names)
     if page not in _SHIPPED_FRAGMENTS or names is not TemplateResponseMixin.get_template_names:
+        return
+    if renders_no_page(
+        initkwargs.get("http_method_names", cls.http_method_names),
+        initkwargs.get("refusal_redirect", getattr(cls, "refusal_redirect", False)),
+    ):
         return
     engine = initkwargs.get("template_engine", cls.template_engine)
     fragment = initkwargs.get("fragment_template_name", cls.fragment_template_name)
@@ -681,14 +895,15 @@ def _found(
     url_kwargs: Mapping[str, Any],
     served: Served,
     *,
+    not_found: bool,
     ask_scope: bool = False,
 ) -> tuple[Any, Grant]:
     """The row, set or ``None`` the post acts on, and the grant vouching for it."""
     parameters = spec.parameters(call_context=served.call_context)
-    route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
-    arguments = with_binding(spec, coerce_flat(parameters, route), served)
+    route = coerced_route(parameters, url_kwargs, served, not_found=not_found)
+    arguments = with_binding(spec, route, served)
     try:
-        if spec.many:
+        if spec.many and spec.collection_selector_spec is None:
             if ask_scope:
                 authorize_scope(
                     spec,
@@ -718,6 +933,22 @@ def _found(
     return target, found
 
 
+def coerced_route(
+    parameters: Parameters, url_kwargs: Mapping[str, Any], served: Served, *, not_found: bool
+) -> dict[str, Any]:
+    """The route's captures alone, coerced; checked too where ``not_found``, a refusal a 404."""
+    route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
+    try:
+        coerced = coerce_flat(parameters, route)
+        if not_found:
+            check_arguments(parameters, coerced, partial=True)
+    except InvalidArguments as refused:
+        if not_found:
+            raise Http404 from refused
+        raise
+    return coerced
+
+
 def with_binding(
     spec: ServiceSpec | SelectorSpec, arguments: Mapping[str, Any], served: Served
 ) -> Mapping[str, Any]:
@@ -730,6 +961,87 @@ def with_binding(
 def call_pool(principal: Any, served: Served) -> dict[str, Any]:
     """The pool the page's affordances and its display read, built from the call's own seeds."""
     return seeded_pool(user=principal, seeds=served.seeds, call_context=served.call_context)
+
+
+def _denied(
+    actions: Mapping[str, ServiceSpec] | None,
+    chosen: str | None,
+    request: HttpRequest,
+    url_kwargs: Mapping[str, Any],
+    served: Served,
+    target: Any,
+    *,
+    not_found: bool,
+) -> frozenset[str]:
+    """The actions but the one served (``chosen``, else the first) their own post would deny."""
+    denied = set()
+    ran = chosen or next(iter(actions or ()), None)
+    for name, each in (actions or {}).items():
+        if name == ran:
+            continue
+        try:
+            principal, grant, seeds = admitted(each, request, url_kwargs, served)
+            _admitted_to(each, principal, grant, seeds, url_kwargs, served, target, not_found)
+        except (PermissionDenied, Http404):
+            denied.add(name)
+    return frozenset(denied)
+
+
+def _admitted_to(
+    spec: ServiceSpec,
+    principal: Any,
+    grant: Grant,
+    seeds: CallSeeds,
+    url_kwargs: Mapping[str, Any],
+    served: Served,
+    target: Any,
+    not_found: bool,
+) -> None:
+    """Ask the object check of a row ``target``, else the scope check, as ``_found`` hands them."""
+    parameters = spec.parameters(call_context=served.call_context)
+    route = coerced_route(parameters, url_kwargs, served, not_found=not_found)
+    arguments = with_binding(spec, route, served)
+    keywords: dict[str, Any] = {
+        "grant": grant,
+        "arguments": arguments,
+        "seeds": seeds,
+        "pool_seeds": served.seeds,
+        "call_context": served.call_context,
+    }
+    try:
+        if isinstance(target, models.Model):
+            authorize_target(spec, principal, target, **keywords)
+        else:
+            authorize_scope(spec, principal, target, **keywords)
+    except NotPermitted as refused:
+        raise denial(refused) from refused
+
+
+def _availability(
+    actions: Mapping[str, ServiceSpec] | None,
+    spec: ServiceSpec,
+    target: Any,
+    served: Served,
+    pool: dict[str, Any],
+    denied: frozenset[str],
+) -> dict[str, Any]:
+    """``unavailable``, on an actions page only when no action is available, and each action's."""
+    if actions is None:
+        unavailable = _unavailable(spec, target, served, pool)
+        return {} if unavailable is None else {"unavailable": unavailable}
+    buttons = [
+        (name, None if name in denied else _unavailable(each, target, served, pool))
+        for name, each in actions.items()
+    ]
+    unmet = {name: why for name, why in buttons if why is not None}
+    context: dict[str, Any] = {"action_buttons": buttons}
+    if unmet:
+        context["unavailable_actions"] = unmet
+    if denied:
+        context["refused_actions"] = denied
+    if len(unmet) == len(buttons):
+        context["unavailable"] = buttons[0][1]
+    return context
 
 
 def _unavailable(
@@ -751,7 +1063,10 @@ def _unavailable(
             call_context=served.call_context,
         )
     except ActionUnavailable as refused:
-        return next(each for each in spec.affordances or () if each.code == refused.code)
+        declared = next(each for each in spec.affordances or () if each.code == refused.code)
+        if isinstance(declared.reason, str):
+            return declared
+        return dataclasses.replace(declared, reason=str(declared.reason))
     except ServiceNotFound as refused:
         raise denial(refused) from refused
     return None
@@ -895,7 +1210,7 @@ def answered_rows(spec: SelectorSpec, rows: list[Any]) -> list[Any]:
         answers = row_affordance_answers(spec, row)
         carrier = _AnsweredRow(row) if isinstance(row, Mapping) else row
         with suppress(AttributeError):
-            setattr(carrier, _ANSWERS, answers)
+            object.__setattr__(carrier, _ANSWERS, answers)
         answered.append(carrier)
     return answered
 
@@ -912,3 +1227,99 @@ def refusal_tree(refused: DispatchError | ServiceError) -> Mapping[Any, Any]:
     if isinstance(refused, ServiceValidationError):
         return field_map(refused.detail)
     return {NON_FIELD_ERRORS: [refused.message]}
+
+
+PAGE_FORM_KEYWORDS: Final = frozenset({"data", "files", "instance"})
+"""The keywords a ``form_class`` page builds its form with itself."""
+
+
+def page_form_kwargs(view: Any) -> Mapping[str, Any]:
+    """``view.get_form_kwargs()``, refusing a keyword the page sets itself."""
+    keywords = view.get_form_kwargs()
+    taken = sorted(frozenset(keywords) & PAGE_FORM_KEYWORDS)
+    if taken:
+        raise ImproperlyConfigured(
+            f"{type(view).__name__}.get_form_kwargs() returned {taken[0]!r}, which the page "
+            "sets itself: it returns the form's other keywords."
+        )
+    return keywords
+
+
+def checked_page_form(
+    label: str,
+    validator: Validator | None,
+    form_class: type[forms.BaseForm],
+    declared: Parameters,
+) -> dict[str, Any]:
+    """The fields ``form_class`` posts, refusing a form ``declared`` would not read as declared."""
+    named = f"{label}.form_class {form_class.__name__}"
+    if isinstance(validator, FormValidator):
+        raise ImproperlyConfigured(
+            f"{label} sets form_class over a FormValidator, whose form is already the page's: "
+            "drop form_class."
+        )
+    _check_no_clean(named, form_class)
+    try:
+        posted = {each.name: each for each in FormValidator(form_class).parameters().items}
+    except ImproperlyConfigured as refused:
+        raise ImproperlyConfigured(f"{named} cannot be read off a post: {refused}") from refused
+    unsendable = sorted(validator.unsendable) if validator is not None else []
+    if unsendable:
+        raise ImproperlyConfigured(
+            f"{label}'s spec requires {unsendable[0]!r}, which its Validator cannot declare, so "
+            "no form can post it."
+        )
+    parameters = {each.name: each for each in declared.items}
+    for name, field in posted.items():
+        if name not in parameters:
+            raise ImproperlyConfigured(
+                f"{named} posts {name!r}, which the spec does not declare: it would reach "
+                "dispatch as an unknown argument."
+            )
+        _check_agreement(named, field, parameters[name])
+    return posted
+
+
+def _check_no_clean(named: str, form_class: type[forms.BaseForm]) -> None:
+    """Refuse a ``clean()`` or ``clean_<field>()`` the form defines above Django's own."""
+    for klass in form_class.__mro__:
+        if klass.__module__.startswith("django."):
+            continue
+        own = sorted(name for name in vars(klass) if name == "clean" or name.startswith("clean_"))
+        if own:
+            raise ImproperlyConfigured(
+                f"{named} defines {own[0]}(), which the page never runs: the rule belongs in the "
+                "spec's Validator."
+            )
+
+
+def _check_agreement(named: str, field: Any, parameter: Any) -> None:
+    """Refuse a field whose wire type or ``required`` the spec's parameter does not share."""
+    if parameter.type != "any" and _shape(field, parameter.format) != _shape(
+        parameter, parameter.format
+    ):
+        raise ImproperlyConfigured(
+            f"{named} posts {field.name!r} as {_spelled(field)}, and the spec declares "
+            f"{_spelled(parameter)}."
+        )
+    if field.required != parameter.required:
+        verb = "requires" if field.required else "does not require"
+        spec_verb = "does not" if field.required else "does"
+        raise ImproperlyConfigured(
+            f"{named} {verb} {field.name!r}, and the spec {spec_verb}: the form and the spec "
+            "must agree on whether it may be left out."
+        )
+
+
+def _shape(parameter: Any, fmt: str | None) -> tuple[Any, ...]:
+    """What the type rule compares: the type, an array's element type, a format the spec names."""
+    return (parameter.type, parameter.items, parameter.format if fmt is not None else None)
+
+
+def _spelled(parameter: Any) -> str:
+    """A parameter's wire type as a refusal names it."""
+    if parameter.type == "array":
+        return f"array of {parameter.items}"
+    if parameter.format is not None:
+        return f"{parameter.type} ({parameter.format})"
+    return parameter.type

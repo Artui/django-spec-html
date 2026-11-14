@@ -26,7 +26,8 @@ class SpecAction:
             action's key among the admin's actions. A slug, unique among the
             admin's ``spec_actions``.
         spec: The operation, a ``ServiceSpec`` with one target selector. A
-            ``FormValidator`` makes its page ``SpecFormView``'s, no Validator
+            ``FormValidator``, or any Validator beside a ``form_class`` in
+            ``page_kwargs``, makes its page ``SpecFormView``'s, no Validator
             ``SpecConfirmView``'s.
         label: What the admin calls it: the object-tools link, the dropdown
             entry and the page's title. Formatted in each as Django formats
@@ -38,8 +39,9 @@ class SpecAction:
             page's object id for an object action, the selected primary keys,
             an ``array``, for a changelist action.
         page_kwargs: Any other keyword the page's ``as_view()`` takes, such
-            as ``display_target``, ``commit_button``, ``asked_fields`` or
-            ``success_message``, checked by ``as_view()`` as on any page.
+            as ``display_target``, ``commit_button``, ``asked_fields``,
+            ``success_message`` or ``form_class`` (the form a serializer- or
+            dataclass-validated spec renders), checked by ``as_view()`` as on any page.
             Copied into a read-only mapping when the value is built.
     """
 

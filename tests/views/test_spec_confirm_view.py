@@ -15,7 +15,8 @@ from django.core.exceptions import BadRequest, ImproperlyConfigured, PermissionD
 from django.db import connection
 from django.db.models import QuerySet
 from django.http import Http404, HttpResponse
-from django.test import Client
+from django.template import TemplateDoesNotExist
+from django.test import Client, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.urls import path
 from django_service_specs import (
@@ -63,6 +64,7 @@ from tests.http.utils import (
     provider_read_spec,
     signed_in,
 )
+from tests.views.test_default_templates import WITHOUT_THE_APP
 
 pytestmark = pytest.mark.django_db
 
@@ -340,7 +342,7 @@ class TestThePage:
 
     def test_a_route_value_the_reads_refuse_is_a_bad_request_on_get(self, ada: Any) -> None:
         with pytest.raises(BadRequest):
-            get(confirm_view(archive_spec()), ada, pk="seven")
+            get(confirm_view(archive_spec(), route_refusal_404=False), ada, pk="seven")
 
     def test_htmx_gets_the_fragment(self, ada: Any, note: Note) -> None:
         view = confirm_view(archive_spec(), fragment_template_name=FRAGMENT)
@@ -474,7 +476,7 @@ class TestARefusal:
         assert response.context_data["errors"] == ["Not now.", "where.city: Unknown."]
 
     def test_a_route_value_the_reads_refuse_is_named_on_post(self, ada: Any) -> None:
-        response = post(confirm_view(archive_spec()), ada, pk="seven")
+        response = post(confirm_view(archive_spec(), route_refusal_404=False), ada, pk="seven")
         assert response.status_code == 400
         assert response.context_data["errors"] == ["pk: Enter a whole number."]
         assert "target" not in response.context_data
@@ -735,7 +737,8 @@ class TestARefusalRedirect:
     def test_each_outcome_the_page_renders_returns_with_each_message(
         self, ada: Any, note: Note, spec: Any, pk: Any, sent: list[str]
     ) -> None:
-        view = ReturnsToTheList.as_view(spec=spec())
+        # Off, so a refused route is a message too; it changes nothing for the other rows.
+        view = ReturnsToTheList.as_view(spec=spec(), route_refusal_404=False)
         response, request = from_a_row(view, ada, note.pk if pk is None else pk)
         assert (response.status_code, response.url) == (302, "/list/?page=3")
         assert stored(request) == [(messages.ERROR, each, "") for each in sent]
@@ -907,3 +910,242 @@ class TestTheRedirectFieldName:
     def test_the_commit_button_s_name_is_refused(self) -> None:
         with pytest.raises(ImproperlyConfigured, match="redirect_field_name and commit_button"):
             ReturnsToTheList.as_view(spec=archive_spec(), commit_button="next")
+
+
+def confirm_spec(*reads: Parameter) -> ServiceSpec:
+    return ServiceSpec(service=Record(), permissions=OPEN, reads=Parameters.of(*reads))
+
+
+def request_for(data: Any = None, **extra: Any) -> Any:
+    raw = FACTORY.get("/", **extra) if data is None else FACTORY.post("/", data=data, **extra)
+    request = signed_in(raw, make_user("ada"))
+    request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+    return request
+
+
+class ToldConfirm(SpecConfirmView):
+    success_url = "/done/"
+
+    def get_success_url(self, result: DispatchResult) -> str:
+        return f"/done/{self.action_name}/"
+
+
+class TestAConfirmationRunsTheActionItNames:
+    def test_each_button_dispatches_its_own_spec(self) -> None:
+        archive, delete = confirm_spec(), confirm_spec()
+        view = ToldConfirm.as_view(actions={"archive": archive, "delete": delete})
+        response = view(request_for({"delete": ""}))
+        assert response.url == "/done/delete/"
+        assert (calls(archive), len(calls(delete))) == ([], 1)
+
+    def test_a_post_naming_none_is_a_bad_request(self) -> None:
+        view = ToldConfirm.as_view(actions={"archive": confirm_spec()})
+        with pytest.raises(BadRequest):
+            view(request_for({}))
+
+    def test_get_renders_the_first_action_s_spec(self) -> None:
+        archive = confirm_spec()
+        view = ToldConfirm.as_view(actions={"archive": archive, "delete": confirm_spec()})
+        assert view(request_for()).context_data["spec"] is archive
+
+
+POST_ONLY = {"http_method_names": ["post"], "refusal_redirect": True}
+
+
+def build(**initkwargs: Any) -> Any:
+    return SpecConfirmView.as_view(
+        spec=archive_spec(affordances=[PAUSED]),
+        route_kwargs=("pk",),
+        success_url="/done/",
+        **initkwargs,
+    )
+
+
+class TestAPostOnlyRedirectingPage:
+    def test_is_built_without_the_shipped_templates(self) -> None:
+        with override_settings(INSTALLED_APPS=WITHOUT_THE_APP):
+            assert build(**POST_ONLY)
+
+    @pytest.mark.parametrize(
+        "initkwargs",
+        [
+            {"http_method_names": ["get", "post"], "refusal_redirect": True},
+            {"http_method_names": ["head", "post"], "refusal_redirect": True},
+            {"http_method_names": ["post"], "refusal_redirect": False},
+        ],
+    )
+    def test_a_page_that_renders_is_still_checked(self, initkwargs: dict[str, Any]) -> None:
+        with (
+            override_settings(INSTALLED_APPS=WITHOUT_THE_APP),
+            pytest.raises(ImproperlyConfigured, match="spec_confirm.html"),
+        ):
+            build(**initkwargs)
+
+    def test_the_class_attributes_count_as_initkwargs_do(self) -> None:
+        class Only(SpecConfirmView):
+            http_method_names = ["post"]
+            refusal_redirect = True
+
+        with override_settings(INSTALLED_APPS=WITHOUT_THE_APP):
+            assert Only.as_view(spec=archive_spec(), route_kwargs=("pk",), success_url="/done/")
+
+    def test_a_refusal_with_no_messages_answers_its_status_with_an_empty_body(self) -> None:
+        ada = make_user("ada")
+        note = Note.objects.create(owner=ada, title="Buy milk")
+        request = signed_in(FACTORY.post("/", data=PRESSED), ada)
+        with override_settings(INSTALLED_APPS=WITHOUT_THE_APP):
+            response = build(**POST_ONLY)(request, pk=note.pk)
+        assert (response.status_code, response.content) == (409, b"")
+
+    def test_a_refusal_with_the_page_found_still_renders_it(self) -> None:
+        ada = make_user("ada")
+        note = Note.objects.create(owner=ada, title="Buy milk")
+        request = signed_in(FACTORY.post("/", data=PRESSED), ada)
+        response = build(**POST_ONLY)(request, pk=note.pk)
+        assert (response.status_code, bool(response.content)) == (409, True)
+
+    def test_a_page_serving_get_leaves_a_missing_template_to_fail(self) -> None:
+        ada = make_user("ada")
+        note = Note.objects.create(owner=ada, title="Buy milk")
+        request = signed_in(FACTORY.post("/", data=PRESSED), ada)
+        response = build(template_name="missing.html")(request, pk=note.pk)
+        with pytest.raises(TemplateDoesNotExist):
+            response.render()
+
+
+IDS = Parameter("ids", "array", items="integer")
+
+
+REASON = Parameter("reason", "string")
+
+
+class Ticked(SpecConfirmView):
+    """A bulk action's button, the ticked rows' checkboxes posted beside it by ``hx-include``."""
+
+    template_name = PAGE
+    success_url = "/done/"
+    posted_arguments = ("ids",)
+
+
+def bulk_spec(*reads: Parameter) -> ServiceSpec:
+    return ServiceSpec(service=Record(), permissions=OPEN, reads=Parameters.of(*reads))
+
+
+def posted_post(view: Any, data: Any, **extra: Any) -> Any:
+    request = signed_in(FACTORY.post("/", data=data, **extra), make_user("ada"))
+    request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+    return view(request), request
+
+
+def pools(spec: ServiceSpec) -> list[dict[str, Any]]:
+    return spec.service.calls
+
+
+class TestTheTickedRowsArePosted:
+    def test_the_ticked_ids_reach_the_service(self) -> None:
+        spec = bulk_spec(IDS)
+        response, _ = posted_post(Ticked.as_view(spec=spec), {"ids": ["3", "5"]}, **HTMX)
+        assert (response.status_code, response["HX-Redirect"]) == (200, "/done/")
+        assert pools(spec)[0]["ids"] == [3, 5]
+
+    def test_a_comma_list_is_read_as_the_flat_reader_reads_it(self) -> None:
+        spec = bulk_spec(IDS)
+        posted_post(Ticked.as_view(spec=spec), {"ids": "3, 5"})
+        assert pools(spec)[0]["ids"] == [3, 5]
+
+    def test_it_is_set_through_as_view_too(self) -> None:
+        spec = bulk_spec(IDS)
+        view = SpecConfirmView.as_view(
+            spec=spec, template_name=PAGE, success_url="/done/", posted_arguments=("ids",)
+        )
+        posted_post(view, {"ids": ["7"]})
+        assert pools(spec)[0]["ids"] == [7]
+
+    def test_none_ticked_is_absent(self) -> None:
+        spec = bulk_spec(IDS)
+        posted_post(Ticked.as_view(spec=spec), {})
+        assert "ids" not in pools(spec)[0]
+
+    def test_a_posted_key_not_named_never_reaches_the_service(self) -> None:
+        spec = bulk_spec(IDS, REASON)
+        posted_post(Ticked.as_view(spec=spec), {"ids": ["3"], "reason": "tidy", "other": "x"})
+        assert pools(spec)[0]["ids"] == [3]
+        assert {"reason", "other"}.isdisjoint(pools(spec)[0])
+
+    def test_without_posted_arguments_nothing_posted_is_read(self) -> None:
+        spec = bulk_spec(IDS)
+        view = SpecConfirmView.as_view(spec=spec, template_name=PAGE, success_url="/done/")
+        posted_post(view, {"ids": ["3"]})
+        assert "ids" not in pools(spec)[0]
+
+    def test_the_route_s_arguments_are_merged_beside_them(self, ada_note: Note) -> None:
+        spec = ServiceSpec(
+            service=Record(),
+            permissions=OPEN,
+            instance_selector_spec=ONE_NOTE,
+            reads=Parameters.of(IDS),
+        )
+        view = Ticked.as_view(spec=spec, route_kwargs=("pk",))
+        request = signed_in(FACTORY.post("/", data={"ids": ["2"]}), ada_note.owner)
+        view(request, pk=str(ada_note.pk))
+        pool = pools(spec)[0]
+        assert (pool["instance"], pool["ids"]) == (ada_note, [2])
+
+
+@pytest.fixture
+def ada_note() -> Note:
+    return Note.objects.create(owner=make_user("ada"), title="Draft")
+
+
+class TestARefusedPostedValue:
+    def test_a_value_coercion_refuses_answers_400(self) -> None:
+        spec = bulk_spec(IDS)
+        response, _ = posted_post(Ticked.as_view(spec=spec), {"ids": ["3", "x"]})
+        assert response.status_code == 400
+        assert response.context_data["errors"] == ["ids.1: Enter a whole number."]
+        assert pools(spec) == []
+
+    def test_a_value_the_shape_check_refuses_answers_400(self) -> None:
+        spec = bulk_spec(Parameter("ids", "array", items="integer", min_length=2))
+        response, _ = posted_post(Ticked.as_view(spec=spec), {"ids": ["3"]})
+        assert response.status_code == 400
+        assert [e.split(":")[0] for e in response.context_data["errors"]] == ["ids"]
+        assert pools(spec) == []
+
+    def test_under_refusal_redirect_it_is_a_message_and_a_redirect(self) -> None:
+        spec = bulk_spec(IDS)
+        view = Ticked.as_view(spec=spec, refusal_redirect=True)
+        response, request = posted_post(view, {"ids": ["x"]})
+        assert (response.status_code, response.url) == (302, "/done/")
+        sent = [(m.level, m.message) for m in messages.get_messages(request)]
+        assert sent == [(messages.ERROR, "ids.0: Enter a whole number.")]
+
+
+class TestAsViewChecksTheNames:
+    def test_a_required_parameter_posted_is_supplied(self) -> None:
+        required = Parameter("ids", "array", items="integer", required=True)
+        Ticked.as_view(spec=bulk_spec(required))
+        with pytest.raises(ImproperlyConfigured, match=r"requires ids, which no post"):
+            Ticked.as_view(spec=bulk_spec(required), posted_arguments=())
+
+    def test_a_name_the_spec_does_not_declare_is_refused(self) -> None:
+        with pytest.raises(
+            ImproperlyConfigured,
+            match=r"^Ticked.posted_arguments names pks, reason, which the spec does not declare",
+        ):
+            Ticked.as_view(spec=bulk_spec(IDS), posted_arguments=("reason", "ids", "pks"))
+
+    @pytest.mark.parametrize(
+        "route_kwargs", [("ids",), {"selection": "ids"}], ids=["allowed", "renamed"]
+    )
+    def test_a_name_the_route_fills_is_refused(self, route_kwargs: Any) -> None:
+        with pytest.raises(
+            ImproperlyConfigured,
+            match=r"^Ticked.posted_arguments names ids, which route_kwargs fills from the URL",
+        ):
+            Ticked.as_view(spec=bulk_spec(IDS), route_kwargs=route_kwargs)
+
+    @pytest.mark.parametrize("posted", ["ids", ["ids"], ("ids", 1)], ids=["str", "list", "int"])
+    def test_anything_but_a_tuple_of_names_is_refused(self, posted: Any) -> None:
+        with pytest.raises(ImproperlyConfigured, match=r"must be a tuple of parameter names"):
+            Ticked.as_view(spec=bulk_spec(IDS), posted_arguments=posted)

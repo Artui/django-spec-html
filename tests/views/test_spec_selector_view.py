@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import dataclasses
+import io
+from collections.abc import Iterator
 from typing import Annotated, Any
 
 import django
@@ -10,9 +12,12 @@ import pytest
 from django import forms
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
+from django.core.files.base import ContentFile
+from django.db import connection
 from django.db.models import QuerySet
-from django.http import Http404, HttpRequest, QueryDict
+from django.http import FileResponse, Http404, HttpRequest, QueryDict, StreamingHttpResponse
 from django.template import TemplateSyntaxError
+from django.test.utils import CaptureQueriesContext
 from django_service_specs import (
     DEFAULT_PAGE_SIZE,
     DEFAULT_POOL_SEEDS,
@@ -22,6 +27,8 @@ from django_service_specs import (
     DataclassPresenter,
     DispatchError,
     FieldMarking,
+    FilePresenter,
+    FileResult,
     InvalidArguments,
     NotPermitted,
     OutputPage,
@@ -531,7 +538,7 @@ class TestTheInstancePage:
         assert response.context_data["errors"] == ["page: Unknown argument."]
 
     def test_a_route_value_the_reads_refuse_is_400(self, ada: Any) -> None:
-        response = shown(one(), user=ada, url_kwargs={"pk": "abc"})
+        response = shown(one(), user=ada, url_kwargs={"pk": "abc"}, route_refusal_404=False)
 
         assert response.status_code == 400
         assert response.context_data["errors"] == ["pk: Enter a whole number."]
@@ -1418,3 +1425,158 @@ class TestTheQueryHook:
             "SpecSelectorView.get_query is async, and the view calls it without awaiting it, "
             "so it would answer a coroutine: define it with def."
         )
+
+
+def as_text(note: Note) -> bytes:
+    return note.title.encode()
+
+
+def chunked(note: Note) -> Iterator[bytes]:
+    yield note.title.encode()
+    yield b"!"
+
+
+TEXT = FilePresenter("text/plain", filename=lambda note: f"note-{note.pk}.txt", render=as_text)
+
+
+def file_get_one(presenter: Any = TEXT, **fields: Any) -> SelectorSpec:
+    fields.setdefault("selector", note_by_pk)
+    fields.setdefault("reads", PK)
+    return SelectorSpec(kind=SelectorKind.RETRIEVE, presenter=presenter, permissions=OPEN, **fields)
+
+
+def body(response: Any) -> bytes:
+    try:
+        return b"".join(response.streaming_content)
+    finally:
+        response.close()
+
+
+@pytest.fixture
+def note() -> Note:
+    return Note.objects.create(owner=make_user("ada"), title="Minutes")
+
+
+def fetched(spec: Any, note: Note, headers: Any = None, **initkwargs: Any) -> Any:
+    view = SpecSelectorView.as_view(spec=spec, route_kwargs=("pk",), **initkwargs)
+    request = signed_in(FACTORY.get(f"/notes/{note.pk}/", **(headers or {})))
+    return view(request, pk=note.pk)
+
+
+class TestTheSelectorPage:
+    def test_a_file_spec_answers_its_bytes_as_an_attachment(self, note: Note) -> None:
+        response = fetched(file_get_one(), note)
+        assert isinstance(response, FileResponse)
+        assert response["Content-Disposition"] == f'attachment; filename="note-{note.pk}.txt"'
+        assert response["Content-Type"] == "text/plain"
+        assert response["Content-Length"] == "7"
+        assert body(response) == b"Minutes"
+
+    def test_a_non_ascii_name_is_quoted_as_rfc_5987(self, note: Note) -> None:
+        presenter = FilePresenter("text/plain", filename="résumé.txt", render=as_text)
+        response = fetched(file_get_one(presenter), note)
+        response.close()
+        quoted = "attachment; filename*=utf-8''r%C3%A9sum%C3%A9.txt"
+        assert response["Content-Disposition"] == quoted
+
+    def test_as_attachment_false_answers_inline(self, note: Note) -> None:
+        response = fetched(file_get_one(), note, as_attachment=False)
+        response.close()
+        assert response["Content-Disposition"] == f'inline; filename="note-{note.pk}.txt"'
+
+    def test_an_htmx_request_is_answered_the_file_too(self, note: Note) -> None:
+        assert body(fetched(file_get_one(), note, headers=HTMX)) == b"Minutes"
+
+    def test_an_iterable_streams_with_no_length(self, note: Note) -> None:
+        presenter = FilePresenter("text/plain", filename="n.txt", render=chunked)
+        response = fetched(file_get_one(presenter), note)
+        assert type(response) is StreamingHttpResponse
+        assert response["Content-Disposition"] == 'attachment; filename="n.txt"'
+        assert response["Content-Type"] == "text/plain"
+        assert not response.has_header("Content-Length")
+        assert body(response) == b"Minutes!"
+
+    def test_an_iterable_of_known_size_says_its_length(self, note: Note) -> None:
+        def sized(row: Note) -> FileResult:
+            return FileResult(chunked(row), filename="n.txt", size=8)
+
+        response = fetched(file_get_one(FilePresenter("text/plain", render=sized)), note)
+        assert response["Content-Length"] == "8"
+        assert body(response) == b"Minutes!"
+
+    @pytest.mark.parametrize("wrap", [io.BytesIO, ContentFile], ids=["io", "django-file"])
+    def test_a_file_object_is_answered(self, note: Note, wrap: Any) -> None:
+        presenter = FilePresenter("text/plain", filename="n.txt", render=lambda r: wrap(b"abc"))
+        response = fetched(file_get_one(presenter), note)
+        assert response["Content-Length"] == "3"
+        assert body(response) == b"abc"
+
+    def test_a_retrieve_that_found_nothing_is_the_page(self, note: Note) -> None:
+        spec = file_get_one(allow_none=True, selector=lambda *, pk: None)
+        response = fetched(spec, note)
+        response.render()
+        assert response.status_code == 200
+        assert response.context_data["rows"] == []
+        assert "row_displays" not in response.context_data
+
+    def test_a_list_file_spec_is_refused_at_as_view(self) -> None:
+        spec = SelectorSpec(kind=SelectorKind.LIST, selector=notes_of, presenter=TEXT)
+        with pytest.raises(ImproperlyConfigured, match="presents a list of rows"):
+            SpecSelectorView.as_view(spec=spec)
+
+
+WRAPPED = "spec_selector_wrapped.html"
+
+
+@dataclasses.dataclass(frozen=True)
+class Wrapped:
+    note: Note
+
+
+def wrapped_notes(*, user: Any) -> list[Wrapped]:
+    return [Wrapped(note) for note in notes_of(user=user)]
+
+
+def spec(**fields: Any) -> SelectorSpec:
+    fields.setdefault("selector", wrapped_notes)
+    fields.setdefault("row_object", "note")
+    return SelectorSpec(kind=SelectorKind.LIST, permissions=OPEN, affordances=OFFERED, **fields)
+
+
+def rendered(chosen: SelectorSpec, ada: Any) -> tuple[list[str], int]:
+    view = SpecSelectorView.as_view(spec=chosen, template_name=WRAPPED, display_rows=False)
+    request = signed_in(FACTORY.get("/notes/"), ada)
+    with CaptureQueriesContext(connection) as queries:
+        response = view(request)
+        response.render()
+    return response.content.decode().split("\n"), len(queries)
+
+
+def test_a_wrapper_row_renders_its_reason_through_the_unavailable_filter(ada: Any) -> None:
+    Note.objects.create(owner=ada, title="live")
+    Note.objects.create(owner=ada, title="archived", archived=True)
+
+    lines, _ = rendered(spec(), ada)
+
+    reasons = [line for line in lines if line.startswith(("live:", "archived:"))]
+    assert reasons[0] == "live:ok"
+    assert reasons[1].startswith("archived:") and reasons[1] != "archived:ok"
+
+
+def test_the_queries_stay_flat_as_the_rows_grow(ada: Any) -> None:
+    Note.objects.create(owner=ada, title="n0")
+    _, few = rendered(spec(), ada)
+    for each in range(1, 6):
+        Note.objects.create(owner=ada, title=f"n{each}")
+
+    _, many = rendered(spec(), ada)
+
+    assert many == few
+
+
+def test_a_callable_row_object_is_read_the_same_way(ada: Any) -> None:
+    Note.objects.create(owner=ada, title="archived", archived=True)
+
+    lines, _ = rendered(spec(row_object=lambda row: row.note), ada)
+
+    assert any(line.startswith("archived:") and line != "archived:ok" for line in lines)

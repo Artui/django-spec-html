@@ -126,9 +126,9 @@ selector resolves, or `None` for a create.
 
 - A check refusing it - the object-level check on a row, the scope check on a
   set or on `None` - raises `PermissionDenied`, as the post would be refused;
-  a missing row, or a selector's `ServiceNotFound`, is `Http404`; and a route
-  value the spec's parameters refuse is Django's `BadRequest`, which the
-  host's 400 page answers.
+  a missing row, or a selector's `ServiceNotFound`, is `Http404`; and so is a
+  route value the spec's parameters refuse
+  ([`route_refusal_404`](#what-the-request-carries)).
 - The form stays unbound, and shows the row's values for its own fields. A
   `ModelForm` of the row's model is built on a copy of the row, as the
   [`FormValidator`][django_service_specs.adapters.forms.form_validator.FormValidator]
@@ -170,9 +170,10 @@ asks no check twice, and the request's
 [`CallSeeds`][django_service_specs.dispatch.call_seeds.CallSeeds], so the
 service runs on the values of the seeds the class-level check and the
 object-level or scope check were offered
-([one resolution per request](#what-the-request-carries)). One case is left to dispatch: a route value the
-target's reads refuse, which comes back in dispatch's one refusal beside the
-form's own, as a non-field error. A create resolves `None` and a collection target
+([one resolution per request](#what-the-request-carries)). A route value the
+spec's parameters refuse is `Http404` before the form is built. With
+`route_refusal_404` off it is left to dispatch, and comes back in dispatch's one
+refusal beside the form's own, as a non-field error. A create resolves `None` and a collection target
 its set, each handed on the same way.
 
 **POST** then binds the form to the post and reads the arguments **through
@@ -250,8 +251,8 @@ title and no date is told both. The page's form is validated as the Validator
 validates its own, under the kernel's `clean_held_to_their_columns`, so a
 value no column holds - a key past 64 bits - is refused in the field's own
 words and never reaches the database driver, whose SQLite raises
-`OverflowError` for it. A post whose route value the target's reads refuse
-never found its row, so its form is not judged as one, and carries the
+`OverflowError` for it. With `route_refusal_404` off, a post whose route value
+the target's reads refuse never found its row, so its form is not judged as one, and carries the
 refusal alone. Any other refusal - a conflict, a service's own rule,
 an unavailable action - is no verdict on the arguments, and the re-rendered
 form carries it alone. The statuses are
@@ -280,6 +281,76 @@ docs/examples/spec_form.py:keywords
 The URLconf routes it as `books/shelve/`. A signed-in user who is not staff is
 offered only the authors already on the shelves, and a post naming another is
 refused on the author field; staff are offered every author.
+
+## A form over any Validator
+
+A spec validated by a `DataclassValidator`, a `PydanticValidator` or any other
+Validator is served by naming the form the page renders, **`form_class`**:
+
+```python
+@dataclasses.dataclass
+class Book:
+    title: str
+    pages: int | None = None
+
+
+class BookForm(forms.Form):
+    title = forms.CharField()
+    pages = forms.IntegerField(required=False)
+
+
+SpecFormView.as_view(spec=add_book_spec, form_class=BookForm, success_url=reverse_lazy("books"))
+```
+
+**The form renders and reads; the Validator alone decides.** GET builds the
+form as it builds a `FormValidator`'s, a row's values shown. A post is read
+off the form's fields as it always is, through each field's widget, merged
+with the route, coerced by the spec's parameters and dispatched: the Validator
+receives the values as posted, never the form's `cleaned_data`. The form is
+never validated. Its `clean()`, its field validators and a `ModelForm`'s
+uniqueness queries never run, and a refused post's form carries the
+Validator's refusal and nothing else, each error on its field. A
+`validate_on_refresh` refresh follows the same rule.
+
+**The form's keywords are the view's.** `get_form_kwargs()` answers what the
+form's `__init__` is handed beside the post, on GET and on every post; it is
+empty by default, and it may not return `data`, `files` or `instance`, which
+the page sets. A `FormValidator` page keeps its Validator's `form_kwargs`.
+
+**`success_message` reads the Validator's data**: `%` with it where it is a
+mapping, and otherwise with its attributes, so `"%(title)s added"` reads a
+dataclass's or a pydantic model's `title`.
+
+**`as_view()` holds the form to the spec**, refusing, by the page and the
+field:
+
+- a form the post cannot be read off, as `FormValidator(form_class)` refuses
+  it: a `JSONField`, a `MultiValueField` such as `SplitDateTimeField`;
+- an enabled field, or the `<name>-clear` checkbox an optional
+  `ClearableFileInput` adds, that the spec's parameters do not declare: a
+  file field over a Validator declaring no clear checkbox takes a plain
+  `FileInput`;
+- a required parameter the form does not post, where neither the server
+  (`server_owned_keys`, `server_arguments`) nor the route fills it. Only a
+  tuple `route_kwargs` closes the route; under `None` or a mapping any
+  parameter may come from the URL, and dispatch refuses one nobody sent. An
+  optional parameter the form leaves out is allowed;
+- a field whose type disagrees with its parameter's: the same `type`, the same
+  element type for an array, and the same `format` where the parameter
+  declares one. The rule is exact, so an `IntegerField` over a `number`
+  parameter is refused; write a `FloatField`. A parameter of type `any` takes
+  any field;
+- a field whose `required` differs from its parameter's, either way;
+- a Validator naming any field in `unsendable`, which no form can post;
+- `form_class` over a `FormValidator`, whose form is already the page's;
+- a form defining its own `clean()` or `clean_<field>()`, a rule the page
+  would silently not run: it belongs in the Validator. Django's own are
+  allowed.
+
+Choices, lengths, bounds and `nullable` are not compared: the Validator
+refuses at the post, in its own words. Under [`actions`](#one-form-several-operations),
+every action shares the page's `form_class`, over any Validator but a
+`FormValidator`, and each is checked as above.
 
 ## A partial page
 
@@ -366,6 +437,12 @@ be published". The post does not replay what the page counted: it re-runs the
 service on the set it finds then, and a refused post counts the set again. A
 successful post counts nothing. So nothing about the count belongs in a hidden
 input.
+
+**A set the person ticks is posted, not selected.** A list whose checkboxes
+choose the rows a button acts on serves the action with `SpecConfirmView` and
+its `posted_arguments`, which read the ticked ids off the post that
+`hx-include` sends: the recipe is
+[a bulk action over ticked rows](confirm.md#a-bulk-action-over-ticked-rows).
 
 ### The target's display
 
@@ -510,6 +587,16 @@ The page renders the empty dialog only before a question, so whichever way
 the page is rendered there is one element with its id. An id that matches
 no element on the page swaps nothing.
 
+### A confirmation that only posts
+
+A button in a list's row posts to a confirmation that never renders a page:
+set `http_method_names = ["post"]` with `refusal_redirect = True`, and
+`as_view()` does not look for the shipped template, so the page's templates
+need not be installed. A refusal goes back to the list as a message. Where
+messages are unavailable, it answers the refusal's status with an empty body
+rather than a 500. A page that serves GET or HEAD, or whose refusal is not
+redirected, is still checked at `as_view()`.
+
 ### Not a gate on an agent route
 
 **The question is a page's affordance, never a security boundary.** On an
@@ -532,6 +619,20 @@ do, with the same attributes and hooks, checked by the same code:
   bare string and a target or an allowed name the spec does not declare, and
   two kwargs filling one parameter are refused on the request that captures
   both.
+- **`route_refusal_404`**, on by default on every page, answers a route
+  capture the shape check refuses with `Http404`, as a URL converter that did
+  not match would: `/folders/7/reorder/sideways/`, where `direction` is a
+  choice of `up` or `down`, names nothing. The route's arguments are read and
+  checked apart from the post's, after the class-level check and before
+  anything is posted, on GET and POST alike, so the page knows the refused key
+  came from the URL rather than guessing from its name. A refused posted
+  argument is answered as before. `route_refusal_404 = False` restores the
+  answers of 0.12.0: a route value refused on GET is Django's `BadRequest`
+  where its type does not parse, and a choice is not checked until the post;
+  on POST it is the page's refusal, with the message prefixed by its name
+  (`"direction: Select a valid choice. ..."`), or under a confirmation's
+  `refusal_redirect` that message and a redirect; and the selector page
+  answers 400 with it in `errors`.
 - **`get_pool_seeds(request)`**, `pool_seeds` unless overridden, answers the
   seeds this request's call is resolved with. It is asked once per request,
   and every step that resolves a spec callable is handed what it answered:
@@ -661,20 +762,26 @@ whose post the spec would refuse at 409:
   every condition is met, `unavailable` is absent** from the context, not
   `None`. The fragment renders from the same context, so an `hx-get` that
   loads the form carries it too.
+- **On a page serving [`actions`](#one-form-several-operations), each
+  action's conditions are asked for its own button**: `unavailable_actions`
+  names the unavailable ones, `action_buttons` answers every one, and
+  `unavailable` is set only when none is available.
 
 **Every callable condition is asked twice on a GET with a row**: once alone,
 then again with the row's conditions, since the kernel's `enforce_affordances`
 asks them all as dispatch does. Each seed is resolved twice as well, once for
 the target's lookup and once for the affordances' pool, and once more for
 each of the class-level check and the form's `form_kwargs` that
-[names it](#what-the-request-carries). Write conditions and seed resolvers
-that may be asked more than once and answer the same.
+[names it](#what-the-request-carries). On a page serving `actions`, every
+action's conditions are asked so, on GET and again on a refused post's page.
+Write conditions and seed resolvers that may be asked more
+than once and answer the same.
 
 The callable conditions are asked first, without a row, so where both kinds
 are unmet and the row's is declared first, the page names the callable while
 the post is refused with the row's: dispatch asks in declaration order. **The
-page's answer is advice, and the post's refusal is the authority**: the POST
-is unchanged, dispatch asks every condition again, and a condition that
+page's answer is advice, and the post's refusal is the authority**: the post
+is dispatched as before, dispatch asks every condition again, and a condition that
 changed between the two requests is answered by the 409.
 
 **A refused post carries the refusal's `code`** in its context, beside the
@@ -743,6 +850,33 @@ form: an htmx request to a page naming no template is answered with
 `django_spec_html/spec_form_fragment.html`, with nothing to configure on any
 Django.
 
+**Choosing the fragment by the request's target.** One URL can answer htmx
+requests aimed at different elements with different parts of the page, such as
+a dialog and a panel. Override `get_fragment_template_names()` and read the
+`HX-Target` header off `self.request`; return the shipped answer for every
+target the override does not name:
+
+```python
+--8<--
+docs/examples/htmx_target.py:target
+--8<--
+```
+
+A request for the target `dialog` renders `spec_form_dialog_fragment.html`;
+any other htmx request renders the form fragment the view would have, and a
+request without htmx is the page, since the method is read only for a
+fragment. The override picks a template and nothing else, so the outcome is
+the same in every target.
+
+**Multi-step flows are out of scope for the pages.** A wizard, or a payment
+that is started and then polled, is a sequence of requests whose state the
+page does not carry: the view holds nothing between one post and the next.
+Serve each step as a page of its own, one URL and one spec per step, and keep
+what the steps share in the service, such as a draft row or an order whose
+status each step reads and moves. The next step's page then finds its state
+from its route, as any page finds its target, and a step reached out of order
+is the spec's own refusal.
+
 **Which requests get the fragment.** A request whose `HX-Request` header is
 `true`, unless it is boosted (`HX-Boosted`) or a history restore
 (`HX-History-Restore-Request`): a boosted link or form swaps the whole body,
@@ -776,8 +910,39 @@ bodies and a cache keyed on fewer would hand a fragment to a page load.
   `DisallowedRedirect` in both modes. The answer passes back
   through the host's middleware like any other, so a cookie set for the
   request, such as the session a sign-in rotates, is set on it. Override the
-  method for `HX-Location`, or a 204 carrying `HX-Trigger`.
+  method for `HX-Location`.
 - **A denial** is raised in both modes alike, for the host's handlers.
+
+**The event a success triggers is the page's to name.** Three attributes, on
+every page with a post, shape the success answered in place:
+
+| Attribute | Default | Sends |
+| --- | --- | --- |
+| `success_trigger` | `"spec-succeeded"` | an event's name as it is; a mapping of event names to payloads as the JSON htmx reads, each payload the event's `detail`; `None` sends no trigger |
+| `success_trigger_timing` | `"receive"` | the trigger in `HX-Trigger`; `"swap"` in `HX-Trigger-After-Swap`, `"settle"` in `HX-Trigger-After-Settle` |
+| `success_refresh` | `False` | `HX-Refresh: true` and an empty body in place of the result fragment, which the page then need not define, with the trigger beside it |
+
+`get_success_trigger(result)` returns `success_trigger`; override it for a
+payload that depends on the result:
+
+```python
+class NewNote(SpecFormView):
+    success_trigger_timing = "settle"
+
+    def get_success_trigger(self, result):
+        return {"note-saved": {"id": result.value.pk}}
+```
+
+A payload is encoded with Django's `DjangoJSONEncoder`, so a date, a
+`Decimal` or a UUID arrives as a string, and with every character outside ASCII
+escaped, so the header carries it whole. `as_view()` refuses an empty name, a
+mapping with no names or a key that is not one, a timing that is not one of
+the three, and a `success_refresh` that is not a bool. Whether a payload
+encodes is known only when it is sent, so one that does not raises
+`ImproperlyConfigured` then. A refresh with a trigger timed to `"swap"` or
+`"settle"` is refused at `as_view()`: htmx fires `HX-Trigger` and then
+reloads, so a trigger waiting for a swap never fires. None of these reaches a
+post without htmx, which is redirected as before, nor an `HX-Redirect`.
 
 **A template with no fragment at the address** answers htmx with Django's
 `TemplateDoesNotExist` naming it - `spec_form.html#spec-form`, or the
@@ -831,6 +996,72 @@ URL that does not answer 403 or 404. The view's `Vary` never reaches a denial, w
 answered, so each handler sets its own on `HX-Request`, since it answers the
 two kinds of request differently.
 
+### Adding a formset row over htmx
+
+The formset page's shipped add button posts into the rows and appends the one
+form it is answered with, beside an out-of-band `TOTAL_FORMS`; a post at the
+list's maximum is a 204. [Adding a row](formsets.md#adding-a-row) has what
+chooses that answer and how a project's own template takes it.
+
+### Editing an existing set
+
+The formset page renders a Validator's `formset_class` as it is declared. A
+model formset there edits the spec's `collection_selector_spec`: one
+prefilled form a row, a deleted row sent whole with `DELETE` true, a row
+left out left alone. [Editing a set](formsets.md#editing-a-set) has the
+example and what a post sends.
+
+### A formset over any Validator
+
+A `many` spec whose Validator is not a `FormValidator` gets a formset page by
+naming its row form, **`form_class`**, as the [form page](#a-form-over-any-validator)
+does:
+
+```python
+SpecFormSetView.as_view(spec=add_books_spec, form_class=BookForm, success_url="/books/")
+```
+
+The page builds one `formset_factory` of it, within the spec's
+`many_min_length` and `many_max_length`, every form built with
+`get_form_kwargs()`. Each form renders and is read, and is never validated:
+a row's refusal lands on the form that sent it, and a refusal of the whole
+set is the formset's non-form errors. **The rule over the set is the
+Validator's own `validated_many`**, which raises it under `non_field_errors`;
+the page adds none. `as_view()` checks the row form against each row's
+parameters, not the call's top level, with the form page's checks; a route
+and `server_arguments` fill the top level only, so a required row parameter
+the form leaves out passes only where the server's own keys fill it.
+
+**A spec with a `collection_selector_spec` edits its set.** GET builds one
+prefilled form a row of the set the selector resolves, each carrying the row's
+key in a hidden field named for the model's primary key, then the extra forms;
+`INITIAL_FORMS` is the set's count. A post sends each initial form's row with
+its key, a deleted one whole with `DELETE` true, and leaves a row it does not
+post alone; an extra form ticked for deletion sends nothing. The rows declare
+the key, optional so a new row sends none, and a boolean `DELETE` where rows
+may be deleted, which offers the box:
+
+```python
+@dataclasses.dataclass
+class EditedNote:
+    title: str
+    id: int | None = None
+    DELETE: bool = False
+```
+
+A key missing from an initial form, or naming a row outside the set, refuses
+that row on its form; the page reads the key and validates nothing else. Rows
+declaring no key are refused when the set is first built, and a `DELETE` that
+is not a boolean at `as_view()`.
+
+## Coming from Django's `FormView`
+
+A refused post answers **400** here where Django's `FormView` answers 200:
+the status is the kernel's refusal status, [the refusals table](http.md#refusals) has
+each row. A host moving a form onto a page of this package updates its tests
+that assert 200 on an invalid post. A post through htmx is unchanged, since
+the fragment answers a refusal at 200.
+
 ## Under ASGI
 
 **The pages are sync views and serve under ASGI.** Django runs a sync view on a
@@ -843,6 +1074,105 @@ wrap every one of those in a thread hop, which is the hop Django already makes
 for a sync view. `AsyncSpecView` differs because it answers JSON presented
 inside `adispatch`, with no template to render and nothing else of the page to
 carry.
+
+## One form, several operations
+
+A form whose buttons run different operations - save a draft, publish it,
+delete it - is one page. **`actions` maps each submit button's name to the
+spec it runs**, and replaces `spec`:
+
+```python
+(
+    path(
+        "posts/<int:pk>/",
+        SpecFormView.as_view(
+            actions={"save": save_post_spec, "publish": publish_post_spec},
+            route_kwargs=("pk",),
+            success_url=reverse_lazy("posts"),
+        ),
+    ),
+)
+```
+
+- **A committing post runs the action whose button it carries**: the one key
+  of `actions` in `request.POST`, whatever its value, so a `<button
+  name="publish">` with no `value` names `publish`. A post naming none, or
+  more than one, is Django's `BadRequest`, a 400, and nothing runs. The chosen
+  spec is the one the post is admitted, finds its target, is validated and
+  dispatched by, and the one a refused post's page is rendered with.
+- **GET renders the first action's spec**: the page, its admission, its
+  target and its form are the first action's.
+- **Each action's button answers its own availability.** GET asks every
+  action's [affordances](#an-operation-that-is-unavailable), each of the
+  target the first action found, so a condition on the row is asked of the
+  row the page shows. The context carries `unavailable_actions`, each
+  unavailable action's key mapped to its first unmet `Affordance`, absent
+  when every action is available, and `action_buttons`, every action's key
+  beside that `Affordance` or `None`, in the order `actions` lists them.
+  `unavailable` is set only when no action is available: the first action's
+  `Affordance`. So a titled note's "Publish" can be unavailable while its
+  "Save" is not, and only "Publish" is refused. A post naming an
+  unavailable action is refused at 409 by that action's own dispatch, as on
+  a page with one spec.
+- **An action the user may not run is disabled, and says nothing.** GET
+  asks every action after the first the checks its post would run before
+  dispatch: its admission and class-level permissions, then its object
+  check on the row the page shows (its scope check on a set, or on none),
+  and, with `route_refusal_404` on, the default, a route capture its own
+  parameters refuse; with it off the capture is left to its post, as it is
+  for the first action. The context carries
+  `refused_actions`, the frozenset of the refused keys, absent when none
+  is. A refused action's affordances are not asked: it is in neither
+  `unavailable_actions` nor `unavailable`, and its `action_buttons` entry
+  is `None`, so nothing says why. The first action's refusal is still the
+  page's own 403 or 404, and a post naming a refused action is refused as
+  it always was, 403 or 404, before anything runs. So a reader's page
+  shows "Publish" disabled where only an editor may publish. When the first
+  action is unavailable and every other is refused, `unavailable` is not
+  set: every button is disabled and the form's fields are not.
+- **A refused post's page keeps each action's state.** A refused post's
+  page, and its fragment under htmx, renders `unavailable_actions`, `refused_actions`,
+  `action_buttons` and `unavailable` as a GET of the page would, asked of the
+  target that post found: the action that ran stands where GET's first does,
+  and every other action, the first included, is asked as above. So a "Save"
+  refused for a blank title leaves "Publish" disabled beside its reason, and
+  a post naming the unavailable "Publish" answers 409 with its button
+  disabled, its reason beside it as well as in the refusal's own error. With
+  `route_refusal_404` off, a post whose route the target's reads refuse found
+  no target, and one whose route another action's reads refuse is asked of
+  none of them; either page carries none of the four. A page with one spec
+  re-renders a refused post as it always did, with no `unavailable`.
+- **The success is page-wide.** `success_url` and `success_message` serve
+  every action. `get_success_url(result)` and `get_success_message(result)`
+  read which one ran as `self.action_name`, the key, set before the post is
+  dispatched; it is `None` on GET and on a page without `actions`.
+- **The shipped templates render one submit button per action**, named by
+  its key and labelled with it capitalised, in the order `actions` lists
+  them, in place of the one button. A refused action's button is disabled
+  with nothing beside it. An unavailable action's button is
+  disabled and its reason shown, in a paragraph carrying its key as
+  `data-action` and its `code` as `data-code`; the others stay usable, and
+  the form's fields are disabled only when no action is available. They loop
+  over `action_buttons` rather than `unavailable_actions.items`, which an
+  action keyed `items` would shadow. A project's own template renders its
+  own.
+
+`SpecConfirmView` takes `actions` the same way, every action a spec with no
+Validator: a confirmation's "Archive" and "Delete" buttons are one page.
+
+`as_view()` checks every action as it checks a page's `spec` - its
+Validator, its parameters against the route, the binding, the seeds and a
+confirmation's `posted_arguments` - each refusal naming the action, as in
+`SpecFormView.actions['publish']`. It also refuses `actions` beside `spec`, an
+empty mapping, a key that is not a non-empty string, a `redirect_field_name`
+that is an action's key, any `commit_button` beside `actions` (an actions page
+commits only through an action's button, and a post naming none answers 400),
+on a confirmation an action keyed like a `posted_arguments` name or
+`csrfmiddlewaretoken`, which every post carries, and `actions` on a page that
+takes none, such as `SpecFormSetView`. On `SpecFormView` every action is
+validated by a `FormValidator` of one form class, or shares the page's
+[`form_class`](#a-form-over-any-validator), since the page posts one form, and
+no key is the name of one of its fields, which every submit posts.
 
 ## A post that does not commit
 
@@ -1062,3 +1392,38 @@ class AddBookThenSayWhich(SpecFormView):
 - **A refusal, a confirmation page and a post that does not commit send
   none.** The message is sent once the operation has run.
 - An empty message, the default, sends nothing.
+
+## A spec that answers a file
+
+**A spec whose presenter is the kernel's `FilePresenter` answers its success
+with the file**, not a redirect: an export, a report, a signed PDF. The page
+builds the response as [the selector page](selectors.md) builds a file's, a
+`FileResponse`, or a `StreamingHttpResponse` for an iterable of bytes, with
+`Content-Disposition: attachment` naming the file. `as_attachment = False`
+answers `inline`, for a browser to show a PDF in place.
+
+```python
+export_spec = ServiceSpec(
+    service=export_minutes,
+    permissions=(IsAuthenticated,),
+    validator=FormValidator(ExportForm),
+    presenter=FilePresenter("text/csv", filename="minutes.csv", render=as_csv),
+)
+
+path("minutes/export/", SpecFormView.as_view(spec=export_spec, success_url="/minutes/"))
+```
+
+- **No success message and no redirect.** The file is the answer, so
+  `success_message`, `success_url` and the way back are not read on a success.
+  A refusal is answered as on any page.
+- **A `None` result is answered as any success**, the redirect and the
+  message, for a spec the kernel lets answer nothing (`allow_none`).
+- **The shipped form is posted natively.** The context carries
+  `presents_file` where the spec, or any of the page's actions, presents a
+  file, and the shipped form and confirmation render `hx-boost="false"` for
+  it, so a `base.html` that boosts the page does not turn the post into an
+  htmx request, which cannot save a download. A template of the project's own
+  reads the same key; under htmx the file is answered all the same, with no
+  `HX-Redirect` and no trigger.
+- `as_view()` refuses a file spec the kernel's `file_output` refuses, such as
+  one declared `many`: a list of files has no answer.

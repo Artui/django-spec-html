@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import inspect
 from collections.abc import Collection, Mapping
 from typing import Any, cast
 
@@ -18,6 +19,7 @@ from django_service_specs import (
     UNSET,
     AdditionalInputRequired,
     DispatchError,
+    DispatchResult,
     FormValidator,
     InvalidArguments,
     ServerArguments,
@@ -27,6 +29,7 @@ from django_service_specs import (
     clean_held_to_their_columns,
     coerce_flat,
     form_keywords,
+    server_owned_keys,
 )
 
 from django_spec_html.http.add_argument_errors import add_argument_errors
@@ -37,7 +40,9 @@ from django_spec_html.http.utils import (
 from django_spec_html.views.utils import (
     Served,
     SpecPageBase,
+    checked_page_form,
     form_values,
+    page_form_kwargs,
     refusal_tree,
     trigger_name,
     with_binding,
@@ -91,7 +96,8 @@ class SpecFormView(SpecPageBase):
     object-level check on a row, the scope check on a set or on ``None`` -
     raises ``PermissionDenied``, as the post would be refused; a missing row
     or a selector's ``ServiceNotFound`` raises ``Http404``; and a route value
-    the spec's parameters refuse raises Django's ``BadRequest``. The form
+    the spec's parameters refuse raises ``Http404`` too, or Django's
+    ``BadRequest`` with ``route_refusal_404`` off. The form
     shows a row's values for its own fields: a ``ModelForm`` of the row's
     model is built on a copy of it, as the Validator binds one, and any other
     form takes the row's values for the enabled fields it names as its
@@ -118,7 +124,8 @@ class SpecFormView(SpecPageBase):
     rather than dispatch re-rendering the page for a principal the row
     refuses. Dispatch is handed the target and the grant ``resolve_target``
     returns, so it looks nothing up again and asks no check twice. A route
-    value the target's reads refuse is left to dispatch, whose one refusal
+    value the target's reads refuse is a 404 before the post is read; with
+    ``route_refusal_404`` off it is left to dispatch, whose one refusal
     carries it beside the form's own.
 
     **POST** binds the form to the post and reads the arguments through its
@@ -250,10 +257,18 @@ class SpecFormView(SpecPageBase):
     **A success message.** ``success_message``, where it is set, is sent
     through ``django.contrib.messages`` on every success - the redirect, the
     ``HX-Redirect`` and the result fragment alike - formatted by
-    ``get_success_message(result)``, ``%`` with the form's cleaned data as
-    Django's ``SuccessMessageMixin`` formats it. Without the messages
+    ``get_success_message(result)``, ``%`` with the Validator's data, the form's
+    cleaned data here, as Django's ``SuccessMessageMixin`` formats it. Without the messages
     middleware it is skipped, and never raises ``MessageFailure``. A refusal,
     a confirmation page and a post that does not commit send none.
+
+    **A spec presenting a file**, through the kernel's ``FilePresenter``,
+    answers its success with the file, built as ``SpecSelectorView`` builds
+    one: no redirect, no ``HX-Redirect`` and no success message. A ``None``
+    result is answered as any success. ``as_view()`` refuses a file spec
+    declared ``many``. The context carries ``presents_file`` where the spec,
+    or any action, presents a file, and the shipped form renders
+    ``hx-boost="false"`` for it, so the browser posts it natively.
 
     **The request is read through the same attributes and hooks as**
     ``SpecView``**'s**, checked by the same code in ``http/utils.py``:
@@ -295,11 +310,14 @@ class SpecFormView(SpecPageBase):
     and, with none of those unmet and a row to ask about, the conditions on
     the row, as dispatch asks them. The first unmet ``Affordance`` is in the
     context as ``unavailable``, for a template to read its ``code`` and
-    ``reason``; it is absent when every condition is met. The POST is
-    unchanged, and dispatch's 409 stays the authority. **A refused post's
-    context carries** ``code``, the ``ActionUnavailable``'s, for a refusal
+    ``reason``; it is absent when every condition is met. On a page serving
+    ``actions``, each action's are asked, of the target the first action
+    found, and ``unavailable`` is set only when no action is available
+    (below). The post is dispatched as before, and dispatch's 409 stays the authority. **A
+    refused post's context carries** ``code``, the ``ActionUnavailable``'s, for a refusal
     carrying one, as ``error_response`` puts it in the JSON body; it is
-    absent for every other.
+    absent for every other. On a page serving ``actions`` it carries each
+    action's state as GET does (below).
 
     **The page shows its target**, on GET and on every refused post it
     re-renders, in the context beside the form: ``target`` is the row an
@@ -343,9 +361,9 @@ class SpecFormView(SpecPageBase):
     rather than the next. It is validated as the Validator validates its own,
     under the kernel's ``clean_held_to_their_columns``, so a value no column
     holds - a key past 64 bits - is refused in the field's words and never
-    reaches the database driver. A post whose route the target's reads
-    refuse never found its row, so its form is not judged as one and carries
-    the refusal alone. Any other refusal is no verdict on the
+    reaches the database driver. With ``route_refusal_404`` off, a post whose
+    route the target's reads refuse never found its row, so its form is not
+    judged as one and carries the refusal alone. Any other refusal is no verdict on the
     arguments - a conflict, a service's own rule, an unavailable action - and
     the page's form carries it alone, validated no further.
 
@@ -358,19 +376,96 @@ class SpecFormView(SpecPageBase):
     fields a post leaves out off its own form, and the page's form, validated
     whole, would call each one required.
 
+    **One form, several operations.** ``actions`` maps each submit button's
+    name to the spec it runs, in place of ``spec``. A committing post runs the
+    action whose key ``request.POST`` carries, and one naming none or several
+    is Django's ``BadRequest``; GET, and a post that does not commit, render
+    the first action's. ``success_url`` and ``success_message`` are
+    page-wide, and ``get_success_url`` and ``get_success_message`` read the
+    action that ran as ``self.action_name``. The shipped template renders one
+    button per action, named by its key. Every action is checked as ``spec``
+    is, and validated by a ``FormValidator`` of one form class.
+
+    **Each action's button answers its own availability.** GET asks every
+    action's affordances, as above. The context carries
+    ``unavailable_actions``, each unavailable action's key mapped to its
+    first unmet ``Affordance``, absent when every action is available, and
+    ``action_buttons``, every action's key and that ``Affordance`` or
+    ``None``, in ``actions`` order, as pairs a template can loop over (an
+    action keyed ``items`` would shadow a mapping's ``items``). The shipped
+    template disables an unavailable action's button and shows its reason
+    beside its key, and the others stay usable. ``unavailable`` is the first
+    action's ``Affordance`` only when no action is available, and then the
+    form's fields are disabled too. A post naming an unavailable action is
+    refused at 409 by its own dispatch, as on a page with one spec.
+
+    **An action the user may not run is disabled, and says nothing.** GET
+    asks every action after the first the checks its post runs before
+    dispatch: its admission and class-level permissions, then its object
+    check on the row the page shows, or its scope check on a set or none,
+    and, with ``route_refusal_404`` on, a route capture its own parameters
+    refuse. ``refused_actions`` is
+    the frozenset of the keys refused, absent when none is; a refused
+    action's affordances are not asked, so it is in neither
+    ``unavailable_actions`` nor ``unavailable``, and its ``action_buttons``
+    entry is ``None``. The shipped template disables its button and gives no
+    reason and no code. The first action's refusal is still the page's 403
+    or 404, and a post naming a refused action is refused as before. With
+    the first action unavailable and every other refused, ``unavailable`` is
+    not set: every button is disabled, and the form's fields are not.
+
+    **A refused post's page keeps each action's state.** A refused post's
+    page carries ``unavailable_actions``, ``refused_actions``,
+    ``action_buttons`` and ``unavailable`` as GET would, asked of the target
+    that post found: the action that ran stands where GET's first does, and
+    every other, the first included, is asked its checks and affordances as
+    above, so a button GET disables stays disabled. With
+    ``route_refusal_404`` off, a post whose route the target's reads refuse
+    found no target and carries none of them. A page with one spec carries
+    no ``unavailable`` on a refused post.
+
+    **A form over any Validator.** ``form_class`` names the form a page
+    renders for a spec whose Validator is not a ``FormValidator``. It is
+    built as above, with ``get_form_kwargs()`` in place of ``form_kwargs``,
+    and read as above, and never validated: the Validator's refusal is the
+    only error its form carries, so its ``clean()``, field validators and
+    uniqueness queries never run. ``success_message`` formats over the
+    Validator's data, a mapping's keys or an object's attributes. ``as_view()``
+    refuses a form the post cannot be read off, a field or ``<name>-clear``
+    checkbox the spec does not declare, a required parameter neither the form,
+    the server nor a tuple ``route_kwargs`` fills, a field whose type, element
+    type, format where the spec names one, or ``required`` differs from its
+    parameter's (``any`` takes any field), a Validator with ``unsendable``
+    fields, ``form_class`` over a ``FormValidator``, and a form defining its
+    own ``clean()`` or ``clean_<field>()``. Every action shares it.
+
     ``as_view()`` refuses, when the URLconf is imported, a view with no
-    ``ServiceSpec``, a spec whose Validator is not a ``FormValidator``, a
+    ``ServiceSpec``, a spec whose Validator is not a ``FormValidator`` on a
+    page with no ``form_class``, a
     ``many`` spec, whose list of rows no form posts, a view with no
     ``success_url`` that does not override ``get_success_url``, a
     ``commit_button`` that is not a button's name or is one of the form's
     fields, and a ``redirect_field_name`` that is not a key's name, is one of
-    the form's fields or is the ``commit_button``.
+    the form's fields or is the ``commit_button``; and ``actions`` beside a
+    ``spec``, empty, keyed by anything but a non-empty string or by a field of
+    the form, posting different form classes, keyed by the
+    ``redirect_field_name``, or beside any ``commit_button``.
 
     **Sync only**, in this release. **CSRF is the host's middleware**, as for
     any Django view, and the template renders ``{% csrf_token %}``.
 
     Attributes:
-        spec: The operation served. Required.
+        spec: The operation served. Required, unless ``actions`` is set.
+        form_class: The form the page renders over a Validator that is not a
+            ``FormValidator``, never validated, checked at ``as_view()``;
+            ``None``, the default, renders the ``FormValidator``'s.
+        actions: The operations served, by the name of the submit button that
+            runs each: a non-empty mapping, in place of ``spec``. ``None`` by
+            default. Each one's affordances are asked on GET, for its own
+            button.
+        action_name: The key of the action a committing post runs, set before
+            it is dispatched, for the success hooks to read; ``None`` on GET,
+            on a post that does not commit, and on a page without ``actions``.
         template_name: The page's template, as for any Django template view:
             ``django_spec_html/spec_form.html``, the one this package ships,
             by default.
@@ -383,6 +478,9 @@ class SpecFormView(SpecPageBase):
             the strict rule, a mapping from a captured name to the parameter
             it fills or to ``None`` to drop it, or a tuple of names to allow,
             as ``route_arguments`` reads it.
+        route_refusal_404: Whether a route value the spec's parameters
+            refuse is a 404, the default, as Django's own converters answer
+            one, or, off, the 400 or form refusal of 0.12.0.
         server_arguments: The kernel's ``ServerArguments`` the server answers
             for, checked at ``as_view()``. Its values may vary per request,
             through ``get_server_arguments``, and its names may not.
@@ -404,7 +502,8 @@ class SpecFormView(SpecPageBase):
         commit_button: The ``name`` of the submit button whose post commits,
             read by ``commits``: ``None``, the default, commits every post;
             a non-empty string no field of the form declares, checked at
-            ``as_view()``.
+            ``as_view()``. Refused beside ``actions``, which commit only
+            through their own buttons.
         redirect_field_name: The key a post or its query carries the URL a
             success returns to under, read by ``get_redirect_url``:
             ``None``, the default, reads none; a non-empty string no field of
@@ -420,20 +519,47 @@ class SpecFormView(SpecPageBase):
             ``django.contrib.messages``, formatted by
             ``get_success_message`` with the form's cleaned data. Empty by
             default, which sends none.
+        as_attachment: Whether a spec presenting a file answers its success
+            as a download, the default, or ``inline``, for a browser to show
+            it in place.
+        success_trigger: The event a success answered in place triggers, read
+            by ``get_success_trigger``: an event's name, a mapping of event
+            names to payloads, or ``None`` for none; ``"spec-succeeded"`` by
+            default, checked at ``as_view()``.
+        success_trigger_timing: The header the trigger travels in: ``"receive"``,
+            the default, ``"swap"`` or ``"settle"``, for ``HX-Trigger``,
+            ``HX-Trigger-After-Swap`` and ``HX-Trigger-After-Settle``.
+        success_refresh: Whether a success answered in place is ``HX-Refresh``
+            and an empty body in place of the result fragment: ``False`` by
+            default, checked at ``as_view()``.
     """
 
     template_name = "django_spec_html/spec_form.html"
+    form_class: type[forms.BaseForm] | None = None
     asked_fields: tuple[str, ...] = ()
     validate_on_refresh: bool = False
+    _takes_actions = True
+
+    @classmethod
+    def _check_actions(cls, label: str, actions: Mapping[str, ServiceSpec]) -> None:
+        """Refuse actions posting different forms, or one named like a field of the form."""
+        first, *rest = actions.items()
+        if not isinstance(first[1].validator, FormValidator):
+            return
+        form_class = _form_class(first[1])
+        for key, spec in rest:
+            other = _form_class(spec)
+            if other is not form_class:
+                raise ImproperlyConfigured(
+                    f"{label}.actions[{key!r}] validates with {other.__name__}, and the page's "
+                    f"form is {form_class.__name__}, the first action's: every action posts the "
+                    "page's one form."
+                )
+        _check_action_keys(label, actions, form_class)
 
     @classmethod
     def _check_spec(cls, label: str, spec: ServiceSpec) -> None:
-        """Refuse a spec whose Validator is not a ``FormValidator``, and a ``many`` spec."""
-        if not isinstance(spec.validator, FormValidator):
-            raise ImproperlyConfigured(
-                f"{label} renders the form its spec validates with, so the spec's validator "
-                f"must be a FormValidator; got {type(spec.validator).__name__}."
-            )
+        """Refuse a ``many`` spec."""
         if spec.many:
             raise ImproperlyConfigured(
                 f"{label} posts one row, the form's, and a many spec takes a list of rows "
@@ -442,23 +568,55 @@ class SpecFormView(SpecPageBase):
 
     @classmethod
     def _check_page(cls, label: str, spec: ServiceSpec, initkwargs: Mapping[str, Any]) -> None:
-        """Refuse ``asked_fields``, or a ``commit_button`` or ``redirect_field_name`` as a field."""
+        """Refuse the form against the spec, ``asked_fields``, or a button or redirect field."""
+        form_class = initkwargs.get("form_class", cls.form_class)
+        server = initkwargs.get("server_arguments", cls.server_arguments)
+        if form_class is None:
+            if not isinstance(spec.validator, FormValidator):
+                raise ImproperlyConfigured(
+                    f"{label} renders the form its spec validates with, unless form_class names "
+                    "one: set form_class, or the spec's validator must be a FormValidator; got "
+                    f"{type(spec.validator).__name__}."
+                )
+            form_class = _form_class(spec)
+        else:
+            route = initkwargs.get("route_kwargs", cls.route_kwargs)
+            _check_form_class(label, spec, form_class, route, server)
+            actions = initkwargs.get("actions", cls.actions)
+            if actions is not None:
+                _check_action_keys(cls.__name__, actions, form_class)
         _check_asked_fields(
-            label,
-            spec,
-            initkwargs.get("asked_fields", cls.asked_fields),
-            initkwargs.get("server_arguments", cls.server_arguments),
+            label, form_class, initkwargs.get("asked_fields", cls.asked_fields), server
         )
-        _check_commit_field(label, spec, initkwargs.get("commit_button", cls.commit_button))
+        _check_commit_field(label, form_class, initkwargs.get("commit_button", cls.commit_button))
         _check_redirect_field(
-            label, spec, initkwargs.get("redirect_field_name", cls.redirect_field_name)
+            label, form_class, initkwargs.get("redirect_field_name", cls.redirect_field_name)
         )
+
+    def get_form_kwargs(self) -> Mapping[str, Any]:
+        """The keywords a ``form_class`` page's form is built with: none by default."""
+        return {}
+
+    def get_success_message(self, result: DispatchResult) -> str:
+        """``success_message`` formatted with the Validator's data, a mapping or its attributes."""
+        data = result.data
+        return self.success_message % (data if isinstance(data, Mapping) else _Attributes(data))
 
     def _form(
         self, spec: ServiceSpec, principal: Any, target: Any, served: Served, **bound: Any
     ) -> forms.BaseForm:
-        """The page's form, as ``_page_form`` builds it."""
-        return _page_form(spec, principal, target, served, **bound)
+        """The page's form: ``form_class`` with ``get_form_kwargs()``, or the Validator's."""
+        if self.form_class is None:
+            keywords = form_keywords(
+                spec,
+                principal,
+                pool_seeds=served.seeds,
+                target=None if target is UNSET else target,
+                call_context=served.call_context,
+            )
+            return _page_form(_form_class(spec), spec, target, served, keywords, **bound)
+        keywords = page_form_kwargs(self)
+        return _page_form(self.form_class, spec, target, served, keywords, **bound)
 
     def _arguments(
         self, form: forms.BaseForm, spec: ServiceSpec, url_kwargs: Mapping[str, Any], served: Served
@@ -504,6 +662,7 @@ class SpecFormView(SpecPageBase):
         """Place ``refused`` on the bound form, beside its own errors."""
         merged = (
             isinstance(refused, InvalidArguments)
+            and self.form_class is None
             and not self.served_spec().partial
             and target is not UNSET
         )
@@ -544,9 +703,8 @@ class SpecFormView(SpecPageBase):
         return self._rendered(self.get_context_data(form=form, **context), status=status)
 
 
-def _check_commit_field(label: str, spec: ServiceSpec, button: Any) -> None:
+def _check_commit_field(label: str, form_class: type[forms.BaseForm], button: Any) -> None:
     """Refuse a ``commit_button`` that is the name of one of the form's fields."""
-    form_class = _form_class(spec)
     if button in _declared(form_class):
         raise ImproperlyConfigured(
             f"{label}.commit_button names {button!r}, a field {form_class.__name__} declares: a "
@@ -554,9 +712,8 @@ def _check_commit_field(label: str, spec: ServiceSpec, button: Any) -> None:
         )
 
 
-def _check_redirect_field(label: str, spec: ServiceSpec, name: Any) -> None:
+def _check_redirect_field(label: str, form_class: type[forms.BaseForm], name: Any) -> None:
     """Refuse a ``redirect_field_name`` that is the name of one of the form's fields."""
-    form_class = _form_class(spec)
     if name in _declared(form_class):
         raise ImproperlyConfigured(
             f"{label}.redirect_field_name names {name!r}, a field {form_class.__name__} "
@@ -570,14 +727,13 @@ def _declared(form_class: type[forms.BaseForm]) -> dict[str, forms.Field]:
 
 
 def _check_asked_fields(
-    label: str, spec: ServiceSpec, asked: Any, server: ServerArguments | None
+    label: str, form_class: type[forms.BaseForm], asked: Any, server: ServerArguments | None
 ) -> None:
     """Refuse ``asked_fields`` naming anything but optional fields of the form."""
     if not isinstance(asked, tuple):
         raise ImproperlyConfigured(
             f"{label}.asked_fields must be a tuple of the form's field names; got {asked!r}."
         )
-    form_class = _form_class(spec)
     fields: dict[str, forms.Field] = form_class.base_fields  # ty: ignore[unresolved-attribute]
     owned = server_names(server)
     for name in asked:
@@ -630,17 +786,15 @@ def _form_class(spec: ServiceSpec) -> type[forms.BaseForm]:
 
 
 def _page_form(
-    spec: ServiceSpec, principal: Any, target: Any, served: Served, **bound: Any
+    form_class: type[forms.BaseForm],
+    spec: ServiceSpec,
+    target: Any,
+    served: Served,
+    keywords: Mapping[str, Any],
+    **bound: Any,
 ) -> forms.BaseForm:
     """The page's form, as ``_built_form`` builds it, with the binding's fields held."""
-    keywords = form_keywords(
-        spec,
-        principal,
-        pool_seeds=served.seeds,
-        target=None if target is UNSET else target,
-        call_context=served.call_context,
-    )
-    form = _built_form(spec, target, keywords, **bound)
+    form = _built_form(form_class, target, keywords, **bound)
     if spec.partial:
         form.use_required_attribute = False
     server = served.server
@@ -653,10 +807,11 @@ def _page_form(
 
 
 def _built_form(
-    spec: ServiceSpec, target: Any, keywords: Mapping[str, Any], **bound: Any
+    form_class: type[forms.BaseForm], target: Any, keywords: Mapping[str, Any], **bound: Any
 ) -> forms.BaseForm:
     """The page's form, bound by ``bound`` if given, showing ``target``'s values."""
-    form_class = _form_class(spec)
+    if not issubclass(form_class, forms.BaseModelForm) and _declares_instance(form_class):
+        bound["instance"] = None if target is UNSET else target
     if not isinstance(target, models.Model):
         return form_class(**bound, **keywords)
     if issubclass(form_class, forms.BaseModelForm) and isinstance(target, form_class._meta.model):
@@ -666,3 +821,58 @@ def _built_form(
     own = {name: value for name, value in keywords.items() if name != "initial"}
     initial = {**keywords.get("initial", {}), **model_to_dict(target, fields=names)}
     return form_class(**bound, **own, initial=initial)
+
+
+def _declares_instance(form_class: type[forms.BaseForm]) -> bool:
+    """Whether the form's ``__init__`` names ``instance``, as the kernel's bind reads it."""
+    parameter = inspect.signature(form_class.__init__).parameters.get("instance")
+    return parameter is not None and parameter.kind in _NAMED
+
+
+_NAMED = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+
+
+class _Attributes:
+    """An object read by attribute where ``%`` reads a mapping by key."""
+
+    def __init__(self, data: Any) -> None:
+        self.data = data
+
+    def __getitem__(self, name: str) -> Any:
+        try:
+            return getattr(self.data, name)
+        except AttributeError:
+            raise KeyError(name) from None
+
+
+def _check_action_keys(
+    label: str, actions: Mapping[str, ServiceSpec], form_class: type[forms.BaseForm]
+) -> None:
+    """Refuse an action named like a field of the page's form."""
+    named = sorted(frozenset(actions) & frozenset(_declared(form_class)))
+    if named:
+        raise ImproperlyConfigured(
+            f"{label}.actions names {named[0]!r}, a field {form_class.__name__} declares: a "
+            "field is posted by every submit, so it cannot say which action runs."
+        )
+
+
+def _check_form_class(
+    label: str,
+    spec: ServiceSpec,
+    form_class: type[forms.BaseForm],
+    route: Mapping[str, str | None] | tuple[str, ...] | None,
+    server: ServerArguments | None,
+) -> None:
+    """Refuse a ``form_class`` whose post the spec would not read as the form declares it."""
+    declared = spec.parameters()
+    posted = checked_page_form(label, spec.validator, form_class, declared)
+    filled = server_owned_keys(spec) | server_names(server)
+    for parameter in declared.items:
+        name = parameter.name
+        closed = isinstance(route, tuple) and name not in route
+        if parameter.required and name not in posted and name not in filled and closed:
+            raise ImproperlyConfigured(
+                f"{label}.form_class {form_class.__name__} does not post {name!r}, which the "
+                "spec requires, and neither the server nor the route fills it."
+            )

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponseBase
 from django_service_specs import (
     DEFAULT_POOL_SEEDS,
     DispatchError,
@@ -44,7 +44,7 @@ def dispatch_request(
     pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS,
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT,
     view: Any = None,
-) -> HttpResponse:
+) -> HttpResponseBase:
     """Dispatch ``spec`` for ``request`` and answer it as JSON: the function a view calls.
 
     1. **The principal is** ``request.user``, anonymous included, since the
