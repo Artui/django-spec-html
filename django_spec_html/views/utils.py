@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import json
 import math
 from abc import ABCMeta, abstractmethod
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from decimal import Decimal
 from types import MappingProxyType
-from typing import Any, ClassVar, Final, cast
+from typing import Any, ClassVar, Final, Literal, cast
 from urllib.parse import unquote
 
 from django import forms
@@ -19,6 +20,7 @@ from django.core.exceptions import (
     PermissionDenied,
     ValidationError,
 )
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.forms.utils import ErrorDict
 from django.forms.widgets import FILE_INPUT_CONTRADICTION
@@ -132,6 +134,15 @@ fragment, so the two never differ."""
 _SUCCEEDED: Final = "spec-succeeded"
 """The event ``HX-Trigger`` names on a success answered in place, for the rest of the page."""
 
+_TRIGGER_HEADERS: Final = MappingProxyType(
+    {
+        "receive": "HX-Trigger",
+        "swap": "HX-Trigger-After-Swap",
+        "settle": "HX-Trigger-After-Settle",
+    }
+)
+"""The header each ``success_trigger_timing`` sends its trigger in."""
+
 _TRIGGER_NAME: Final = "HX-Trigger-Name"
 """The ``name`` of the element an htmx 2 request was issued from: a form, or a control of its own.
 
@@ -234,6 +245,9 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
     commit_button: str | None = None
     success_message: str = ""
     redirect_field_name: str | None = None
+    success_trigger: str | Mapping[str, Any] | None = _SUCCEEDED
+    success_trigger_timing: Literal["receive", "swap", "settle"] = "receive"
+    success_refresh: bool = False
     _takes_actions: ClassVar[bool] = False
 
     @classonlymethod
@@ -406,8 +420,16 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         another = trigger != button and trigger in request.POST
         return button in request.POST and not another
 
+    def get_success_trigger(self, result: DispatchResult) -> str | Mapping[str, Any] | None:
+        """The event a success answered in place triggers: ``success_trigger`` by default."""
+        return self.success_trigger
+
     def fragment_success(self, result: DispatchResult) -> HttpResponse:
         """A success, answered to the htmx request that posted it."""
+        if self.success_refresh:
+            response = HttpResponse()
+            response["HX-Refresh"] = "true"
+            return self._triggered(response, result)
         try:
             template = select_template(
                 [_address(name, _SPEC_RESULT) for name in self.get_fragment_template_names()],
@@ -424,7 +446,21 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
             using=self.template_engine,
             content_type=self.content_type,
         )
-        response["HX-Trigger"] = _SUCCEEDED
+        return self._triggered(response, result)
+
+    def _triggered(self, response: HttpResponse, result: DispatchResult) -> HttpResponse:
+        """``response`` carrying the success's trigger, in the header its timing names."""
+        trigger = self.get_success_trigger(result)
+        if trigger is None:
+            return response
+        if not isinstance(trigger, str):
+            try:
+                trigger = json.dumps(trigger, cls=DjangoJSONEncoder)
+            except TypeError as unsent:
+                raise ImproperlyConfigured(
+                    f"{type(self).__name__}'s success trigger cannot be sent as JSON: {unsent}"
+                ) from unsent
+        response[_TRIGGER_HEADERS[self.success_trigger_timing]] = trigger
         return response
 
     def _target_context(
@@ -653,6 +689,44 @@ def _check_configuration(
             f"{label}.redirect_field_name names {redirect!r}, one of its actions: the URL to "
             "return to is posted by every submit, so every post would name that action."
         )
+    _check_success_trigger(label, cls, initkwargs)
+
+
+def _check_success_trigger(
+    label: str, cls: type[SpecPageBase], initkwargs: Mapping[str, Any]
+) -> None:
+    """Refuse a success trigger, timing or refresh the page could not send."""
+    trigger = initkwargs.get("success_trigger", cls.success_trigger)
+    if not _sendable(trigger):
+        raise ImproperlyConfigured(
+            f"{label}.success_trigger must be None, an event's name, or a mapping of event "
+            f"names to their JSON payloads; got {trigger!r}."
+        )
+    timing = initkwargs.get("success_trigger_timing", cls.success_trigger_timing)
+    if timing not in _TRIGGER_HEADERS:
+        raise ImproperlyConfigured(
+            f"{label}.success_trigger_timing must be one of "
+            f"{', '.join(map(repr, _TRIGGER_HEADERS))}; got {timing!r}."
+        )
+    refresh = initkwargs.get("success_refresh", cls.success_refresh)
+    if not isinstance(refresh, bool):
+        raise ImproperlyConfigured(f"{label}.success_refresh must be a bool; got {refresh!r}.")
+    if refresh and trigger is not None and timing != "receive":
+        raise ImproperlyConfigured(
+            f"{label} refreshes on success, so a trigger timed to {timing!r} never fires: "
+            "htmx reloads the page before any swap. Time it to 'receive'."
+        )
+
+
+def _sendable(trigger: Any) -> bool:
+    """Whether ``trigger`` is None, a name, or a mapping keyed by names."""
+    if trigger is None:
+        return True
+    if isinstance(trigger, str):
+        return bool(trigger)
+    if not isinstance(trigger, Mapping) or not trigger:
+        return False
+    return all(isinstance(name, str) and name for name in trigger)
 
 
 def check_shipped_templates(cls: type[SpecRequestBase], initkwargs: Mapping[str, Any]) -> None:
