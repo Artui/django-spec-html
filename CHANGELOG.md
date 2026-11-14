@@ -64,7 +64,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an action's key, and any `commit_button` beside `actions`: an actions page
   commits only through an action's button. A `SpecConfirmView` also refuses an
   action key equal to a `posted_arguments` name or `csrfmiddlewaretoken`, as a
-  post carrying it would name more than one action.
+  post carrying it would name more than one action. Each action's button
+  answers its own availability: GET asks every action's affordances of the
+  page's target, the context carries `unavailable_actions` (each unavailable
+  action's key to its unmet `Affordance`) and `action_buttons` (every action's
+  key beside its `Affordance` or `None`, in order), and the shipped templates
+  disable only an unavailable action's button, with its reason. `unavailable`
+  is set only when no action is available, and only then are the form's fields
+  disabled. A post naming an unavailable action is refused at 409 as before.
 - **A confirmation reads a bulk action's selection from the post.**
   `SpecConfirmView.posted_arguments`, a tuple of parameter names, is read from
   `request.POST` as a query string is, every value of an array, merged with

@@ -7,13 +7,17 @@ from django import forms
 from django.contrib.messages import get_messages
 from django.contrib.messages.storage.cookie import CookieStorage
 from django.core.exceptions import BadRequest, ImproperlyConfigured
+from django.db.models import Q
 from django.http import HttpResponse
 from django.urls import path
 from django_service_specs import (
+    Affordance,
     DispatchResult,
     FormValidator,
     Parameter,
     Parameters,
+    SelectorKind,
+    SelectorSpec,
     ServiceConflict,
     ServiceSpec,
 )
@@ -21,7 +25,8 @@ from django_service_specs import (
 from django_spec_html.views.spec_confirm_view import SpecConfirmView
 from django_spec_html.views.spec_form_set_view import SpecFormSetView
 from django_spec_html.views.spec_form_view import SpecFormView
-from tests.dispatch.utils import OPEN, Record, make_user
+from tests.dispatch.utils import OPEN, PK, Record, make_user, note_by_pk
+from tests.dispatch_app.models import Note
 from tests.http.utils import FACTORY, signed_in
 
 pytestmark = pytest.mark.django_db
@@ -213,6 +218,159 @@ class TestTheShippedTemplatesRenderOneButtonPerAction:
         assert '<button type="submit" name="archive">Archive</button>' in html
         assert '<button type="submit" name="delete">Delete</button>' in html
         assert html.count("<button") == 2
+
+
+TITLED = Affordance(code="titled", reason="Only an untitled note is published.", when=Q(title=""))
+PAUSED = Affordance(code="paused", reason="Archiving is paused.", when=lambda: False)
+CLOSED = Affordance(code="closed", reason="Saving is closed.", when=lambda: False)
+
+
+def row_spec(*affordances: Affordance) -> ServiceSpec:
+    return ServiceSpec(
+        service=Record(),
+        permissions=OPEN,
+        validator=FormValidator(PostForm),
+        instance_selector_spec=SelectorSpec(
+            kind=SelectorKind.RETRIEVE, selector=note_by_pk, reads=PK
+        ),
+        affordances=list(affordances),
+    )
+
+
+def paused_spec(*affordances: Affordance) -> ServiceSpec:
+    return ServiceSpec(service=Record(), permissions=OPEN, affordances=list(affordances))
+
+
+@pytest.fixture
+def note() -> Note:
+    return Note.objects.create(owner=make_user("bo"), title="Titled")
+
+
+def on_note(view: Any, note: Note, data: Any = None) -> Any:
+    return view(request_for(data), pk=str(note.pk))
+
+
+def rendered(response: Any) -> str:
+    return response.render().content.decode()
+
+
+def note_actions(publish: ServiceSpec, save: ServiceSpec) -> Any:
+    return SpecFormView.as_view(actions={"publish": publish, "save": save}, success_url="/done/")
+
+
+def confirm_actions(**actions: ServiceSpec) -> Any:
+    return SpecConfirmView.as_view(actions=actions, success_url="/done/")
+
+
+class TestEachActionAnswersItsOwnAvailability:
+    def test_the_form_page_disables_only_the_unavailable_action(self, note: Note) -> None:
+        response = on_note(note_actions(row_spec(TITLED), row_spec()), note)
+        html = rendered(response)
+        assert "<fieldset>" in html
+        assert '<button type="submit" name="publish" disabled>Publish</button>' in html
+        assert '<button type="submit" name="save">Save</button>' in html
+        assert 'data-action="save"' not in html
+        assert response.context_data["unavailable_actions"] == {"publish": TITLED}
+        assert "unavailable" not in response.context_data
+
+    def test_the_disabled_action_shows_its_reason_once(self, note: Note) -> None:
+        html = rendered(on_note(note_actions(row_spec(TITLED), row_spec()), note))
+        paragraph = (
+            '<p data-action="publish" data-code="titled">Only an untitled note is published.</p>'
+        )
+        assert paragraph in html
+        assert html.count(TITLED.reason) == 1
+
+    def test_the_buttons_follow_the_actions_order(self, note: Note) -> None:
+        response = on_note(note_actions(row_spec(TITLED), row_spec()), note)
+        assert response.context_data["action_buttons"] == [("publish", TITLED), ("save", None)]
+
+    def test_an_untitled_note_leaves_every_action_available(self, note: Note) -> None:
+        note.title = ""
+        note.save()
+        response = on_note(note_actions(row_spec(TITLED), row_spec()), note)
+        assert "unavailable_actions" not in response.context_data
+        assert response.context_data["action_buttons"] == [("publish", None), ("save", None)]
+        assert " disabled" not in rendered(response)
+
+    def test_a_post_running_the_available_action_succeeds(self, note: Note) -> None:
+        publish, save = row_spec(TITLED), row_spec()
+        response = on_note(note_actions(publish, save), note, {"title": "Hi", "save": ""})
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert (calls(publish), len(calls(save))) == ([], 1)
+
+    def test_a_post_naming_the_unavailable_action_is_refused(self, note: Note) -> None:
+        publish, save = row_spec(TITLED), row_spec()
+        response = on_note(note_actions(publish, save), note, {"title": "Hi", "publish": ""})
+        assert response.status_code == 409
+        assert response.context_data["code"] == "titled"
+        assert calls(publish) == calls(save) == []
+
+    def test_the_confirm_page_disables_only_the_unavailable_action(self) -> None:
+        response = confirm_actions(archive=paused_spec(PAUSED), delete=paused_spec())(request_for())
+        assert response.context_data["unavailable_actions"] == {"archive": PAUSED}
+        assert "unavailable" not in response.context_data
+        html = rendered(response)
+        assert '<button type="submit" name="archive" disabled>Archive</button>' in html
+        assert '<button type="submit" name="delete">Delete</button>' in html
+        assert 'data-action="delete"' not in html
+        assert '<p data-action="archive" data-code="paused">Archiving is paused.</p>' in html
+        assert html.count(PAUSED.reason) == 1
+
+    def test_a_confirmation_naming_the_unavailable_action_is_refused(self) -> None:
+        archive, delete = paused_spec(PAUSED), paused_spec()
+        response = confirm_actions(archive=archive, delete=delete)(request_for({"archive": ""}))
+        assert response.status_code == 409
+        assert calls(archive) == calls(delete) == []
+
+
+class TestEveryActionUnavailable:
+    def test_the_form_page_disables_the_form(self, note: Note) -> None:
+        response = on_note(note_actions(row_spec(TITLED), row_spec(CLOSED)), note)
+        context = response.context_data
+        assert context["unavailable"] is TITLED
+        assert context["unavailable_actions"] == {"publish": TITLED, "save": CLOSED}
+        html = rendered(response)
+        assert "<fieldset disabled>" in html
+        assert '<button type="submit" name="save" disabled>Save</button>' in html
+        assert (html.count(TITLED.reason), html.count(CLOSED.reason)) == (1, 1)
+
+    def test_the_confirm_page_disables_every_button(self) -> None:
+        view = confirm_actions(archive=paused_spec(PAUSED), delete=paused_spec(CLOSED))
+        response = view(request_for())
+        assert response.context_data["unavailable"] is PAUSED
+        html = rendered(response)
+        assert html.count(" disabled>") == 2
+        assert (html.count(PAUSED.reason), html.count(CLOSED.reason)) == (1, 1)
+
+    def test_an_action_keyed_items_renders(self, note: Note) -> None:
+        view = SpecFormView.as_view(
+            actions={"items": row_spec(TITLED), "save": row_spec()}, success_url="/done/"
+        )
+        html = rendered(on_note(view, note))
+        assert '<button type="submit" name="items" disabled>Items</button>' in html
+        assert '<p data-action="items" data-code="titled">' in html
+
+
+class TestASingleSpecPageIsUnchanged:
+    def test_the_form_page(self, note: Note) -> None:
+        view = SpecFormView.as_view(spec=row_spec(TITLED), success_url="/done/")
+        response = on_note(view, note)
+        context = response.context_data
+        assert context["unavailable"] is TITLED
+        assert "unavailable_actions" not in context
+        assert "action_buttons" not in context
+        html = rendered(response)
+        assert '<p data-code="titled">Only an untitled note is published.</p>' in html
+        assert "<fieldset disabled>" in html
+
+    def test_the_confirm_page(self) -> None:
+        view = SpecConfirmView.as_view(spec=paused_spec(PAUSED), success_url="/done/")
+        response = view(request_for())
+        assert "unavailable_actions" not in response.context_data
+        html = rendered(response)
+        assert '<p data-code="paused">Archiving is paused.</p>' in html
+        assert '<button type="submit" disabled>Confirm</button>' in html
 
 
 def refused(view_class: type[Any], **initkwargs: Any) -> str:

@@ -762,14 +762,20 @@ whose post the spec would refuse at 409:
   every condition is met, `unavailable` is absent** from the context, not
   `None`. The fragment renders from the same context, so an `hx-get` that
   loads the form carries it too.
+- **On a page serving [`actions`](#one-form-several-operations), each
+  action's conditions are asked for its own button**: `unavailable_actions`
+  names the unavailable ones, `action_buttons` answers every one, and
+  `unavailable` is set only when none is available.
 
 **Every callable condition is asked twice on a GET with a row**: once alone,
 then again with the row's conditions, since the kernel's `enforce_affordances`
 asks them all as dispatch does. Each seed is resolved twice as well, once for
 the target's lookup and once for the affordances' pool, and once more for
 each of the class-level check and the form's `form_kwargs` that
-[names it](#what-the-request-carries). Write conditions and seed resolvers
-that may be asked more than once and answer the same.
+[names it](#what-the-request-carries). On a page serving `actions`, every
+action's conditions are asked so, each action's row conditions in a query
+of their own. Write conditions and seed resolvers that may be asked more
+than once and answer the same.
 
 The callable conditions are asked first, without a row, so where both kinds
 are unmet and the row's is declared first, the page names the callable while
@@ -1096,13 +1102,31 @@ spec it runs**, and replaces `spec`:
   dispatched by, and the one a refused post's page is rendered with.
 - **GET renders the first action's spec**: the page, its admission, its
   target and its form are the first action's.
+- **Each action's button answers its own availability.** GET asks every
+  action's [affordances](#an-operation-that-is-unavailable), each of the
+  target the first action found, so a condition on the row is asked of the
+  row the page shows. The context carries `unavailable_actions`, each
+  unavailable action's key mapped to its first unmet `Affordance`, absent
+  when every action is available, and `action_buttons`, every action's key
+  beside that `Affordance` or `None`, in the order `actions` lists them.
+  `unavailable` is set only when no action is available: the first action's
+  `Affordance`. So a titled note's "Publish" can be unavailable while its
+  "Save" is not, and only "Publish" is refused. A post naming an
+  unavailable action is refused at 409 by that action's own dispatch, as on
+  a page with one spec.
 - **The success is page-wide.** `success_url` and `success_message` serve
   every action. `get_success_url(result)` and `get_success_message(result)`
   read which one ran as `self.action_name`, the key, set before the post is
   dispatched; it is `None` on GET and on a page without `actions`.
 - **The shipped templates render one submit button per action**, named by
   its key and labelled with it capitalised, in the order `actions` lists
-  them, in place of the one button. A project's own template renders its own.
+  them, in place of the one button. An unavailable action's button is
+  disabled and its reason shown, in a paragraph carrying its key as
+  `data-action` and its `code` as `data-code`; the others stay usable, and
+  the form's fields are disabled only when no action is available. They loop
+  over `action_buttons` rather than `unavailable_actions.items`, which an
+  action keyed `items` would shadow. A project's own template renders its
+  own.
 
 `SpecConfirmView` takes `actions` the same way, every action a spec with no
 Validator: a confirmation's "Archive" and "Delete" buttons are one page.

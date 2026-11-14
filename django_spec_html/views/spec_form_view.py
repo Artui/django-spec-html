@@ -310,8 +310,10 @@ class SpecFormView(SpecPageBase):
     and, with none of those unmet and a row to ask about, the conditions on
     the row, as dispatch asks them. The first unmet ``Affordance`` is in the
     context as ``unavailable``, for a template to read its ``code`` and
-    ``reason``; it is absent when every condition is met. The POST is
-    unchanged, and dispatch's 409 stays the authority. **A refused post's
+    ``reason``; it is absent when every condition is met. On a page serving
+    ``actions``, each action's are asked, of the target the first action
+    found, and ``unavailable`` is set only when no action is available
+    (below). The POST is unchanged, and dispatch's 409 stays the authority. **A refused post's
     context carries** ``code``, the ``ActionUnavailable``'s, for a refusal
     carrying one, as ``error_response`` puts it in the JSON body; it is
     absent for every other.
@@ -383,6 +385,19 @@ class SpecFormView(SpecPageBase):
     button per action, named by its key. Every action is checked as ``spec``
     is, and validated by a ``FormValidator`` of one form class.
 
+    **Each action's button answers its own availability.** GET asks every
+    action's affordances, as above. The context carries
+    ``unavailable_actions``, each unavailable action's key mapped to its
+    first unmet ``Affordance``, absent when every action is available, and
+    ``action_buttons``, every action's key and that ``Affordance`` or
+    ``None``, in ``actions`` order, as pairs a template can loop over (an
+    action keyed ``items`` would shadow a mapping's ``items``). The shipped
+    template disables an unavailable action's button and shows its reason
+    beside its key, and the others stay usable. ``unavailable`` is the first
+    action's ``Affordance`` only when no action is available, and then the
+    form's fields are disabled too. A post naming an unavailable action is
+    refused at 409 by its own dispatch, as on a page with one spec.
+
     **A form over any Validator.** ``form_class`` names the form a page
     renders for a spec whose Validator is not a ``FormValidator``. It is
     built as above, with ``get_form_kwargs()`` in place of ``form_kwargs``,
@@ -420,7 +435,8 @@ class SpecFormView(SpecPageBase):
             ``None``, the default, renders the ``FormValidator``'s.
         actions: The operations served, by the name of the submit button that
             runs each: a non-empty mapping, in place of ``spec``. ``None`` by
-            default.
+            default. Each one's affordances are asked on GET, for its own
+            button.
         action_name: The key of the action a committing post runs, set before
             it is dispatched, for the success hooks to read; ``None`` on GET,
             on a post that does not commit, and on a page without ``actions``.

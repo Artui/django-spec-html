@@ -55,7 +55,9 @@ docs/examples/spec_confirm.py:urls
 **GET** renders `template_name` with the context every page builds - `view`,
 `spec`, `target`, a set's `target_count` and `target_counted_at`,
 `target_display` on a page that sets `display_target`, and `unavailable`
-when an affordance is not met - **and no `form`**. A key with nothing to
+when an affordance is not met, or on a page serving `actions`
+`unavailable_actions` and `action_buttons`, each action's own answer - **and
+no `form`**. A key with nothing to
 hold is absent, as on every page, so a template's `{% if form %}` is false
 rather than `{{ form }}` rendering `None`. The template renders its own
 `<form method="post">`, the CSRF token and the submit button:
@@ -116,6 +118,10 @@ seed or `server_arguments` fills, nor one nobody declared.
 `refreshed` in its context. A page with [`actions`](pages.md#one-form-several-operations)
 takes no `commit_button`: `as_view()` refuses the pair, and an action keyed like a
 `posted_arguments` name or `csrfmiddlewaretoken`, which every post carries.
+**Each action's button answers its own availability**: the shipped template
+disables an unavailable action's button and shows its reason, the others stay
+usable, and a post naming the unavailable one is refused at 409, as
+[on a form page](pages.md#one-form-several-operations).
 
 ### A bulk action over ticked rows
 

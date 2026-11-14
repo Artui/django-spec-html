@@ -302,8 +302,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         except InvalidArguments as refused:
             raise BadRequest(str(refused.detail)) from refused
         pool = call_pool(principal, served)
-        unavailable = _unavailable(spec, target, served, pool)
-        context: dict[str, Any] = {} if unavailable is None else {"unavailable": unavailable}
+        context = _availability(self.actions, spec, target, served, pool)
         form = self._form(spec, principal, target, served, **bound)
         if bound:
             context["refreshed"] = True
@@ -938,6 +937,27 @@ def with_binding(
 def call_pool(principal: Any, served: Served) -> dict[str, Any]:
     """The pool the page's affordances and its display read, built from the call's own seeds."""
     return seeded_pool(user=principal, seeds=served.seeds, call_context=served.call_context)
+
+
+def _availability(
+    actions: Mapping[str, ServiceSpec] | None,
+    spec: ServiceSpec,
+    target: Any,
+    served: Served,
+    pool: dict[str, Any],
+) -> dict[str, Any]:
+    """``unavailable``, on an actions page only when no action is available, and each action's."""
+    if actions is None:
+        unavailable = _unavailable(spec, target, served, pool)
+        return {} if unavailable is None else {"unavailable": unavailable}
+    buttons = [(name, _unavailable(each, target, served, pool)) for name, each in actions.items()]
+    unmet = {name: why for name, why in buttons if why is not None}
+    context: dict[str, Any] = {"action_buttons": buttons}
+    if unmet:
+        context["unavailable_actions"] = unmet
+    if len(unmet) == len(buttons):
+        context["unavailable"] = buttons[0][1]
+    return context
 
 
 def _unavailable(

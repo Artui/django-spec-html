@@ -78,9 +78,10 @@ class SpecConfirmView(SpecPageBase):
     ``django_spec_html/spec_confirm.html`` by default, which this package
     ships, with its button in ``django_spec_html/spec_confirm_fragment.html``.
     It renders the target pane, an unmet affordance's reason with the button
-    disabled, a refused post's ``errors`` or a question's message alone, and
-    the button, posting ``commit_button``'s name where one is set, and the
-    URL to return to as a hidden input where the view reads one. Found,
+    disabled, each action's own on a page serving ``actions``, a refused
+    post's ``errors`` or a question's message alone, and the button,
+    posting ``commit_button``'s name where one is set, and the URL to return
+    to as a hidden input where the view reads one. Found,
     refused at ``as_view()`` and overridden as ``SpecFormView``'s is.
 
     **POST** dispatches with the route's kwargs, read by ``route_kwargs`` and
@@ -107,7 +108,11 @@ class SpecConfirmView(SpecPageBase):
     "Archive" and a "Delete" button on one page, every action a spec with no
     Validator and checked as ``spec`` is. A post naming no action or several
     is a 400, GET renders the first action's spec, and the success hooks read
-    ``self.action_name``. ``as_view()`` refuses ``actions`` beside a
+    ``self.action_name``. **Each action's button answers its own
+    availability**, in ``unavailable_actions`` and ``action_buttons`` as on
+    ``SpecFormView``: the shipped template disables an unavailable action's
+    button and shows its reason, and the others stay usable; ``unavailable``
+    is set only when no action is. ``as_view()`` refuses ``actions`` beside a
     ``commit_button``: an actions page commits only through an action's button,
     and an action keyed like a ``posted_arguments`` name or ``csrfmiddlewaretoken``,
     which a post carries whichever button it uses.
@@ -169,7 +174,8 @@ class SpecConfirmView(SpecPageBase):
             ``actions`` is set.
         actions: The operations served, by the name of the button that runs
             each, every one declaring no Validator: a non-empty mapping, in
-            place of ``spec``. ``None`` by default.
+            place of ``spec``. ``None`` by default. Each one's affordances are
+            asked on GET, for its own button.
         action_name: The key of the action a committing post runs, for the
             success hooks to read; ``None`` without one.
         template_name: The page's template, as for any Django template view:
