@@ -997,7 +997,7 @@ def rename(*, instance: Note, data: Rename) -> Note:
     return instance
 
 
-rename_spec = ServiceSpec(
+spec = ServiceSpec(
     service=rename,
     permissions=[Unrestricted()],
     validator=DataclassValidator(Rename),
@@ -1006,12 +1006,12 @@ rename_spec = ServiceSpec(
 
 
 def declared(**page_kwargs: Any) -> Any:
-    action = SpecAction("rename", rename_spec, "Rename", "pk", page_kwargs)
+    action = SpecAction("rename", spec, "Rename", "pk", page_kwargs)
     return type("Declared", (SpecActionsMixin, admin.ModelAdmin), {"spec_actions": (action,)})
 
 
 @pytest.fixture
-def form_class_urlconf(settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def urlconf(settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     site = admin.AdminSite(name="form_class_admin")
     site.register(Note, declared(form_class=RenameForm))
     module = types.ModuleType("form_class_urls")
@@ -1020,7 +1020,7 @@ def form_class_urlconf(settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     settings.ROOT_URLCONF = "form_class_urls"
 
 
-@pytest.mark.usefixtures("form_class_urlconf")
+@pytest.mark.usefixtures("urlconf")
 class TestAnActionOverADataclassValidator:
     def test_it_renders_the_form_page(self, editor: Any, note: Note) -> None:
         shown = client(editor).get(f"/admin/dispatch_app/note/{note.pk}/actions/rename/")
