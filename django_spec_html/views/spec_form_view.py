@@ -262,6 +262,14 @@ class SpecFormView(SpecPageBase):
     middleware it is skipped, and never raises ``MessageFailure``. A refusal,
     a confirmation page and a post that does not commit send none.
 
+    **A spec presenting a file**, through the kernel's ``FilePresenter``,
+    answers its success with the file, built as ``SpecSelectorView`` builds
+    one: no redirect, no ``HX-Redirect`` and no success message. A ``None``
+    result is answered as any success. ``as_view()`` refuses a file spec
+    declared ``many``. The context carries ``presents_file`` where the spec,
+    or any action, presents a file, and the shipped form renders
+    ``hx-boost="false"`` for it, so the browser posts it natively.
+
     **The request is read through the same attributes and hooks as**
     ``SpecView``**'s**, checked by the same code in ``http/utils.py``:
     ``route_kwargs`` says which URL kwargs fill which parameters;
@@ -469,6 +477,9 @@ class SpecFormView(SpecPageBase):
             ``django.contrib.messages``, formatted by
             ``get_success_message`` with the form's cleaned data. Empty by
             default, which sends none.
+        as_attachment: Whether a spec presenting a file answers its success
+            as a download, the default, or ``inline``, for a browser to show
+            it in place.
     """
 
     template_name = "django_spec_html/spec_form.html"

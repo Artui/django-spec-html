@@ -1316,3 +1316,38 @@ class AddBookThenSayWhich(SpecFormView):
 - **A refusal, a confirmation page and a post that does not commit send
   none.** The message is sent once the operation has run.
 - An empty message, the default, sends nothing.
+
+## A spec that answers a file
+
+**A spec whose presenter is the kernel's `FilePresenter` answers its success
+with the file**, not a redirect: an export, a report, a signed PDF. The page
+builds the response as [the selector page](selectors.md) builds a file's, a
+`FileResponse`, or a `StreamingHttpResponse` for an iterable of bytes, with
+`Content-Disposition: attachment` naming the file. `as_attachment = False`
+answers `inline`, for a browser to show a PDF in place.
+
+```python
+export_spec = ServiceSpec(
+    service=export_minutes,
+    permissions=(IsAuthenticated,),
+    validator=FormValidator(ExportForm),
+    presenter=FilePresenter("text/csv", filename="minutes.csv", render=as_csv),
+)
+
+path("minutes/export/", SpecFormView.as_view(spec=export_spec, success_url="/minutes/"))
+```
+
+- **No success message and no redirect.** The file is the answer, so
+  `success_message`, `success_url` and the way back are not read on a success.
+  A refusal is answered as on any page.
+- **A `None` result is answered as any success**, the redirect and the
+  message, for a spec the kernel lets answer nothing (`allow_none`).
+- **The shipped form is posted natively.** The context carries
+  `presents_file` where the spec, or any of the page's actions, presents a
+  file, and the shipped form and confirmation render `hx-boost="false"` for
+  it, so a `base.html` that boosts the page does not turn the post into an
+  htmx request, which cannot save a download. A template of the project's own
+  reads the same key; under htmx the file is answered all the same, with no
+  `HX-Redirect` and no trigger.
+- `as_view()` refuses a file spec the kernel's `file_output` refuses, such as
+  one declared `many`: a list of files has no answer.

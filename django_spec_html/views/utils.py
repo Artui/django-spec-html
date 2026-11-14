@@ -53,6 +53,7 @@ from django_service_specs import (
     DispatchError,
     DispatchResult,
     FieldAudience,
+    FileResult,
     FormValidator,
     Grant,
     InvalidArguments,
@@ -79,6 +80,8 @@ from django_service_specs import (
     coerce_flat,
     dispatch,
     enforce_affordances,
+    file_output,
+    present,
     project_payload,
     resolve_seeds,
     resolve_target,
@@ -94,6 +97,7 @@ from django_spec_html.http.utils import (
     checked_binding,
     checked_seeds,
     field_map,
+    file_response,
     html_call_context,
     refusal_outcome,
     refusal_status,
@@ -250,6 +254,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
     success_trigger: str | Mapping[str, Any] | None = _SUCCEEDED
     success_trigger_timing: Literal["receive", "swap", "settle"] = "receive"
     success_refresh: bool = False
+    as_attachment: bool = True
     _takes_actions: ClassVar[bool] = False
 
     @classonlymethod
@@ -306,7 +311,7 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         context.update(self._target_context(spec, principal, target, served, pool))
         return self._render_page(form, bool(bound), **context)
 
-    def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+    def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
         """Dispatch the posted form: a redirect on success, the form re-rendered on a refusal."""
         if not self.commits(request):
             return self._page(request, kwargs, data=request.POST, files=request.FILES)
@@ -379,14 +384,20 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
                 requested=requested,
                 **context,
             )
+        presented = present(spec, result) if file_output(spec) is not None else None
+        if isinstance(presented, FileResult):
+            return file_response(presented, as_attachment=self.as_attachment)
         messages.success(request, self.get_success_message(result), fail_silently=True)
         if self.wants_fragment(request):
             return self.fragment_success(result)
         return HttpResponseRedirect(self.get_redirect_url() or self.get_success_url(result))
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
-        """Django's context, with the ``spec`` served and the way back."""
+        """Django's context: the ``spec`` served, whether a post answers a file, the way back."""
         kwargs.setdefault("spec", self.served_spec())
+        specs = [self.served_spec()] if self.actions is None else self.actions.values()
+        if any(file_output(each) is not None for each in specs):
+            kwargs.setdefault("presents_file", True)
         way_back = self.get_redirect_url()
         if way_back:
             kwargs.setdefault("redirect_field_name", self.redirect_field_name)
@@ -660,6 +671,7 @@ def _check_configuration(
                 f"got {type(spec).__name__}."
             )
         cls._check_spec(named, spec)
+        file_output(spec)
         if shown:
             check_display(named, spec)
     redirects = initkwargs.get("get_success_url", cls.get_success_url)
