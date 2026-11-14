@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **An admin action over any Validator renders a form.** A `SpecAction` whose
+  `page_kwargs` carry a `form_class` is served by the admin's form page
+  whatever its spec's Validator, such as a `DataclassValidator` or a
+  `PydanticValidator`, and every `form_class` check of `SpecFormView.as_view()`
+  applies when the admin is registered. Without `form_class` a spec with a
+  Validator other than a `FormValidator` is refused as before.
 - **A form page over any Validator.** `SpecFormView.form_class` names the
   form a page renders for a spec whose Validator is not a `FormValidator`,
   such as a `DataclassValidator` or a `PydanticValidator`. The form renders
