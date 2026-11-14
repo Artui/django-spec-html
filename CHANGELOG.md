@@ -40,6 +40,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `hx-swap-oob="true"`; at `many_max_length` it is a 204 with no body. An add
   aimed anywhere else, with htmx or without, is the formset again with one more
   form, as before.
+- **The formset page edits an existing set.** `SpecFormSetView` renders the
+  Validator's `formset_class` where it declares one, so the rule over the
+  whole set, its `clean()`, is declared once and its refusal is the
+  formset's non-form errors. A `BaseModelFormSet` there is built with
+  `queryset=` the collection the spec's `collection_selector_spec` resolves:
+  GET renders one prefilled form a row, each carrying its key, and
+  `INITIAL_FORMS` follows the set; a post sends each row's form whole, so the
+  service reads an update, a create (no key) and a deleted row (its key and
+  `DELETE` true), and a row left out is left alone. An extra form with only
+  its `DELETE` box ticked sends no row. `as_view()` refuses a model formset
+  on a spec with no `collection_selector_spec`, and still refuses
+  `display_target`. A page whose Validator declares no `formset_class` is as
+  before.
 
 ### Changed
 - **The kernel floor is 0.33.0.** Its `FormValidator` binds the form to a

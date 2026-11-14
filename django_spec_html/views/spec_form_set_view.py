@@ -5,7 +5,9 @@ from typing import Any, Final, cast
 
 from django import forms
 from django.core.exceptions import ImproperlyConfigured
-from django.forms.formsets import TOTAL_FORM_COUNT, BaseFormSet
+from django.db.models import Model, QuerySet
+from django.forms.formsets import DELETION_FIELD_NAME, TOTAL_FORM_COUNT, BaseFormSet
+from django.forms.models import BaseModelFormSet
 from django.http import HttpResponse
 from django.template.loader import get_template
 from django_service_specs import (
@@ -47,9 +49,10 @@ class SpecFormSetView(SpecPageBase):
     A ``many`` spec takes a list of rows under its ``many_argument``, and the
     kernel validates the call **per row**: the shape check and the Validator
     run on each row, and a refusal is addressed by the row's index. So the
-    page is a formset of the spec's form class, and the formset is this
-    page's alone: ``FormValidator`` never sees one. The spec's Validator must
-    be a
+    page is a formset of the spec's form class: the Validator's
+    ``formset_class`` where it declares one, so the rule over the whole set
+    is declared once, else one ``formset_factory`` builds. The spec's
+    Validator must be a
     [`FormValidator`][django_service_specs.adapters.forms.form_validator.FormValidator]:
 
         urlpatterns = [
@@ -80,10 +83,21 @@ class SpecFormSetView(SpecPageBase):
     ``hx-swap="beforeend"``, inert without htmx. No target pane. Found,
     refused at ``as_view()`` and overridden as ``SpecFormView``'s is.
 
-    **No target pane.** A ``many`` spec declares no target selector, which the
-    kernel refuses when the spec is built, so there is no row or set to
-    show: the context carries no ``target``, ``target_count`` or
-    ``target_display``, and ``display_target`` is refused at ``as_view()``.
+    **No target pane.** A ``many`` spec's rows are its forms, so
+    ``display_target`` is refused at ``as_view()`` and the context carries no
+    ``target_display``. A spec with no ``collection_selector_spec`` has no set
+    either, and no ``target`` or ``target_count``.
+
+    **An existing set is edited by a model formset.** When the Validator's
+    ``formset_class`` is a ``BaseModelFormSet``, the page builds it with
+    ``queryset=`` the collection target the spec's
+    ``collection_selector_spec`` resolves on GET, one prefilled form a row,
+    each posting its key, then the class's own ``extra`` blank forms; the
+    management form's ``INITIAL_FORMS`` is the set's count. A post reads
+    each initial form whole, its ``DELETE`` box with it, so a deleted row
+    reaches the service with its key and ``DELETE`` true, and a row left
+    out is left alone. ``as_view()`` refuses a model formset on a spec with
+    no ``collection_selector_spec``.
 
     **Every form is built as the Validator builds a row's**, with what its
     ``form_kwargs`` answers, through the kernel's ``form_keywords``: asked
@@ -101,7 +115,8 @@ class SpecFormSetView(SpecPageBase):
     keys are the formset's, and never become arguments, as the CSRF token
     never does. **An extra form left unchanged sends no row**: the form
     Django would let through empty is not sent, so a page offering three
-    blank forms posts only those a person filled in. The first
+    blank forms posts only those a person filled in, and an extra form with
+    its ``DELETE`` box ticked sends none, as Django's formset skips it. The first
     ``many_min_length`` forms are sent however they are left, so the
     kernel refuses a row left blank where the spec requires it. A post whose
     management form is missing or tampered with is refused before
@@ -172,7 +187,8 @@ class SpecFormSetView(SpecPageBase):
             ``get_success_url``.
         extra: How many blank forms the page offers beside those the spec's
             ``many_min_length`` requires: a non-negative int, 1 by default,
-            checked at ``as_view()``. Django's ``formset_factory`` reads it.
+            checked at ``as_view()``. Django's ``formset_factory`` reads it;
+            a Validator's ``formset_class`` brings its own.
         add_button: The ``name`` of the submit button whose post re-renders
             the page with one more form: ``None``, the default, offers none;
             otherwise a non-empty string, beside a ``commit_button`` it is
@@ -204,14 +220,20 @@ class SpecFormSetView(SpecPageBase):
                 f"{label} posts a list of rows, and its spec takes one: serve a spec that is "
                 "not many from SpecFormView."
             )
+        edits = _model_formset(spec.validator.formset_class)
+        if edits is not None and spec.collection_selector_spec is None:
+            raise ImproperlyConfigured(
+                f"{label} renders {edits.__qualname__}, a model formset, over the rows "
+                "its spec's collection_selector_spec resolves, and the spec declares none."
+            )
 
     @classmethod
     def _check_page(cls, label: str, spec: ServiceSpec, initkwargs: Mapping[str, Any]) -> None:
         """Refuse a target display, ``extra``, ``add_button``, or a button under the prefix."""
         if initkwargs.get("display_target", cls.display_target):
             raise ImproperlyConfigured(
-                f"{label} serves a many spec, which declares no target selector, so there is no "
-                "target to display: leave display_target off."
+                f"{label} serves a many spec, whose set the formset itself shows, one form a "
+                "row: leave display_target off."
             )
         extra = initkwargs.get("extra", cls.extra)
         if not isinstance(extra, int) or isinstance(extra, bool) or extra < 0:
@@ -251,6 +273,9 @@ class SpecFormSetView(SpecPageBase):
         data = bound.get("data")
         if data is not None and self.add_button in data:
             bound = {**bound, "data": _one_more_form(formset_class, data)}
+        edits = _model_formset(formset_class)
+        if edits is not None:
+            bound["queryset"] = _rows(edits, target)
         return formset_class(**bound, form_kwargs=dict(keywords))
 
     def _arguments(
@@ -376,13 +401,30 @@ def _check_add_button(label: str, add: Any, commit: Any) -> None:
 
 
 def _formset_class(spec: ServiceSpec, extra: int) -> type[BaseFormSet]:
-    """A formset of the spec's form, bounded by the spec's own list."""
+    """The validator's ``formset_class``, else a formset of its form bounded by the spec's list."""
+    validator = cast("FormValidator", spec.validator)
+    if validator.formset_class is not None:
+        return validator.formset_class
     return forms.formset_factory(
-        cast("FormValidator", spec.validator).form_class,
+        validator.form_class,
         extra=extra,
         min_num=spec.many_min_length,
         max_num=spec.many_max_length,
     )
+
+
+def _model_formset(formset_class: type[BaseFormSet] | None) -> type[BaseModelFormSet] | None:
+    """``formset_class`` where it is a model formset, which edits the call's collection."""
+    if formset_class is not None and issubclass(formset_class, BaseModelFormSet):
+        return formset_class
+    return None
+
+
+def _rows(formset_class: type[BaseModelFormSet], target: Any) -> QuerySet[Any]:
+    """The collection target the forms edit, or no row where the post's target went unresolved."""
+    if isinstance(target, QuerySet):
+        return target
+    return cast("type[Model]", formset_class.model)._default_manager.none()
 
 
 def _one_more_form(formset_class: type[BaseFormSet], data: Any) -> Any:
@@ -404,8 +446,17 @@ def _rows_parameters(spec: ServiceSpec, parameters: Parameters) -> Parameters:
 
 
 def _sent(formset: BaseFormSet) -> list[forms.BaseForm]:
-    """The forms whose rows a post sends, in order: all but an unchanged extra form."""
-    return [form for form in formset.forms if not (form.empty_permitted and not form.has_changed())]
+    """The forms whose rows a post sends, in order: all but an extra form unchanged or deleted."""
+    return [
+        form
+        for form in formset.forms
+        if not (form.empty_permitted and (not form.has_changed() or _marked(form)))
+    ]
+
+
+def _marked(form: forms.BaseForm) -> bool:
+    """Whether ``form`` posts its ``DELETE`` box ticked, read before it is cleaned."""
+    return DELETION_FIELD_NAME in form.fields and bool(form[DELETION_FIELD_NAME].data)
 
 
 def _row_arguments(form: forms.BaseForm, rows_parameters: Parameters) -> dict[str, Any]:

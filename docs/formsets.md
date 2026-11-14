@@ -56,7 +56,7 @@ own with its errors, through `django_spec_html/spec_form_set_row.html` inside
 `commit_button`'s name where one is set, and the `add_button`, which skips the
 browser's checks, since its post commits nothing. The add button's htmx
 attributes, [below](#adding-a-row), are its only ones, inert without htmx. It has no target pane: a
-`many` spec has no target.
+`many` spec's rows are its forms.
 
 ## The formset
 
@@ -83,17 +83,19 @@ visitor above gets Django's own `PermissionDenied`.
   `max_num` are the spec's `many_min_length` and `many_max_length`, never
   attributes of the view, so no second declaration can drift from the first.
   The formset validates neither: the list's length is the kernel's to refuse,
-  in its words.
+  in its words. A Validator's `formset_class` is used as it is declared,
+  its own `extra`, `min_num` and `max_num` with it, [below](#editing-a-set).
 - **Every form is built as the Validator builds a row's**, with what its
   `form_kwargs` answers, through the kernel's `form_keywords`, as
   [the single page builds its form](pages.md#a-form-that-takes-keywords): asked
   once per request, with the principal, the request's seeds and its call
   context. A `many` spec has no target to hand it, so the answer is the same
   for every row.
-- **No target pane.** A `many` spec declares no target selector - the kernel
-  refuses one when the spec is built - so the context carries no `target`,
-  `target_count` or `target_display`, and `display_target` is refused at
-  `as_view()`.
+- **No target pane.** A `many` spec's rows are its forms, so the context
+  carries no `target_display` and `display_target` is refused at
+  `as_view()`. A spec with no `collection_selector_spec` has no set either,
+  and no `target` or `target_count`; [a set edited](#editing-a-set) puts
+  both in the context.
 
 ## The post
 
@@ -180,6 +182,46 @@ more form, and so is an add without htmx. A project's own template that wants
 the row answer gives its rows that `id` and its add button that target, and
 overrides the row template as any shipped template is overridden.
 
+## Editing a set
+
+**The page builds the Validator's own formset.** A `FormValidator` declaring
+a `formset_class` validates the call's rows as that formset, its `clean()`
+among them, on every transport; the page renders the same class, so the rule
+over the whole set is declared once. A refusal from that `clean()` is the
+formset's `non_form_errors()`, as any refusal of the list as a whole is.
+
+**A model formset edits the spec's collection.** A `many` spec may declare a
+`collection_selector_spec`, the set its rows edit, and a
+`BaseModelFormSet` as the Validator's `formset_class` edits it:
+
+```python
+--8<--
+docs/examples/spec_form_set_edit.py:spec
+--8<--
+```
+
+```python
+--8<--
+docs/examples/spec_form_set_edit.py:urls
+--8<--
+```
+
+- **GET renders one prefilled form a row**, the collection the selector
+  resolves for the principal handed to the formset as `queryset=`, then the
+  class's own `extra` blank forms. Each row's form carries its key as a
+  hidden input and, under `can_delete`, a `DELETE` box; the management
+  form's `INITIAL_FORMS` is the set's count.
+- **A post sends each row's form whole**, its key with it, and the service
+  reads the rows the kernel cleaned: the key as its row for an update,
+  `None` for a new row, and `DELETE` true for a row a person deleted, which
+  is sent with its values rather than dropped. A row the post leaves out is
+  left alone. A key outside the set is refused on its own form.
+- **An extra form with its `DELETE` box ticked sends no row**, as Django's
+  formset skips it, filled in or not.
+- **A model formset needs the collection.** `as_view()` refuses one on a
+  spec with no `collection_selector_spec`, which would otherwise build every
+  row of the model.
+
 ## A success
 
 A success redirects to `success_url`, or answers `HX-Redirect` or the result
@@ -195,7 +237,8 @@ the operation returned, under `result.value`.
 ## What `as_view()` refuses
 
 When the URLconf is imported: a spec whose Validator is not a `FormValidator`;
-a spec that is not `many`; a view displaying its target; an `extra` that is
+a spec that is not `many`; a Validator's model formset on a spec with no
+`collection_selector_spec`; a view displaying its target; an `extra` that is
 not a non-negative int; an `add_button` that is not a button's name, is set
 without a `commit_button`, or is the `commit_button`; a `redirect_field_name`
 that is either button; and either button or the `redirect_field_name` named

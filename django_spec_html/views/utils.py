@@ -712,7 +712,7 @@ def _found(
     route = coerced_route(parameters, url_kwargs, served, not_found=not_found)
     arguments = with_binding(spec, route, served)
     try:
-        if spec.many:
+        if spec.many and spec.collection_selector_spec is None:
             if ask_scope:
                 authorize_scope(
                     spec,
