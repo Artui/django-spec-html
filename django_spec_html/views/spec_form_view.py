@@ -92,7 +92,8 @@ class SpecFormView(SpecPageBase):
     object-level check on a row, the scope check on a set or on ``None`` -
     raises ``PermissionDenied``, as the post would be refused; a missing row
     or a selector's ``ServiceNotFound`` raises ``Http404``; and a route value
-    the spec's parameters refuse raises Django's ``BadRequest``. The form
+    the spec's parameters refuse raises ``Http404`` too, or Django's
+    ``BadRequest`` with ``route_refusal_404`` off. The form
     shows a row's values for its own fields: a ``ModelForm`` of the row's
     model is built on a copy of it, as the Validator binds one, and any other
     form takes the row's values for the enabled fields it names as its
@@ -119,7 +120,8 @@ class SpecFormView(SpecPageBase):
     rather than dispatch re-rendering the page for a principal the row
     refuses. Dispatch is handed the target and the grant ``resolve_target``
     returns, so it looks nothing up again and asks no check twice. A route
-    value the target's reads refuse is left to dispatch, whose one refusal
+    value the target's reads refuse is a 404 before the post is read; with
+    ``route_refusal_404`` off it is left to dispatch, whose one refusal
     carries it beside the form's own.
 
     **POST** binds the form to the post and reads the arguments through its
@@ -344,9 +346,9 @@ class SpecFormView(SpecPageBase):
     rather than the next. It is validated as the Validator validates its own,
     under the kernel's ``clean_held_to_their_columns``, so a value no column
     holds - a key past 64 bits - is refused in the field's words and never
-    reaches the database driver. A post whose route the target's reads
-    refuse never found its row, so its form is not judged as one and carries
-    the refusal alone. Any other refusal is no verdict on the
+    reaches the database driver. With ``route_refusal_404`` off, a post whose
+    route the target's reads refuse never found its row, so its form is not
+    judged as one and carries the refusal alone. Any other refusal is no verdict on the
     arguments - a conflict, a service's own rule, an unavailable action - and
     the page's form carries it alone, validated no further.
 
@@ -384,6 +386,9 @@ class SpecFormView(SpecPageBase):
             the strict rule, a mapping from a captured name to the parameter
             it fills or to ``None`` to drop it, or a tuple of names to allow,
             as ``route_arguments`` reads it.
+        route_refusal_404: Whether a route value the spec's parameters
+            refuse is a 404, the default, as Django's own converters answer
+            one, or, off, the 400 or form refusal of 0.12.0.
         server_arguments: The kernel's ``ServerArguments`` the server answers
             for, checked at ``as_view()``. Its values may vary per request,
             through ``get_server_arguments``, and its names may not.
