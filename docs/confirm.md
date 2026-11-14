@@ -158,8 +158,9 @@ page that works, and says why.
   fragment at 200, as on every page.
 - The context carries `errors`, every message the refusal holds, as a list of
   strings in the refusal's order. With no field to put one on, a message
-  about a parameter is prefixed with its path: a route value the target's
-  reads refuse is `"pk: Enter a whole number."`.
+  about a parameter is prefixed with its path: with `route_refusal_404` off,
+  a route value the target's reads refuse is `"pk: Enter a whole number."`
+  (on, it is `Http404`).
 - `code` is there for a refusal carrying one, as on a form page, and the
   target is shown again.
 - A denial is raised for the host's 403 or 404 page.

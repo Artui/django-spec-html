@@ -54,6 +54,7 @@ from django_service_specs import (
     Grant,
     InvalidArguments,
     NotPermitted,
+    Parameters,
     PoolSeeds,
     PresentationContext,
     Presenter,
@@ -69,6 +70,7 @@ from django_service_specs import (
     audience_projection_for_spec,
     authorize,
     authorize_scope,
+    check_arguments,
     check_requested_input,
     coerce_flat,
     dispatch,
@@ -157,6 +159,7 @@ class SpecRequestBase(TemplateResponseMixin, ContextMixin, View):
     pool_seeds: PoolSeeds = DEFAULT_POOL_SEEDS
     unknown_arguments: UnknownArguments = UnknownArguments.REJECT
     route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None
+    route_refusal_404: bool = True
     server_arguments: ServerArguments | None = None
 
     def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
@@ -258,7 +261,16 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         served = self._served(request)
         principal, grant, seeds = admitted(spec, request, url_kwargs, served)
         try:
-            target, _ = _found(spec, principal, grant, seeds, url_kwargs, served, ask_scope=True)
+            target, _ = _found(
+                spec,
+                principal,
+                grant,
+                seeds,
+                url_kwargs,
+                served,
+                not_found=self.route_refusal_404,
+                ask_scope=True,
+            )
         except InvalidArguments as refused:
             raise BadRequest(str(refused.detail)) from refused
         pool = call_pool(principal, served)
@@ -280,7 +292,9 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         principal, grant, seeds = admitted(spec, request, kwargs, served)
         target: Any = UNSET
         with suppress(InvalidArguments):
-            target, grant = _found(spec, principal, grant, seeds, kwargs, served)
+            target, grant = _found(
+                spec, principal, grant, seeds, kwargs, served, not_found=self.route_refusal_404
+            )
         form = self._form(spec, principal, target, served, data=request.POST, files=request.FILES)
         try:
             read = self._arguments(form, spec, kwargs, served)
@@ -298,7 +312,16 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         except (DispatchError, ServiceError) as refused:
             if spec.many and isinstance(refused, InvalidArguments):
                 with suppress(InvalidArguments):
-                    _found(spec, principal, grant, seeds, kwargs, served, ask_scope=True)
+                    _found(
+                        spec,
+                        principal,
+                        grant,
+                        seeds,
+                        kwargs,
+                        served,
+                        not_found=False,
+                        ask_scope=True,
+                    )
             outcome = refusal_outcome(refused)
             if outcome is Outcome.DENIED:
                 raise denial(refused) from refused
@@ -681,12 +704,13 @@ def _found(
     url_kwargs: Mapping[str, Any],
     served: Served,
     *,
+    not_found: bool,
     ask_scope: bool = False,
 ) -> tuple[Any, Grant]:
     """The row, set or ``None`` the post acts on, and the grant vouching for it."""
     parameters = spec.parameters(call_context=served.call_context)
-    route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
-    arguments = with_binding(spec, coerce_flat(parameters, route), served)
+    route = coerced_route(parameters, url_kwargs, served, not_found=not_found)
+    arguments = with_binding(spec, route, served)
     try:
         if spec.many:
             if ask_scope:
@@ -716,6 +740,22 @@ def _found(
         raise Http404
     target, found = resolved
     return target, found
+
+
+def coerced_route(
+    parameters: Parameters, url_kwargs: Mapping[str, Any], served: Served, *, not_found: bool
+) -> dict[str, Any]:
+    """The route's captures alone, coerced; checked too where ``not_found``, a refusal a 404."""
+    route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
+    try:
+        coerced = coerce_flat(parameters, route)
+        if not_found:
+            check_arguments(parameters, coerced, partial=True)
+    except InvalidArguments as refused:
+        if not_found:
+            raise Http404 from refused
+        raise
+    return coerced
 
 
 def with_binding(
