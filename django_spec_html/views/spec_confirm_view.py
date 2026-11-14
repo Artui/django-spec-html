@@ -107,7 +107,8 @@ class SpecConfirmView(SpecPageBase):
     "Archive" and a "Delete" button on one page, every action a spec with no
     Validator and checked as ``spec`` is. A post naming no action or several
     is a 400, GET renders the first action's spec, and the success hooks read
-    ``self.action_name``.
+    ``self.action_name``. ``as_view()`` refuses ``actions`` beside a
+    ``commit_button``: an actions page commits only through an action's button.
 
     A success redirects to ``get_redirect_url()`` where the request names a
     safe URL to return to, else to ``get_success_url(result)``, or
@@ -193,7 +194,8 @@ class SpecConfirmView(SpecPageBase):
         target_display_limit: How many rows of a set ``target_display``
             projects.
         commit_button: The ``name`` of the submit button whose post commits;
-            ``None``, the default, commits every post.
+            ``None``, the default, commits every post. Refused beside
+            ``actions``, which commit only through their own buttons.
         redirect_field_name: The key a post or its query carries the URL to
             return to under, as on ``SpecFormView``: ``None``, the default,
             reads none.

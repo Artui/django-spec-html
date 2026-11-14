@@ -113,7 +113,8 @@ seed or `server_arguments` fills, nor one nobody declared.
 
 `commit_button` works as on a form page: above, only a post carrying
 `withdraw` runs the operation, and any other post is the page again, with
-`refreshed` in its context.
+`refreshed` in its context. A page with [`actions`](pages.md#one-form-several-operations)
+takes no `commit_button`: `as_view()` refuses the pair.
 
 ### A bulk action over ticked rows
 

@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **An admin action over any Validator renders a form.** A `SpecAction` whose
+  `page_kwargs` carry a `form_class` is served by the admin's form page
+  whatever its spec's Validator, such as a `DataclassValidator` or a
+  `PydanticValidator`, and every `form_class` check of `SpecFormView.as_view()`
+  applies when the admin is registered. Without `form_class` a spec with a
+  Validator other than a `FormValidator` is refused as before.
+- **A formset page over any Validator.** `SpecFormSetView.form_class` names
+  the row form a `many` spec's page renders when its Validator is not a
+  `FormValidator`, built by `formset_factory` and `get_form_kwargs()`, as the
+  form page's is. Each form renders and is read, never validated: a row's
+  refusal lands on the form that sent the row, and a refusal of the whole set
+  from the Validator's `validated_many` is the formset's non-form errors; the
+  page adds no rule over the set. `as_view()` holds the row form to the rows'
+  parameters with the form page's checks, and only the server's own keys, not
+  the route, fill a required row parameter the form leaves out.
 - **A form page over any Validator.** `SpecFormView.form_class` names the
   form a page renders for a spec whose Validator is not a `FormValidator`,
   such as a `DataclassValidator` or a `PydanticValidator`. The form renders
@@ -38,8 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as `self.action_name`. The shipped form and confirmation templates render one
   button per action. `as_view()` checks each action as it checks `spec`, and
   refuses `actions` beside `spec`, form actions that post different form
-  classes, a key that is a field of the form, and a `commit_button` or
-  `redirect_field_name` that is an action's key.
+  classes, a key that is a field of the form, a `redirect_field_name` that is
+  an action's key, and any `commit_button` beside `actions`: an actions page
+  commits only through an action's button.
 - **A confirmation reads a bulk action's selection from the post.**
   `SpecConfirmView.posted_arguments`, a tuple of parameter names, is read from
   `request.POST` as a query string is, every value of an array, merged with

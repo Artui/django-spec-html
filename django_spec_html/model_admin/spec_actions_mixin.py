@@ -101,7 +101,8 @@ class SpecActionsMixin(admin.ModelAdmin):
     scope the spec's own checks run, and its selector decides the set.
 
     **Each page is the spec's own**: ``SpecFormView`` for a spec validating
-    with a ``FormValidator``, ``SpecConfirmView`` for one with none, built
+    with a ``FormValidator`` or an action whose ``page_kwargs`` carry a
+    ``form_class``, ``SpecConfirmView`` for one with none, built
     once when the admin is registered, so ``as_view()`` refuses then what it
     refuses of any page. Its URL is added by ``get_urls()`` ahead of the
     admin's own, wrapped in ``admin_site.admin_view()``, so only a signed-in
@@ -401,7 +402,8 @@ def _built(
     model_admin: SpecActionsMixin, action: SpecAction, selection: Parameter | None, label: str
 ) -> _Page:
     """The action's page, built by ``as_view()`` for the spec's Validator."""
-    base = _AdminFormPage if isinstance(action.spec.validator, FormValidator) else _AdminConfirmPage
+    form = isinstance(action.spec.validator, FormValidator) or "form_class" in action.page_kwargs
+    base = _AdminFormPage if form else _AdminConfirmPage
     attributes = {"model_admin": model_admin, "action": action, "selection": selection}
     page_class: type[_AdminPage] = type(label, (base,), attributes)
     keywords: dict[str, Any] = {"spec": action.spec, **action.page_kwargs}
