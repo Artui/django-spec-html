@@ -101,6 +101,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FormView` answers 200.
 
 ### Fixed
+- **A post-only confirmation that redirects its refusals needs no page template.**
+  `as_view()` checked the shipped template even for a `SpecConfirmView` with
+  `http_method_names = ["post"]` and `refusal_redirect = True`, which renders
+  nothing but in the fallback where messages are unavailable. It now skips the
+  check, and that fallback answers the refusal's status with an empty body,
+  where a page not found was a 500. A page that serves GET or HEAD, or does
+  not redirect its refusals, is still checked.
 - **A row condition's lazy reason reaches the template as text.** The form and
   confirmation pages put the declared affordance in `unavailable` when a
   condition on the row refuses it; a lazy `reason` is now a copy carrying it

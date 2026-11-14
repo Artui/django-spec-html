@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 from django.contrib import messages
 from django.contrib.messages import MessageFailure
 from django.core.exceptions import ImproperlyConfigured
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import resolve_url
+from django.template import TemplateDoesNotExist
+from django.template.response import TemplateResponse
 from django_service_specs import (
     AdditionalInputRequired,
     DispatchError,
@@ -33,6 +35,7 @@ from django_spec_html.views.utils import (
     SpecPageBase,
     refusal_code,
     refusal_tree,
+    renders_no_page,
 )
 
 
@@ -278,9 +281,15 @@ class SpecConfirmView(SpecPageBase):
         requested: AdditionalInputRequired | None,
         **context: Any,
     ) -> HttpResponse:
-        """The confirmation page again at ``status``, carrying the refusal as ``errors``."""
+        """The confirmation page again at ``status``, empty when a redirect-only page has none."""
         context["errors"] = _errors(refused)
-        return self._rendered(self.get_context_data(**context), status=status)
+        response = self._rendered(self.get_context_data(**context), status=status)
+        if not renders_no_page(self.http_method_names, self.refusal_redirect):
+            return response
+        try:
+            return cast(TemplateResponse, response).render()
+        except TemplateDoesNotExist:
+            return HttpResponse(status=response.status_code)
 
     def _refused_elsewhere(self, refused: DispatchError | ServiceError) -> HttpResponse | None:
         """The refusal's messages sent and the post redirected, or ``None`` without a redirect."""
