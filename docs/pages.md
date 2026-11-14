@@ -907,6 +907,55 @@ for a sync view. `AsyncSpecView` differs because it answers JSON presented
 inside `adispatch`, with no template to render and nothing else of the page to
 carry.
 
+## One form, several operations
+
+A form whose buttons run different operations - save a draft, publish it,
+delete it - is one page. **`actions` maps each submit button's name to the
+spec it runs**, and replaces `spec`:
+
+```python
+(
+    path(
+        "posts/<int:pk>/",
+        SpecFormView.as_view(
+            actions={"save": save_post_spec, "publish": publish_post_spec},
+            route_kwargs=("pk",),
+            success_url=reverse_lazy("posts"),
+        ),
+    ),
+)
+```
+
+- **A committing post runs the action whose button it carries**: the one key
+  of `actions` in `request.POST`, whatever its value, so a `<button
+  name="publish">` with no `value` names `publish`. A post naming none, or
+  more than one, is Django's `BadRequest`, a 400, and nothing runs. The chosen
+  spec is the one the post is admitted, finds its target, is validated and
+  dispatched by, and the one a refused post's page is rendered with.
+- **GET renders the first action's spec**, and so does a post that does not
+  commit under `commit_button`: the page, its admission, its target and its
+  form are the first action's.
+- **The success is page-wide.** `success_url` and `success_message` serve
+  every action. `get_success_url(result)` and `get_success_message(result)`
+  read which one ran as `self.action_name`, the key, set before the post is
+  dispatched; it is `None` on GET and on a page without `actions`.
+- **The shipped templates render one submit button per action**, named by
+  its key and labelled with it capitalised, in the order `actions` lists
+  them, in place of the one button. A project's own template renders its own.
+
+`SpecConfirmView` takes `actions` the same way, every action a spec with no
+Validator: a confirmation's "Archive" and "Delete" buttons are one page.
+
+`as_view()` checks every action as it checks a page's `spec` - its
+Validator, its parameters against the route, the binding, the seeds and a
+confirmation's `posted_arguments` - each refusal naming the action, as in
+`SpecFormView.actions['publish']`. It also refuses `actions` beside `spec`, an
+empty mapping, a key that is not a non-empty string, a `commit_button` or
+`redirect_field_name` that is an action's key, and `actions` on a page that
+takes none, such as `SpecFormSetView`. On `SpecFormView` every action is
+validated by a `FormValidator` of one form class, since the page posts one
+form, and no key is the name of one of its fields, which every submit posts.
+
 ## A post that does not commit
 
 A form that refreshes a dependent choice, adds a row or searches posts without

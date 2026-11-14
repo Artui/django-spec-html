@@ -5,6 +5,7 @@ Django this package supports. ``as_div`` rather than ``{{ form }}``, which is a
 table below Django 5.0. The form renders each field's own ``required``, which
 a partial page's form has switched off; a question's message is the form's
 non-field error and its asked field is in the form, so each is rendered once.
+A page serving actions renders one button per action, named by its key.
 The URL to return to, where the view reads one, is posted again as a hidden
 input, since a refused post may have carried it in its body alone.
 {% endcomment %}{% include "django_spec_html/target.html" %}
@@ -14,6 +15,6 @@ input, since a refused post may have carried it in its body alone.
 {% csrf_token %}{% if next %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ next }}">{% endif %}
 <fieldset{% if unavailable %} disabled{% endif %}>
 {{ form.as_div }}
-<button type="submit"{% if view.commit_button %} name="{{ view.commit_button }}"{% endif %}>{% translate "Save" %}</button>
+{% for name in view.actions %}<button type="submit" name="{{ name }}">{{ name|capfirst }}</button>{% empty %}<button type="submit"{% if view.commit_button %} name="{{ view.commit_button }}"{% endif %}>{% translate "Save" %}</button>{% endfor %}
 </fieldset>
 </form>

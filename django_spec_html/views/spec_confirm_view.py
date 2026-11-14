@@ -98,6 +98,13 @@ class SpecConfirmView(SpecPageBase):
     ``refusal_redirect`` its message and a redirect. Never a 404, which
     ``route_refusal_404`` keeps for the route.
 
+    **One page, several confirmations.** ``actions`` maps each button's name
+    to the spec it runs, in place of ``spec``, as on ``SpecFormView``: an
+    "Archive" and a "Delete" button on one page, every action a spec with no
+    Validator and checked as ``spec`` is. A post naming no action or several
+    is a 400, GET renders the first action's spec, and the success hooks read
+    ``self.action_name``.
+
     A success redirects to ``get_redirect_url()`` where the request names a
     safe URL to return to, else to ``get_success_url(result)``, or
     under htmx answers ``HX-Redirect`` to the same URL or the ``spec-result``
@@ -151,7 +158,13 @@ class SpecConfirmView(SpecPageBase):
     no URL to return to would have nowhere to go.
 
     Attributes:
-        spec: The operation served, declaring no Validator. Required.
+        spec: The operation served, declaring no Validator. Required, unless
+            ``actions`` is set.
+        actions: The operations served, by the name of the button that runs
+            each, every one declaring no Validator: a non-empty mapping, in
+            place of ``spec``. ``None`` by default.
+        action_name: The key of the action a committing post runs, for the
+            success hooks to read; ``None`` without one.
         template_name: The page's template, as for any Django template view:
             ``django_spec_html/spec_confirm.html``, the one this package
             ships, by default.
@@ -191,6 +204,7 @@ class SpecConfirmView(SpecPageBase):
     template_name = "django_spec_html/spec_confirm.html"
     refusal_redirect: bool = False
     posted_arguments: tuple[str, ...] = ()
+    _takes_actions = True
 
     @classmethod
     def _check_spec(cls, label: str, spec: ServiceSpec) -> None:
