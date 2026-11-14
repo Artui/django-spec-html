@@ -751,7 +751,10 @@ def _unavailable(
             call_context=served.call_context,
         )
     except ActionUnavailable as refused:
-        return next(each for each in spec.affordances or () if each.code == refused.code)
+        declared = next(each for each in spec.affordances or () if each.code == refused.code)
+        if isinstance(declared.reason, str):
+            return declared
+        return dataclasses.replace(declared, reason=str(declared.reason))
     except ServiceNotFound as refused:
         raise denial(refused) from refused
     return None

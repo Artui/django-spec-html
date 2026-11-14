@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **The kernel floor is 0.33.0.** Its `FormValidator` binds the form to a
+  `QueryDict` of the spellings a browser posts, so a form or widget written for
+  HTML that reads `self.data.getlist(...)` now validates a page's post where it
+  raised `AttributeError`; a boolean reaches such a form as `"True"` or
+  `"False"`. An `Affordance` may declare a lazy `reason`, and a `SelectorSpec`
+  may name its `row_object`, which the selector page's row answers read through.
+  The floor also carries `FilePresenter`, `FormValidator(..., formset_class=...)`
+  and the `many` spec's `collection_selector_spec`, which this release's pages
+  build on.
 - **The walkthrough prose of the docs examples is on the pages**, beside the
   snippet each one belongs to, where it was a comment inside the example. The
   examples' comments are cut to the repository's comment budget; no behaviour
@@ -15,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The API reference's docstrings are restored**: the ones a `:::` page
   renders are the full text again, where the comment budget had cut them to one
   line. No behaviour changes.
+
+### Fixed
+- **A row condition's lazy reason reaches the template as text.** The form and
+  confirmation pages put the declared affordance in `unavailable` when a
+  condition on the row refuses it; a lazy `reason` is now a copy carrying it
+  resolved in the active language, as every other answer the kernel hands out.
+- **A plain form that declares `instance` is built with the page's target** on
+  every render, as the kernel's bind builds it to validate a post: the target
+  itself, and `None` for a create. It was built without it, so it saw `None` on
+  the page and the target only while the post validated.
 
 ## [0.12.0] — 2026-11-09
 

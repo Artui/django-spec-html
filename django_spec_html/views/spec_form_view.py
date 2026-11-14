@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import inspect
 from collections.abc import Collection, Mapping
 from typing import Any, cast
 
@@ -657,6 +658,8 @@ def _built_form(
 ) -> forms.BaseForm:
     """The page's form, bound by ``bound`` if given, showing ``target``'s values."""
     form_class = _form_class(spec)
+    if not issubclass(form_class, forms.BaseModelForm) and _declares_instance(form_class):
+        bound["instance"] = None if target is UNSET else target
     if not isinstance(target, models.Model):
         return form_class(**bound, **keywords)
     if issubclass(form_class, forms.BaseModelForm) and isinstance(target, form_class._meta.model):
@@ -666,3 +669,12 @@ def _built_form(
     own = {name: value for name, value in keywords.items() if name != "initial"}
     initial = {**keywords.get("initial", {}), **model_to_dict(target, fields=names)}
     return form_class(**bound, **own, initial=initial)
+
+
+def _declares_instance(form_class: type[forms.BaseForm]) -> bool:
+    """Whether the form's ``__init__`` names ``instance``, as the kernel's bind reads it."""
+    parameter = inspect.signature(form_class.__init__).parameters.get("instance")
+    return parameter is not None and parameter.kind in _NAMED
+
+
+_NAMED = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)

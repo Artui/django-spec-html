@@ -86,7 +86,7 @@ dependencies = [
     # the kernel's root also exported its own copy of the ten JSON names, so
     # one process held two ``SpecView`` classes. Every other name the moved
     # code reads at the kernel's root is public from 0.10.0.
-    "django-service-specs>=0.31.0",
+    "django-service-specs>=0.33.0",
 ]
 
 [project.urls]
