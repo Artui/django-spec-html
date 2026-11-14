@@ -265,7 +265,9 @@ class SpecFormView(SpecPageBase):
     answers its success with the file, built as ``SpecSelectorView`` builds
     one: no redirect, no ``HX-Redirect`` and no success message. A ``None``
     result is answered as any success. ``as_view()`` refuses a file spec
-    declared ``many``.
+    declared ``many``. The context carries ``presents_file`` where the spec,
+    or any action, presents a file, and the shipped form renders
+    ``hx-boost="false"`` for it, so the browser posts it natively.
 
     **The request is read through the same attributes and hooks as**
     ``SpecView``**'s**, checked by the same code in ``http/utils.py``:

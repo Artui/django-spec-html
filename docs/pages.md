@@ -1320,8 +1320,12 @@ path("minutes/export/", SpecFormView.as_view(spec=export_spec, success_url="/min
   A refusal is answered as on any page.
 - **A `None` result is answered as any success**, the redirect and the
   message, for a spec the kernel lets answer nothing (`allow_none`).
-- **Under htmx the file is answered all the same**, with no `HX-Redirect` and
-  no trigger, and an htmx request cannot save a download: post a file spec's
-  form natively, without `hx-post` or a boosted body.
+- **The shipped form is posted natively.** The context carries
+  `presents_file` where the spec, or any of the page's actions, presents a
+  file, and the shipped form and confirmation render `hx-boost="false"` for
+  it, so a `base.html` that boosts the page does not turn the post into an
+  htmx request, which cannot save a download. A template of the project's own
+  reads the same key; under htmx the file is answered all the same, with no
+  `HX-Redirect` and no trigger.
 - `as_view()` refuses a file spec the kernel's `file_output` refuses, such as
   one declared `many`: a list of files has no answer.

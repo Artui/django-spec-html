@@ -391,8 +391,11 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         return HttpResponseRedirect(self.get_redirect_url() or self.get_success_url(result))
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
-        """Django's context, with the ``spec`` served and the way back."""
+        """Django's context: the ``spec`` served, whether a post answers a file, the way back."""
         kwargs.setdefault("spec", self.served_spec())
+        specs = [self.served_spec()] if self.actions is None else self.actions.values()
+        if any(file_output(each) is not None for each in specs):
+            kwargs.setdefault("presents_file", True)
         way_back = self.get_redirect_url()
         if way_back:
             kwargs.setdefault("redirect_field_name", self.redirect_field_name)

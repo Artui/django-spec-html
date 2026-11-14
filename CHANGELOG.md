@@ -67,7 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selector page builds it, where they redirected and the file was lost: no
   redirect, no `HX-Redirect` and no success message, under htmx too. A `None`
   result is answered as any success. `as_attachment = False` answers `inline`.
-  `as_view()` refuses a file spec the kernel's `file_output` refuses, such as
+  The context carries `presents_file` where the spec, or any of the page's
+  actions, presents a file, and the shipped form and confirmation render
+  `hx-boost="false"` for it, so a project whose `base.html` boosts the page
+  still posts it natively and the browser saves the download. `as_view()` refuses a file spec the kernel's `file_output` refuses, such as
   one declared `many` on the formset page.
 - **The formset page adds a row over htmx without re-rendering the formset.**
   The shipped fragment renders each form through a new

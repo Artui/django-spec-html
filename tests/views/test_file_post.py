@@ -117,3 +117,40 @@ class TestAPostOfAFileSpec:
 def test_a_many_file_spec_is_refused_at_as_view() -> None:
     with pytest.raises(ImproperlyConfigured, match="is declared many"):
         SpecFormSetView.as_view(spec=file_spec(many=True), success_url="/done/")
+
+
+def page_html(view: Any) -> str:
+    response = view(signed_in(FACTORY.get("/"), make_user("ada")))
+    return response.render().content.decode()
+
+
+NO_BOOST = 'hx-boost="false"'
+
+
+class TestTheShippedForm:
+    def test_a_file_spec_s_form_is_posted_natively(self) -> None:
+        assert NO_BOOST in page_html(form_view(file_spec()))
+
+    def test_a_non_file_spec_s_form_is_left_to_the_page(self) -> None:
+        html = page_html(form_view(file_spec(presenter=None)))
+        assert "<form" in html
+        assert "hx-boost" not in html
+
+    def test_an_actions_page_with_any_file_action_is_posted_natively(self) -> None:
+        actions = {"save": file_spec(presenter=None), "export": file_spec()}
+        view = SpecFormView.as_view(actions=actions, success_url="/done/")
+        assert NO_BOOST in page_html(view)
+
+    def test_an_actions_page_with_no_file_action_is_left_to_the_page(self) -> None:
+        actions = {"save": file_spec(presenter=None), "keep": file_spec(presenter=None)}
+        view = SpecFormView.as_view(actions=actions, success_url="/done/")
+        assert "hx-boost" not in page_html(view)
+
+    def test_a_file_spec_s_confirmation_is_posted_natively(self) -> None:
+        view = SpecConfirmView.as_view(spec=file_spec(validator=None), success_url="/done/")
+        assert NO_BOOST in page_html(view)
+
+    def test_a_non_file_confirmation_is_left_to_the_page(self) -> None:
+        spec = file_spec(presenter=None, validator=None)
+        view = SpecConfirmView.as_view(spec=spec, success_url="/done/")
+        assert "hx-boost" not in page_html(view)
