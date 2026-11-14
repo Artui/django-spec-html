@@ -10,6 +10,7 @@ from django_service_specs import (
     ActionUnavailable,
     AdditionalInputRequired,
     DispatchError,
+    FileResult,
     InvalidArguments,
     NotPermitted,
     PermissionCheckDenied,
@@ -23,6 +24,7 @@ from django_service_specs import (
     unanswered_refusals,
 )
 
+from django_spec_html.http import utils
 from django_spec_html.http.adispatch_request import adispatch_request
 from django_spec_html.http.dispatch_request import dispatch_request
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
@@ -153,3 +155,9 @@ def test_every_refusal_has_its_outcome(
 ) -> None:
     # Each outcome row is held on its own, as no status tells two wrong outcomes apart.
     assert refusal_outcome(refused) is outcome
+
+
+def test_a_success_status_is_kept() -> None:
+    response = utils.file_response(FileResult(b"x", filename="x.bin"), status=201)
+    response.close()
+    assert (response.status_code, response["Content-Type"]) == (201, "application/octet-stream")

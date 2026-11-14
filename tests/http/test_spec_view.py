@@ -14,6 +14,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django_service_specs import (
     DEFAULT_POOL_SEEDS,
     DataclassValidator,
+    FilePresenter,
     Parameter,
     Parameters,
     PoolSeeds,
@@ -25,7 +26,16 @@ from django_service_specs import (
 )
 
 from django_spec_html.http.spec_view import SpecView
-from tests.dispatch.utils import OPEN, TENANT_SEEDS, Record, Titles, make_user
+from tests.dispatch.utils import (
+    OPEN,
+    PK,
+    TENANT_SEEDS,
+    Record,
+    Titles,
+    make_user,
+    note_by_pk,
+    notes_of,
+)
 from tests.dispatch_app.models import Note
 from tests.http.utils import (
     DEEP_JSON,
@@ -736,3 +746,46 @@ class TestSources:
             "SpecView.as_view() needs a spec: Wrong.as_kernel_spec() must return a ServiceSpec "
             "or SelectorSpec; got str."
         )
+
+
+def as_text(note: Note) -> bytes:
+    return note.title.encode()
+
+
+TEXT = FilePresenter("text/plain", filename=lambda note: f"note-{note.pk}.txt", render=as_text)
+
+
+def one(presenter: Any = TEXT, **fields: Any) -> SelectorSpec:
+    fields.setdefault("selector", note_by_pk)
+    fields.setdefault("reads", PK)
+    return SelectorSpec(kind=SelectorKind.RETRIEVE, presenter=presenter, permissions=OPEN, **fields)
+
+
+def file_get_body(response: Any) -> bytes:
+    try:
+        return b"".join(response.streaming_content)
+    finally:
+        response.close()
+
+
+@pytest.fixture
+def note() -> Note:
+    return Note.objects.create(owner=make_user("ada"), title="Minutes")
+
+
+class TestTheJsonRoute:
+    def test_specview_answers_the_file(self, note: Note) -> None:
+        view = SpecView.as_view(spec=one(), route_kwargs=("pk",))
+        response = view(signed_in(FACTORY.get("/")), pk=note.pk)
+        assert response["Content-Disposition"] == f'attachment; filename="note-{note.pk}.txt"'
+        assert file_get_body(response) == b"Minutes"
+
+    def test_a_list_file_spec_is_refused_at_as_view(self) -> None:
+        spec = SelectorSpec(
+            kind=SelectorKind.LIST,
+            selector=notes_of,
+            presenter=TEXT,
+            reads=Parameters.of(Parameter("q", "string")),
+        )
+        with pytest.raises(ImproperlyConfigured, match="presents a list of rows"):
+            SpecView.as_view(spec=spec)
