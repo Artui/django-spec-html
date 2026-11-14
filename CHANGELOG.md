@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A form page over any Validator.** `SpecFormView.form_class` names the
+  form a page renders for a spec whose Validator is not a `FormValidator`,
+  such as a `DataclassValidator` or a `PydanticValidator`. The form renders
+  and is read as before, and is never validated: the Validator alone decides,
+  its refusal placed on the form's fields, so the form's `clean()`, field
+  validators and uniqueness queries never run. `get_form_kwargs()` answers the
+  form's own keywords, empty by default, refusing `data`, `files` and
+  `instance`. `success_message` formats over a mapping's keys or an object's
+  attributes. `as_view()` refuses a form the post cannot be read off, a field
+  or clear checkbox the spec does not declare, a required parameter nothing
+  fills, a type or `required` disagreement, a Validator with `unsendable`
+  fields, `form_class` over a `FormValidator`, and a form defining its own
+  `clean()` or `clean_<field>()`. Under `actions`, every action shares the
+  page's `form_class`.
 - **One form page serves several operations, one per submit button.**
   `SpecFormView` and `SpecConfirmView` take `actions`, a mapping of a submit
   button's name to the `ServiceSpec` it runs, in place of `spec`: a committing

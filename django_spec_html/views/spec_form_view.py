@@ -19,15 +19,18 @@ from django_service_specs import (
     UNSET,
     AdditionalInputRequired,
     DispatchError,
+    DispatchResult,
     FormValidator,
     InvalidArguments,
     ServerArguments,
     ServiceError,
     ServiceSpec,
+    Validator,
     bind_arguments,
     clean_held_to_their_columns,
     coerce_flat,
     form_keywords,
+    server_owned_keys,
 )
 
 from django_spec_html.http.add_argument_errors import add_argument_errors
@@ -253,8 +256,8 @@ class SpecFormView(SpecPageBase):
     **A success message.** ``success_message``, where it is set, is sent
     through ``django.contrib.messages`` on every success - the redirect, the
     ``HX-Redirect`` and the result fragment alike - formatted by
-    ``get_success_message(result)``, ``%`` with the form's cleaned data as
-    Django's ``SuccessMessageMixin`` formats it. Without the messages
+    ``get_success_message(result)``, ``%`` with the Validator's data, the form's
+    cleaned data here, as Django's ``SuccessMessageMixin`` formats it. Without the messages
     middleware it is skipped, and never raises ``MessageFailure``. A refusal,
     a confirmation page and a post that does not commit send none.
 
@@ -371,8 +374,24 @@ class SpecFormView(SpecPageBase):
     button per action, named by its key. Every action is checked as ``spec``
     is, and validated by a ``FormValidator`` of one form class.
 
+    **A form over any Validator.** ``form_class`` names the form a page
+    renders for a spec whose Validator is not a ``FormValidator``. It is
+    built as above, with ``get_form_kwargs()`` in place of ``form_kwargs``,
+    and read as above, and never validated: the Validator's refusal is the
+    only error its form carries, so its ``clean()``, field validators and
+    uniqueness queries never run. ``success_message`` formats over the
+    Validator's data, a mapping's keys or an object's attributes. ``as_view()``
+    refuses a form the post cannot be read off, a field or ``<name>-clear``
+    checkbox the spec does not declare, a required parameter neither the form,
+    the server nor a tuple ``route_kwargs`` fills, a field whose type, element
+    type, format where the spec names one, or ``required`` differs from its
+    parameter's (``any`` takes any field), a Validator with ``unsendable``
+    fields, ``form_class`` over a ``FormValidator``, and a form defining its
+    own ``clean()`` or ``clean_<field>()``. Every action shares it.
+
     ``as_view()`` refuses, when the URLconf is imported, a view with no
-    ``ServiceSpec``, a spec whose Validator is not a ``FormValidator``, a
+    ``ServiceSpec``, a spec whose Validator is not a ``FormValidator`` on a
+    page with no ``form_class``, a
     ``many`` spec, whose list of rows no form posts, a view with no
     ``success_url`` that does not override ``get_success_url``, a
     ``commit_button`` that is not a button's name or is one of the form's
@@ -387,6 +406,9 @@ class SpecFormView(SpecPageBase):
 
     Attributes:
         spec: The operation served. Required, unless ``actions`` is set.
+        form_class: The form the page renders over a Validator that is not a
+            ``FormValidator``, never validated, checked at ``as_view()``;
+            ``None``, the default, renders the ``FormValidator``'s.
         actions: The operations served, by the name of the submit button that
             runs each: a non-empty mapping, in place of ``spec``. ``None`` by
             default.
@@ -448,6 +470,7 @@ class SpecFormView(SpecPageBase):
     """
 
     template_name = "django_spec_html/spec_form.html"
+    form_class: type[forms.BaseForm] | None = None
     asked_fields: tuple[str, ...] = ()
     validate_on_refresh: bool = False
     _takes_actions = True
@@ -456,6 +479,8 @@ class SpecFormView(SpecPageBase):
     def _check_actions(cls, label: str, actions: Mapping[str, ServiceSpec]) -> None:
         """Refuse actions posting different forms, or one named like a field of the form."""
         first, *rest = actions.items()
+        if not isinstance(first[1].validator, FormValidator):
+            return
         form_class = _form_class(first[1])
         for key, spec in rest:
             other = _form_class(spec)
@@ -465,21 +490,11 @@ class SpecFormView(SpecPageBase):
                     f"form is {form_class.__name__}, the first action's: every action posts the "
                     "page's one form."
                 )
-        named = sorted(frozenset(actions) & frozenset(_declared(form_class)))
-        if named:
-            raise ImproperlyConfigured(
-                f"{label}.actions names {named[0]!r}, a field {form_class.__name__} declares: a "
-                "field is posted by every submit, so it cannot say which action runs."
-            )
+        _check_action_keys(label, actions, form_class)
 
     @classmethod
     def _check_spec(cls, label: str, spec: ServiceSpec) -> None:
-        """Refuse a spec whose Validator is not a ``FormValidator``, and a ``many`` spec."""
-        if not isinstance(spec.validator, FormValidator):
-            raise ImproperlyConfigured(
-                f"{label} renders the form its spec validates with, so the spec's validator "
-                f"must be a FormValidator; got {type(spec.validator).__name__}."
-            )
+        """Refuse a ``many`` spec."""
         if spec.many:
             raise ImproperlyConfigured(
                 f"{label} posts one row, the form's, and a many spec takes a list of rows "
@@ -488,23 +503,61 @@ class SpecFormView(SpecPageBase):
 
     @classmethod
     def _check_page(cls, label: str, spec: ServiceSpec, initkwargs: Mapping[str, Any]) -> None:
-        """Refuse ``asked_fields``, or a ``commit_button`` or ``redirect_field_name`` as a field."""
+        """Refuse the form against the spec, ``asked_fields``, or a button or redirect field."""
+        form_class = initkwargs.get("form_class", cls.form_class)
+        server = initkwargs.get("server_arguments", cls.server_arguments)
+        if form_class is None:
+            if not isinstance(spec.validator, FormValidator):
+                raise ImproperlyConfigured(
+                    f"{label} renders the form its spec validates with, unless form_class names "
+                    "one: set form_class, or the spec's validator must be a FormValidator; got "
+                    f"{type(spec.validator).__name__}."
+                )
+            form_class = _form_class(spec)
+        else:
+            route = initkwargs.get("route_kwargs", cls.route_kwargs)
+            _check_form_class(label, spec, form_class, route, server)
+            actions = initkwargs.get("actions", cls.actions)
+            if actions is not None:
+                _check_action_keys(cls.__name__, actions, form_class)
         _check_asked_fields(
-            label,
-            spec,
-            initkwargs.get("asked_fields", cls.asked_fields),
-            initkwargs.get("server_arguments", cls.server_arguments),
+            label, form_class, initkwargs.get("asked_fields", cls.asked_fields), server
         )
-        _check_commit_field(label, spec, initkwargs.get("commit_button", cls.commit_button))
+        _check_commit_field(label, form_class, initkwargs.get("commit_button", cls.commit_button))
         _check_redirect_field(
-            label, spec, initkwargs.get("redirect_field_name", cls.redirect_field_name)
+            label, form_class, initkwargs.get("redirect_field_name", cls.redirect_field_name)
         )
+
+    def get_form_kwargs(self) -> Mapping[str, Any]:
+        """The keywords a ``form_class`` page's form is built with: none by default."""
+        return {}
+
+    def get_success_message(self, result: DispatchResult) -> str:
+        """``success_message`` formatted with the Validator's data, a mapping or its attributes."""
+        data = result.data
+        return self.success_message % (data if isinstance(data, Mapping) else _Attributes(data))
 
     def _form(
         self, spec: ServiceSpec, principal: Any, target: Any, served: Served, **bound: Any
     ) -> forms.BaseForm:
-        """The page's form, as ``_page_form`` builds it."""
-        return _page_form(spec, principal, target, served, **bound)
+        """The page's form: ``form_class`` with ``get_form_kwargs()``, or the Validator's."""
+        if self.form_class is None:
+            keywords = form_keywords(
+                spec,
+                principal,
+                pool_seeds=served.seeds,
+                target=None if target is UNSET else target,
+                call_context=served.call_context,
+            )
+            return _page_form(_form_class(spec), spec, target, served, keywords, **bound)
+        keywords = self.get_form_kwargs()
+        taken = sorted(frozenset(keywords) & _PAGE_KEYWORDS)
+        if taken:
+            raise ImproperlyConfigured(
+                f"{type(self).__name__}.get_form_kwargs() returned {taken[0]!r}, which the page "
+                "sets itself: it returns the form's other keywords."
+            )
+        return _page_form(self.form_class, spec, target, served, keywords, **bound)
 
     def _arguments(
         self, form: forms.BaseForm, spec: ServiceSpec, url_kwargs: Mapping[str, Any], served: Served
@@ -550,6 +603,7 @@ class SpecFormView(SpecPageBase):
         """Place ``refused`` on the bound form, beside its own errors."""
         merged = (
             isinstance(refused, InvalidArguments)
+            and self.form_class is None
             and not self.served_spec().partial
             and target is not UNSET
         )
@@ -590,9 +644,8 @@ class SpecFormView(SpecPageBase):
         return self._rendered(self.get_context_data(form=form, **context), status=status)
 
 
-def _check_commit_field(label: str, spec: ServiceSpec, button: Any) -> None:
+def _check_commit_field(label: str, form_class: type[forms.BaseForm], button: Any) -> None:
     """Refuse a ``commit_button`` that is the name of one of the form's fields."""
-    form_class = _form_class(spec)
     if button in _declared(form_class):
         raise ImproperlyConfigured(
             f"{label}.commit_button names {button!r}, a field {form_class.__name__} declares: a "
@@ -600,9 +653,8 @@ def _check_commit_field(label: str, spec: ServiceSpec, button: Any) -> None:
         )
 
 
-def _check_redirect_field(label: str, spec: ServiceSpec, name: Any) -> None:
+def _check_redirect_field(label: str, form_class: type[forms.BaseForm], name: Any) -> None:
     """Refuse a ``redirect_field_name`` that is the name of one of the form's fields."""
-    form_class = _form_class(spec)
     if name in _declared(form_class):
         raise ImproperlyConfigured(
             f"{label}.redirect_field_name names {name!r}, a field {form_class.__name__} "
@@ -616,14 +668,13 @@ def _declared(form_class: type[forms.BaseForm]) -> dict[str, forms.Field]:
 
 
 def _check_asked_fields(
-    label: str, spec: ServiceSpec, asked: Any, server: ServerArguments | None
+    label: str, form_class: type[forms.BaseForm], asked: Any, server: ServerArguments | None
 ) -> None:
     """Refuse ``asked_fields`` naming anything but optional fields of the form."""
     if not isinstance(asked, tuple):
         raise ImproperlyConfigured(
             f"{label}.asked_fields must be a tuple of the form's field names; got {asked!r}."
         )
-    form_class = _form_class(spec)
     fields: dict[str, forms.Field] = form_class.base_fields  # ty: ignore[unresolved-attribute]
     owned = server_names(server)
     for name in asked:
@@ -676,17 +727,15 @@ def _form_class(spec: ServiceSpec) -> type[forms.BaseForm]:
 
 
 def _page_form(
-    spec: ServiceSpec, principal: Any, target: Any, served: Served, **bound: Any
+    form_class: type[forms.BaseForm],
+    spec: ServiceSpec,
+    target: Any,
+    served: Served,
+    keywords: Mapping[str, Any],
+    **bound: Any,
 ) -> forms.BaseForm:
     """The page's form, as ``_built_form`` builds it, with the binding's fields held."""
-    keywords = form_keywords(
-        spec,
-        principal,
-        pool_seeds=served.seeds,
-        target=None if target is UNSET else target,
-        call_context=served.call_context,
-    )
-    form = _built_form(spec, target, keywords, **bound)
+    form = _built_form(form_class, target, keywords, **bound)
     if spec.partial:
         form.use_required_attribute = False
     server = served.server
@@ -699,10 +748,9 @@ def _page_form(
 
 
 def _built_form(
-    spec: ServiceSpec, target: Any, keywords: Mapping[str, Any], **bound: Any
+    form_class: type[forms.BaseForm], target: Any, keywords: Mapping[str, Any], **bound: Any
 ) -> forms.BaseForm:
     """The page's form, bound by ``bound`` if given, showing ``target``'s values."""
-    form_class = _form_class(spec)
     if not issubclass(form_class, forms.BaseModelForm) and _declares_instance(form_class):
         bound["instance"] = None if target is UNSET else target
     if not isinstance(target, models.Model):
@@ -723,3 +771,120 @@ def _declares_instance(form_class: type[forms.BaseForm]) -> bool:
 
 
 _NAMED = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+
+
+_PAGE_KEYWORDS = frozenset({"data", "files", "instance"})
+
+
+class _Attributes:
+    """An object read by attribute where ``%`` reads a mapping by key."""
+
+    def __init__(self, data: Any) -> None:
+        self.data = data
+
+    def __getitem__(self, name: str) -> Any:
+        try:
+            return getattr(self.data, name)
+        except AttributeError:
+            raise KeyError(name) from None
+
+
+def _check_action_keys(
+    label: str, actions: Mapping[str, ServiceSpec], form_class: type[forms.BaseForm]
+) -> None:
+    """Refuse an action named like a field of the page's form."""
+    named = sorted(frozenset(actions) & frozenset(_declared(form_class)))
+    if named:
+        raise ImproperlyConfigured(
+            f"{label}.actions names {named[0]!r}, a field {form_class.__name__} declares: a "
+            "field is posted by every submit, so it cannot say which action runs."
+        )
+
+
+def _check_form_class(
+    label: str,
+    spec: ServiceSpec,
+    form_class: type[forms.BaseForm],
+    route: Mapping[str, str | None] | tuple[str, ...] | None,
+    server: ServerArguments | None,
+) -> None:
+    """Refuse a ``form_class`` whose post the spec would not read as the form declares it."""
+    named = f"{label}.form_class {form_class.__name__}"
+    validator: Validator | None = spec.validator
+    if isinstance(validator, FormValidator):
+        raise ImproperlyConfigured(
+            f"{label} sets form_class over a FormValidator, whose form is already the page's: "
+            "drop form_class."
+        )
+    _check_no_clean(named, form_class)
+    try:
+        posted = {each.name: each for each in FormValidator(form_class).parameters().items}
+    except ImproperlyConfigured as refused:
+        raise ImproperlyConfigured(f"{named} cannot be read off a post: {refused}") from refused
+    unsendable = sorted(validator.unsendable) if validator is not None else []
+    if unsendable:
+        raise ImproperlyConfigured(
+            f"{label}'s spec requires {unsendable[0]!r}, which its Validator cannot declare, so "
+            "no form can post it."
+        )
+    declared = {each.name: each for each in spec.parameters().items}
+    for name, field in posted.items():
+        if name not in declared:
+            raise ImproperlyConfigured(
+                f"{named} posts {name!r}, which the spec does not declare: it would reach "
+                "dispatch as an unknown argument."
+            )
+        _check_agreement(named, field, declared[name])
+    filled = server_owned_keys(spec) | server_names(server)
+    for name, parameter in declared.items():
+        closed = isinstance(route, tuple) and name not in route
+        if parameter.required and name not in posted and name not in filled and closed:
+            raise ImproperlyConfigured(
+                f"{named} does not post {name!r}, which the spec requires, and neither the "
+                "server nor the route fills it."
+            )
+
+
+def _check_no_clean(named: str, form_class: type[forms.BaseForm]) -> None:
+    """Refuse a ``clean()`` or ``clean_<field>()`` the form defines above Django's own."""
+    for klass in form_class.__mro__:
+        if klass.__module__.startswith("django."):
+            continue
+        own = sorted(name for name in vars(klass) if name == "clean" or name.startswith("clean_"))
+        if own:
+            raise ImproperlyConfigured(
+                f"{named} defines {own[0]}(), which the page never runs: the rule belongs in the "
+                "spec's Validator."
+            )
+
+
+def _check_agreement(named: str, field: Any, parameter: Any) -> None:
+    """Refuse a field whose wire type or ``required`` the spec's parameter does not share."""
+    if parameter.type != "any" and _shape(field, parameter.format) != _shape(
+        parameter, parameter.format
+    ):
+        raise ImproperlyConfigured(
+            f"{named} posts {field.name!r} as {_spelled(field)}, and the spec declares "
+            f"{_spelled(parameter)}."
+        )
+    if field.required != parameter.required:
+        verb = "requires" if field.required else "does not require"
+        spec_verb = "does not" if field.required else "does"
+        raise ImproperlyConfigured(
+            f"{named} {verb} {field.name!r}, and the spec {spec_verb}: the form and the spec "
+            "must agree on whether it may be left out."
+        )
+
+
+def _shape(parameter: Any, fmt: str | None) -> tuple[Any, ...]:
+    """What the type rule compares: the type, an array's element type, a format the spec names."""
+    return (parameter.type, parameter.items, parameter.format if fmt is not None else None)
+
+
+def _spelled(parameter: Any) -> str:
+    """A parameter's wire type as a refusal names it."""
+    if parameter.type == "array":
+        return f"array of {parameter.items}"
+    if parameter.format is not None:
+        return f"{parameter.type} ({parameter.format})"
+    return parameter.type
