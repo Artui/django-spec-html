@@ -449,6 +449,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#editing-a-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Editing a set
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#a-success" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -684,6 +695,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#editing-a-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Editing a set
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#a-success" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -811,12 +833,14 @@ formset in <code>django_spec_html/spec_form_set_fragment.html</code>, the file a
 request is answered with. It is found, refused at <code>as_view()</code> when no engine
 finds it, and overridden as <a href="../pages/#the-pages-template">the form page's is</a>:
 list <code>django_spec_html</code> in <code>INSTALLED_APPS</code> with <code>APP_DIRS</code> on. It renders,
-escaped and with no stylesheet, script or htmx attribute, the management
-form, the non-form errors - a question's message among them - and each form
-as a fieldset of its own with its errors, then the submit button, posting
+escaped and with no stylesheet or script, the management form, the non-form
+errors - a question's message among them - and each form as a fieldset of its
+own with its errors, through <code>django_spec_html/spec_form_set_row.html</code> inside
+<code>&lt;div id="spec-form-set-rows"&gt;</code>, then the submit button, posting
 <code>commit_button</code>'s name where one is set, and the <code>add_button</code>, which skips the
-browser's checks, since its post commits nothing. It has no target pane: a
-<code>many</code> spec has no target.</p>
+browser's checks, since its post commits nothing. The add button's htmx
+attributes, <a href="#adding-a-row">below</a>, are its only ones, inert without htmx. It has no target pane: a
+<code>many</code> spec's rows are its forms.</p>
 <h2 id="the-formset">The formset<a class="headerlink" href="#the-formset" title="Permanent link">&para;</a></h2>
 <p><strong>GET</strong> renders <code>template_name</code> with an unbound formset under <code>formset</code>, and
 <code>view</code> and <code>spec</code> beside it, once the principal is admitted: an anonymous
@@ -827,7 +851,8 @@ visitor above gets Django's own <code>PermissionDenied</code>.</p>
   up, so after the spec's class-level check the page asks the scope check of
   <code>None</code>, as dispatch asks it of every <code>many</code> call, and a principal the post
   would refuse is never offered the page. A route value the spec's <code>reads</code>
-  refuse is a 400, as on every page. A post asks it <strong>once</strong>: dispatch asks
+  refuse is <code>Http404</code>, as on every page
+  (<a href="../pages/#what-the-request-carries"><code>route_refusal_404</code></a>). A post asks it <strong>once</strong>: dispatch asks
   it, and where the page's own reading refuses the post first - its
   management form, a row's coercion - the page asks it before answering, so
   a principal it refuses is denied rather than shown the formset, as the
@@ -843,17 +868,19 @@ visitor above gets Django's own <code>PermissionDenied</code>.</p>
   <code>max_num</code> are the spec's <code>many_min_length</code> and <code>many_max_length</code>, never
   attributes of the view, so no second declaration can drift from the first.
   The formset validates neither: the list's length is the kernel's to refuse,
-  in its words.</li>
+  in its words. A Validator's <code>formset_class</code> is used as it is declared,
+  its own <code>extra</code>, <code>min_num</code> and <code>max_num</code> with it, <a href="#editing-a-set">below</a>.</li>
 <li><strong>Every form is built as the Validator builds a row's</strong>, with what its
   <code>form_kwargs</code> answers, through the kernel's <code>form_keywords</code>, as
   <a href="../pages/#a-form-that-takes-keywords">the single page builds its form</a>: asked
   once per request, with the principal, the request's seeds and its call
   context. A <code>many</code> spec has no target to hand it, so the answer is the same
   for every row.</li>
-<li><strong>No target pane.</strong> A <code>many</code> spec declares no target selector - the kernel
-  refuses one when the spec is built - so the context carries no <code>target</code>,
-  <code>target_count</code> or <code>target_display</code>, and <code>display_target</code> is refused at
-  <code>as_view()</code>.</li>
+<li><strong>No target pane.</strong> A <code>many</code> spec's rows are its forms, so the context
+  carries no <code>target_display</code> and <code>display_target</code> is refused at
+  <code>as_view()</code>. A spec with no <code>collection_selector_spec</code> has no set either,
+  and no <code>target</code> or <code>target_count</code>; <a href="#editing-a-set">a set edited</a> puts
+  both in the context.</li>
 </ul>
 <h2 id="the-post">The post<a class="headerlink" href="#the-post" title="Permanent link">&para;</a></h2>
 <p><strong>Each form is read as the single page reads its form</strong>: through its own
@@ -889,8 +916,9 @@ back onto the forms:</p>
 <li><strong>A refusal of the list as a whole lands on the formset's
   <code>non_form_errors()</code></strong>: its length - six books where the spec takes five -
   and a message the Validator gives about the rows together.</li>
-<li><strong>A refusal of a route value</strong> is a non-form error too, prefixed with its
-  name, <code>"shelf: Enter a whole number."</code>, in the same post as the rows'.</li>
+<li><strong>A refusal of a route value</strong>, with <code>route_refusal_404</code> off, is a non-form
+  error too, prefixed with its name, <code>"shelf: Enter a whole number."</code>, in the
+  same post as the rows'.</li>
 <li><strong>Every row's own checks answer in the same post.</strong> Beside an
   <code>InvalidArguments</code>, each sent form is validated as the Validator validates a
   row's, so a row the shape check refused - a required field left blank -
@@ -919,6 +947,94 @@ offers a fourth blank form with the first three as they were filled in. At the
 spec's <code>many_max_length</code> it offers none, since the list takes no more. Every
 other post that does not commit is the page again with the forms it posted,
 validated by nothing, as on <a href="../pages/#a-post-that-does-not-commit">the single page</a>.</p>
+<p><strong>Over htmx, the shipped add button appends one row.</strong> It carries <code>hx-post</code>,
+<code>hx-target="#spec-form-set-rows"</code> and <code>hx-swap="beforeend"</code>, so a page that
+loads htmx posts the formset and is answered, at 200, with the new form alone,
+rendered by <code>django_spec_html/spec_form_set_row.html</code>, then the management
+form's <code>TOTAL_FORMS</code> input, one higher, with <code>hx-swap-oob="true"</code>, which htmx
+swaps over the page's own. The new form is the formset's <code>empty_form</code> at the
+next index, built with the same <code>form_kwargs</code> as every other form. At
+<code>many_max_length</code> the answer is 204 with no body, and htmx swaps nothing.
+The answer is chosen by the request's <code>HX-Target</code>: an htmx add aimed anywhere
+else than <code>spec-form-set-rows</code>, such as a whole form posted with
+<code>hx-swap="outerHTML"</code> as in the template above, is the formset again with one
+more form, and so is an add without htmx. A project's own template that wants
+the row answer gives its rows that <code>id</code> and its add button that target, and
+overrides the row template as any shipped template is overridden.</p>
+<h2 id="editing-a-set">Editing a set<a class="headerlink" href="#editing-a-set" title="Permanent link">&para;</a></h2>
+<p><strong>The page builds the Validator's own formset.</strong> A <code>FormValidator</code> declaring
+a <code>formset_class</code> validates the call's rows as that formset, its <code>clean()</code>
+among them, on every transport; the page renders the same class, so the rule
+over the whole set is declared once. A refusal from that <code>clean()</code> is the
+formset's <code>non_form_errors()</code>, as any refusal of the list as a whole is.</p>
+<p><strong>A model formset edits the spec's collection.</strong> A <code>many</code> spec may declare a
+<code>collection_selector_spec</code>, the set its rows edit, and a
+<code>BaseModelFormSet</code> as the Validator's <code>formset_class</code> edits it:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">OneTitleEach</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">BaseModelFormSet</span><span class="p">):</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">clean</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>        <span class="n">kept</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>            <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"title"</span><span class="p">)</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>            <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">forms</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_should_delete_form</span><span class="p">(</span><span class="n">form</span><span class="p">)</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>        <span class="p">]</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">kept</span><span class="p">))</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">kept</span><span class="p">):</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>            <span class="k">raise</span> <span class="n">ValidationError</span><span class="p">(</span><span class="s2">"Two books share a title."</span><span class="p">)</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="n">CatalogueFormSet</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">modelformset_factory</span><span class="p">(</span>
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>    <span class="n">Book</span><span class="p">,</span> <span class="n">formset</span><span class="o">=</span><span class="n">OneTitleEach</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="s2">"title"</span><span class="p">,</span> <span class="s2">"price"</span><span class="p">,</span> <span class="s2">"author"</span><span class="p">],</span> <span class="n">can_delete</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">1</span>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="p">)</span>
+</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>
+</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
+</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="k">def</span><span class="w"> </span><span class="nf">every_book</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">QuerySet</span><span class="p">[</span><span class="n">Book</span><span class="p">]:</span>
+</span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>    <span class="k">return</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+</span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>
+</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>
+</span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="k">def</span><span class="w"> </span><span class="nf">edit_catalogue</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-4-22"><a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">data</span><span class="p">:</span>
+</span><span id="__span-4-23"><a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>        <span class="n">book</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"id"</span><span class="p">)</span>
+</span><span id="__span-4-24"><a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>        <span class="k">if</span> <span class="n">row</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"DELETE"</span><span class="p">):</span>
+</span><span id="__span-4-25"><a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a>            <span class="n">book</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span>
+</span><span id="__span-4-26"><a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a>        <span class="k">elif</span> <span class="n">book</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-4-27"><a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a>            <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="o">**</span><span class="n">row</span><span class="p">)</span>
+</span><span id="__span-4-28"><a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a>        <span class="k">else</span><span class="p">:</span>
+</span><span id="__span-4-29"><a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a>            <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">book</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="o">**</span><span class="n">row</span><span class="p">)</span>
+</span><span id="__span-4-30"><a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a>
+</span><span id="__span-4-31"><a id="__codelineno-4-31" name="__codelineno-4-31" href="#__codelineno-4-31"></a>
+</span><span id="__span-4-32"><a id="__codelineno-4-32" name="__codelineno-4-32" href="#__codelineno-4-32"></a><span class="n">edit_catalogue_spec</span> <span class="o">=</span> <span class="n">ServiceSpec</span><span class="p">(</span>
+</span><span id="__span-4-33"><a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a>    <span class="n">service</span><span class="o">=</span><span class="n">edit_catalogue</span><span class="p">,</span>
+</span><span id="__span-4-34"><a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a>    <span class="n">permissions</span><span class="o">=</span><span class="p">[</span><span class="n">Unrestricted</span><span class="p">()],</span>
+</span><span id="__span-4-35"><a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a>    <span class="n">validator</span><span class="o">=</span><span class="n">FormValidator</span><span class="p">(</span><span class="n">CatalogueFormSet</span><span class="o">.</span><span class="n">form</span><span class="p">,</span> <span class="n">formset_class</span><span class="o">=</span><span class="n">CatalogueFormSet</span><span class="p">),</span>
+</span><span id="__span-4-36"><a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a>    <span class="n">many</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-4-37"><a id="__codelineno-4-37" name="__codelineno-4-37" href="#__codelineno-4-37"></a>    <span class="n">collection_selector_spec</span><span class="o">=</span><span class="n">SelectorSpec</span><span class="p">(</span><span class="n">kind</span><span class="o">=</span><span class="n">SelectorKind</span><span class="o">.</span><span class="n">LIST</span><span class="p">,</span> <span class="n">selector</span><span class="o">=</span><span class="n">every_book</span><span class="p">),</span>
+</span><span id="__span-4-38"><a id="__codelineno-4-38" name="__codelineno-4-38" href="#__codelineno-4-38"></a><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">urlpatterns</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">path</span><span class="p">(</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>        <span class="s2">"books/edit/"</span><span class="p">,</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>        <span class="n">SpecFormSetView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="n">edit_catalogue_spec</span><span class="p">,</span> <span class="n">success_url</span><span class="o">=</span><span class="n">reverse_lazy</span><span class="p">(</span><span class="s2">"books"</span><span class="p">)),</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="p">),</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">path</span><span class="p">(</span><span class="s2">"books/"</span><span class="p">,</span> <span class="n">books</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"books"</span><span class="p">),</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="p">]</span>
+</span></code></pre></div>
+<ul>
+<li><strong>GET renders one prefilled form a row</strong>, the collection the selector
+  resolves for the principal handed to the formset as <code>queryset=</code>, then the
+  class's own <code>extra</code> blank forms. Each row's form carries its key as a
+  hidden input and, under <code>can_delete</code>, a <code>DELETE</code> box; the management
+  form's <code>INITIAL_FORMS</code> is the set's count.</li>
+<li><strong>A post sends each row's form whole</strong>, its key with it, and the service
+  reads the rows the kernel cleaned: the key as its row for an update,
+  <code>None</code> for a new row, and <code>DELETE</code> true for a row a person deleted, which
+  is sent with its values rather than dropped. A row the post leaves out is
+  left alone. A key outside the set is refused on its own form, an extra form's too
+  where the row form declares the key.</li>
+<li><strong>An extra form with its <code>DELETE</code> box ticked sends no row</strong>, as Django's
+  formset skips it, filled in or not.</li>
+<li><strong>A model formset needs the collection.</strong> <code>as_view()</code> refuses one on a
+  spec with no <code>collection_selector_spec</code>, which would otherwise build every
+  row of the model.</li>
+</ul>
 <h2 id="a-success">A success<a class="headerlink" href="#a-success" title="Permanent link">&para;</a></h2>
 <p>A success redirects to <code>success_url</code>, or answers <code>HX-Redirect</code> or the result
 fragment to htmx, as on the single page, and a view naming
@@ -931,7 +1047,8 @@ and a <code>many</code> call's is a list, which <code>%</code> with a name canno
 the operation returned, under <code>result.value</code>.</p>
 <h2 id="what-as_view-refuses">What <code>as_view()</code> refuses<a class="headerlink" href="#what-as_view-refuses" title="Permanent link">&para;</a></h2>
 <p>When the URLconf is imported: a spec whose Validator is not a <code>FormValidator</code>;
-a spec that is not <code>many</code>; a view displaying its target; an <code>extra</code> that is
+a spec that is not <code>many</code>; a Validator's model formset on a spec with no
+<code>collection_selector_spec</code>; a view displaying its target; an <code>extra</code> that is
 not a non-negative int; an <code>add_button</code> that is not a button's name, is set
 without a <code>commit_button</code>, or is the <code>commit_button</code>; a <code>redirect_field_name</code>
 that is either button; and either button or the <code>redirect_field_name</code> named

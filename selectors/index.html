@@ -526,6 +526,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#a-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A file
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#an-htmx-request" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -795,6 +806,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#a-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A file
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#an-htmx-request" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -869,7 +891,7 @@ withdraw a published one. Its specs:</p>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="sd">"""A book as a page names it."""</span>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">pk</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">FieldMarking</span><span class="o">.</span><span class="n">handle</span><span class="p">()]</span>  <span class="c1"># another call's input: never shown</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">title</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">FieldMarking</span><span class="o">.</span><span class="n">label</span><span class="p">()]</span>  <span class="c1"># the name a page calls it by</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">title</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">FieldMarking</span><span class="o">.</span><span class="n">label</span><span class="p">()]</span>
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">status</span><span class="p">:</span> <span class="n">Status</span>
 </span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
 </span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
@@ -944,6 +966,8 @@ withdraw a published one. Its specs:</p>
 </span><span id="__span-1-78"><a id="__codelineno-1-78" name="__codelineno-1-78" href="#__codelineno-1-78"></a>    <span class="n">affordances</span><span class="o">=</span><span class="p">{</span><span class="s2">"withdraw"</span><span class="p">:</span> <span class="n">withdraw_book_spec</span><span class="p">},</span>
 </span><span id="__span-1-79"><a id="__codelineno-1-79" name="__codelineno-1-79" href="#__codelineno-1-79"></a><span class="p">)</span>
 </span></code></pre></div>
+<p><code>BookOut</code> marks <code>pk</code> as the handle, another call's input that a page never
+shows, and <code>title</code> as the label, the name a page calls a row by.</p>
 <p>and its URLconf, a list page, the same list as a table, a page for one book
 and the page that withdraws it:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">urlpatterns</span> <span class="o">=</span> <span class="p">[</span>
@@ -1109,26 +1133,23 @@ last visit left it keeps the query in the session:</p>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="sd">"""The book list, opened where this session's last visit left it."""</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">get_query</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QueryDict</span><span class="p">:</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>        <span class="c1"># ?reset=1 forgets the saved query: the way out of one the spec</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>        <span class="c1"># refuses, since it is saved before dispatch judges it.</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>        <span class="k">if</span> <span class="s2">"reset"</span> <span class="ow">in</span> <span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="p">:</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>            <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"books_query"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>            <span class="k">return</span> <span class="n">QueryDict</span><span class="p">()</span>
-</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>        <span class="c1"># A visit that sends anything is the query, and is remembered...</span>
-</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>        <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="p">:</span>
-</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>            <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="p">[</span><span class="s2">"books_query"</span><span class="p">]</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="o">.</span><span class="n">urlencode</span><span class="p">()</span>
-</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>            <span class="k">return</span> <span class="n">request</span><span class="o">.</span><span class="n">GET</span>
-</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>        <span class="c1"># ...and a bare visit reads the last one: its filters, sort and page.</span>
-</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>        <span class="k">return</span> <span class="n">QueryDict</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"books_query"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
-</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>
-</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>
-</span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="n">urlpatterns</span> <span class="o">+=</span> <span class="p">[</span>
-</span><span id="__span-3-19"><a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>    <span class="n">path</span><span class="p">(</span>
-</span><span id="__span-3-20"><a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>        <span class="s2">"books/remembered/"</span><span class="p">,</span>
-</span><span id="__span-3-21"><a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>        <span class="n">RememberedBooks</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="n">book_list_spec</span><span class="p">,</span> <span class="n">paginate_by</span><span class="o">=</span><span class="mi">10</span><span class="p">),</span>
-</span><span id="__span-3-22"><a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>        <span class="n">name</span><span class="o">=</span><span class="s2">"remembered-books"</span><span class="p">,</span>
-</span><span id="__span-3-23"><a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>    <span class="p">),</span>
-</span><span id="__span-3-24"><a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a><span class="p">]</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>        <span class="c1"># ?reset=1 forgets the saved query.</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>        <span class="k">if</span> <span class="s2">"reset"</span> <span class="ow">in</span> <span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="p">:</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>            <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"books_query"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>            <span class="k">return</span> <span class="n">QueryDict</span><span class="p">()</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>        <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="p">:</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>            <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="p">[</span><span class="s2">"books_query"</span><span class="p">]</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="o">.</span><span class="n">urlencode</span><span class="p">()</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>            <span class="k">return</span> <span class="n">request</span><span class="o">.</span><span class="n">GET</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>        <span class="k">return</span> <span class="n">QueryDict</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"books_query"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="n">urlpatterns</span> <span class="o">+=</span> <span class="p">[</span>
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>    <span class="n">path</span><span class="p">(</span>
+</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>        <span class="s2">"books/remembered/"</span><span class="p">,</span>
+</span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>        <span class="n">RememberedBooks</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="n">book_list_spec</span><span class="p">,</span> <span class="n">paginate_by</span><span class="o">=</span><span class="mi">10</span><span class="p">),</span>
+</span><span id="__span-3-19"><a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>        <span class="n">name</span><span class="o">=</span><span class="s2">"remembered-books"</span><span class="p">,</span>
+</span><span id="__span-3-20"><a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>    <span class="p">),</span>
+</span><span id="__span-3-21"><a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="p">]</span>
 </span></code></pre></div>
 <p>A bare visit to <code>/books/remembered/</code> serves the filters, the sort and the page
 of the visit before it, and its links keep them; a visit that sends any key is
@@ -1214,6 +1235,13 @@ The same holds for <code>unavailable</code>, below.</p>
 so a selector's own rows are left as they were. A row that cannot carry an
 attribute, such as a tuple from <code>values_list()</code>, is served without answers,
 and either filter raises for it.</p>
+<p>A row that wraps its model instance, a frozen dataclass for one, is answered
+as well when the spec declares <code>row_object</code>, which the kernel reads once for
+every transport: the answers are put on the wrapper past its frozen guard, so
+<code>row|available:"withdraw"</code> and <code>row|unavailable:"withdraw"</code> read it unchanged,
+and the answers come from the same one query dispatch already made for every
+row. A wrapper with <code>__slots__</code> has no place to carry them and is served
+without answers, as a tuple is.</p>
 <h3 id="why-a-rows-action-is-unavailable">Why a row's action is unavailable<a class="headerlink" href="#why-a-rows-action-is-unavailable" title="Permanent link">&para;</a></h3>
 <p>The <code>unavailable</code> filter reads the same answers and says why: the row's
 answer, with the <code>code</code> and <code>reason</code> of the first condition the row does
@@ -1241,20 +1269,18 @@ depend on django-tables2</strong>: install it and list <code>django_tables2</cod
 <code>INSTALLED_APPS</code> in a project that sets <code>table_class</code>.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">BookTable</span><span class="p">(</span><span class="n">tables</span><span class="o">.</span><span class="n">Table</span><span class="p">):</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">title</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">()</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="c1"># Not among the OrderingFilter's fields, so its header must not link a</span>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="c1"># sort: dispatch would refuse ``o=author``, and the link would answer 400.</span>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">author</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">(</span><span class="n">accessor</span><span class="o">=</span><span class="s2">"author__name"</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">"Author"</span><span class="p">,</span> <span class="n">orderable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">price</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">()</span>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="c1"># The button where the row may be withdrawn, and otherwise why not: the</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>    <span class="c1"># reason of the first condition the row does not meet.</span>
-</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">withdraw</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">TemplateColumn</span><span class="p">(</span>
-</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>        <span class="s1">'{</span><span class="si">% lo</span><span class="s1">ad django_spec_html %}{% with why=record|unavailable:"withdraw" %}'</span>
-</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>        <span class="s2">"{</span><span class="si">% i</span><span class="s2">f why %}&lt;span&gt;{{ why.reason }}&lt;/span&gt;"</span>
-</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>        <span class="s1">'{</span><span class="si">% e</span><span class="s1">lse %}&lt;a href="{</span><span class="si">% u</span><span class="s1">rl "withdraw-book" record.pk %}"&gt;Withdraw&lt;/a&gt;{</span><span class="si">% e</span><span class="s1">ndif %}'</span>
-</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>        <span class="s2">"{</span><span class="si">% e</span><span class="s2">ndwith %}"</span><span class="p">,</span>
-</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>        <span class="n">orderable</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>        <span class="n">verbose_name</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
-</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a>    <span class="p">)</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="c1"># Not among the OrderingFilter's fields, so its header links no sort.</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="n">author</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">(</span><span class="n">accessor</span><span class="o">=</span><span class="s2">"author__name"</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">"Author"</span><span class="p">,</span> <span class="n">orderable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">price</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">()</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="c1"># The button where the row may be withdrawn, and otherwise why not.</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="n">withdraw</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">TemplateColumn</span><span class="p">(</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>        <span class="s1">'{</span><span class="si">% lo</span><span class="s1">ad django_spec_html %}{% with why=record|unavailable:"withdraw" %}'</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>        <span class="s2">"{</span><span class="si">% i</span><span class="s2">f why %}&lt;span&gt;{{ why.reason }}&lt;/span&gt;"</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>        <span class="s1">'{</span><span class="si">% e</span><span class="s1">lse %}&lt;a href="{</span><span class="si">% u</span><span class="s1">rl "withdraw-book" record.pk %}"&gt;Withdraw&lt;/a&gt;{</span><span class="si">% e</span><span class="s1">ndif %}'</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>        <span class="s2">"{</span><span class="si">% e</span><span class="s2">ndwith %}"</span><span class="p">,</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>        <span class="n">orderable</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>        <span class="n">verbose_name</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>    <span class="p">)</span>
 </span></code></pre></div>
 <p>A <code>TemplateColumn</code> asks each <code>record</code> what it offers, as a template asks a
 row: the example's shows the button, or the reason it is not there. <strong>The table never pages or orders the rows</strong>: they are the spec's page,
@@ -1280,6 +1306,36 @@ page one.</p>
 renders without the page's context, and a <code>{% csrf_token %}</code> in one renders
 nothing. A form posting from a column belongs on a template of the project's
 own that renders the table with <code>{% render_table table %}</code>.</p>
+<h2 id="a-file">A file<a class="headerlink" href="#a-file" title="Permanent link">&para;</a></h2>
+<p>A <code>RETRIEVE</code> spec whose presenter is the kernel's <code>FilePresenter</code> is a
+download rather than a page: the row it finds is presented through the
+presenter, and the answer is the file, a <code>FileResponse</code> of its bytes or file
+object, or a <code>StreamingHttpResponse</code> for an iterable of bytes, with the
+presenter's content type and <code>Content-Length</code> wherever the size is known.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">invoice_pdf</span> <span class="o">=</span> <span class="n">SelectorSpec</span><span class="p">(</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">kind</span><span class="o">=</span><span class="n">SelectorKind</span><span class="o">.</span><span class="n">RETRIEVE</span><span class="p">,</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">selector</span><span class="o">=</span><span class="n">invoice_by_pk</span><span class="p">,</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">reads</span><span class="o">=</span><span class="n">Parameters</span><span class="o">.</span><span class="n">of</span><span class="p">(</span><span class="n">Parameter</span><span class="p">(</span><span class="s2">"pk"</span><span class="p">,</span> <span class="s2">"integer"</span><span class="p">,</span> <span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">)),</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="n">presenter</span><span class="o">=</span><span class="n">FilePresenter</span><span class="p">(</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>        <span class="s2">"application/pdf"</span><span class="p">,</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>        <span class="n">filename</span><span class="o">=</span><span class="k">lambda</span> <span class="n">invoice</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"invoice-</span><span class="si">{</span><span class="n">invoice</span><span class="o">.</span><span class="n">pk</span><span class="si">}</span><span class="s2">.pdf"</span><span class="p">,</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>        <span class="n">render</span><span class="o">=</span><span class="n">render_invoice_pdf</span><span class="p">,</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>    <span class="p">),</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="p">)</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="n">path</span><span class="p">(</span>
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>    <span class="s2">"invoices/&lt;int:pk&gt;/pdf/"</span><span class="p">,</span>
+</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>    <span class="n">SpecSelectorView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="n">invoice_pdf</span><span class="p">,</span> <span class="n">route_kwargs</span><span class="o">=</span><span class="p">(</span><span class="s2">"pk"</span><span class="p">,)),</span>
+</span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="p">)</span>
+</span></code></pre></div>
+<p><code>Content-Disposition</code> is <code>attachment</code>, naming the file, quoted by RFC 5987
+for a name outside ASCII; <code>as_attachment = False</code> answers <code>inline</code>, so a
+browser shows a PDF in place. An htmx request is answered the file too. The
+admission, the route and every refusal are the page's as for any other read;
+an <code>allow_none</code> spec that finds nothing renders the page with no row, and no
+display is asked of a spec whose Output is a file.</p>
+<p><code>as_view()</code> refuses a file presented by a <code>LIST</code> spec, through the kernel's
+<code>file_output</code>: a list of files has no answer on any transport.</p>
 <h2 id="an-htmx-request">An htmx request<a class="headerlink" href="#an-htmx-request" title="Permanent link">&para;</a></h2>
 <p>An htmx request is answered with the results alone, <code>spec_selector_fragment.html</code>
 by default or the template's <code>spec-results</code> partial, as the form pages answer
@@ -1288,9 +1344,9 @@ the fragment at 200, since htmx swaps no 4xx by default, and every response
 carries <code>Vary: HX-Request</code>. The shipped page wraps its results in
 <code>&lt;div id="spec-results"&gt;</code> and adds no <code>hx-</code> attribute of its own; a live
 search is the project's:</p>
-<div class="language-django highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="x">&lt;form method="get" hx-get="" hx-target="#spec-results" hx-trigger="input changed delay:300ms"&gt;</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="x">  </span><span class="cp">{{</span> <span class="nv">filter.form</span> <span class="cp">}}</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="x">&lt;/form&gt;</span>
+<div class="language-django highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="x">&lt;form method="get" hx-get="" hx-target="#spec-results" hx-trigger="input changed delay:300ms"&gt;</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="x">  </span><span class="cp">{{</span> <span class="nv">filter.form</span> <span class="cp">}}</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="x">&lt;/form&gt;</span>
 </span></code></pre></div>
 <h2 id="how-many-queries-a-page-costs">How many queries a page costs<a class="headerlink" href="#how-many-queries-a-page-costs" title="Permanent link">&para;</a></h2>
 <p>A list page costs the same number of queries whatever its size: the

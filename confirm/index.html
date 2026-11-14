@@ -425,6 +425,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="What a post sends">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-bulk-action-over-ticked-rows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A bulk action over ticked rows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -743,6 +760,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="What a post sends">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-bulk-action-over-ticked-rows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A bulk action over ticked rows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -848,7 +882,8 @@ it: what the operation acts on, and a button. Withdrawing a book, archiving a
 note, closing every stale ticket. Every argument the operation takes comes
 from the server's side - the route, a pool seed, a <code>kwargs</code> provider or
 <code>server_arguments</code> - so the page posts nothing but its token and the button,
-and <strong>nothing a post carries becomes an argument</strong>.</p>
+and <strong>nothing a post carries becomes an argument</strong> but the selection a bulk
+action names in <a href="#a-bulk-action-over-ticked-rows"><code>posted_arguments</code></a>.</p>
 <p><code>SpecConfirmView</code> serves a spec whose Validator is <code>None</code>. It shares
 everything with <a href="../pages/"><code>SpecFormView</code></a> but the form: the admission, the
 target and its display, the affordances, the fragment wrapper under htmx, the
@@ -958,7 +993,10 @@ is nothing else to send:</p>
 <p><strong>GET</strong> renders <code>template_name</code> with the context every page builds - <code>view</code>,
 <code>spec</code>, <code>target</code>, a set's <code>target_count</code> and <code>target_counted_at</code>,
 <code>target_display</code> on a page that sets <code>display_target</code>, and <code>unavailable</code>
-when an affordance is not met - <strong>and no <code>form</code></strong>. A key with nothing to
+when an affordance is not met, or on a page serving <code>actions</code>
+<code>unavailable_actions</code>, <code>refused_actions</code> and <code>action_buttons</code>, each action's
+own answer - <strong>and
+no <code>form</code></strong>. A key with nothing to
 hold is absent, as on every page, so a template's <code>{% if form %}</code> is false
 rather than <code>{{ form }}</code> rendering <code>None</code>. The template renders its own
 <code>&lt;form method="post"&gt;</code>, the CSRF token and the submit button:</p>
@@ -1002,21 +1040,81 @@ stylesheet, script or htmx attribute:</p>
 <h2 id="what-a-post-sends">What a post sends<a class="headerlink" href="#what-a-post-sends" title="Permanent link">&para;</a></h2>
 <p><strong>POST dispatches with the route's kwargs alone</strong>, read by <code>route_kwargs</code> and
 coerced by their declarations, with the request's seeds and the binding laid
-over them, as a form page's are. The post's own data is never read: not the
-CSRF token, not the button, not a key named like a parameter. A post carrying
+over them, as a form page's are. The post's own data is never read but for
+the names <code>posted_arguments</code> lists: not the CSRF token, not the button, not
+any other key named like a parameter. A post carrying
 <code>pk=7</code> to <code>/books/3/withdraw/</code> withdraws book 3. So the closed argument set
 holds with nothing to check, and a post cannot fill a parameter the route, a
 seed or <code>server_arguments</code> fills, nor one nobody declared.</p>
 <p><code>commit_button</code> works as on a form page: above, only a post carrying
 <code>withdraw</code> runs the operation, and any other post is the page again, with
-<code>refreshed</code> in its context.</p>
+<code>refreshed</code> in its context. A page with <a href="../pages/#one-form-several-operations"><code>actions</code></a>
+takes no <code>commit_button</code>: <code>as_view()</code> refuses the pair, and an action keyed like a
+<code>posted_arguments</code> name or <code>csrfmiddlewaretoken</code>, which every post carries.
+<strong>Each action's button answers its own availability</strong>: the shipped template
+disables an unavailable action's button and shows its reason, the others stay
+usable, and a post naming the unavailable one is refused at 409, as
+<a href="../pages/#one-form-several-operations">on a form page</a>. An action after the
+first that the user may not run - its permissions refuse them, or its scope
+check refuses the target - is disabled with no reason and no code, its key in
+<code>refused_actions</code>, and a post naming it is refused, 403 or 404, as before.
+A refused post's page keeps each action's state, asked of the target that post
+found, as <a href="../pages/#one-form-several-operations">on a form page</a>.</p>
+<h3 id="a-bulk-action-over-ticked-rows">A bulk action over ticked rows<a class="headerlink" href="#a-bulk-action-over-ticked-rows" title="Permanent link">&para;</a></h3>
+<p>A list whose rows carry checkboxes and whose one button archives the ticked
+ones posts the selection itself: the rows are the person's choice, not the
+route's. <strong><code>posted_arguments</code> names the parameters a post supplies</strong>, and
+nothing else the post carries is read. Here <code>archive_notes_spec</code> reads
+<code>Parameter("ids", "array", items="integer")</code> and archives those notes:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.urls</span><span class="w"> </span><span class="kn">import</span> <span class="n">path</span><span class="p">,</span> <span class="n">reverse_lazy</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">urlpatterns</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">path</span><span class="p">(</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>        <span class="s2">"notes/archive/"</span><span class="p">,</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>        <span class="n">SpecConfirmView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>            <span class="n">spec</span><span class="o">=</span><span class="n">archive_notes_spec</span><span class="p">,</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>            <span class="n">success_url</span><span class="o">=</span><span class="n">reverse_lazy</span><span class="p">(</span><span class="s2">"notes"</span><span class="p">),</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>            <span class="n">posted_arguments</span><span class="o">=</span><span class="p">(</span><span class="s2">"ids"</span><span class="p">,),</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>        <span class="p">),</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>        <span class="n">name</span><span class="o">=</span><span class="s2">"archive-notes"</span><span class="p">,</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>    <span class="p">),</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="p">]</span>
+</span></code></pre></div>
+<p>The list renders a checkbox per row and a button that posts them with
+htmx's <code>hx-include</code>, so the boxes need no form of their own:</p>
+<div class="language-html highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">&lt;</span><span class="nt">table</span><span class="p">&gt;</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>  {% for note in notes %}
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="p">&lt;</span><span class="nt">tr</span><span class="p">&gt;&lt;</span><span class="nt">td</span><span class="p">&gt;&lt;</span><span class="nt">input</span> <span class="na">type</span><span class="o">=</span><span class="s">"checkbox"</span> <span class="na">name</span><span class="o">=</span><span class="s">"ids"</span> <span class="na">value</span><span class="o">=</span><span class="s">"{{ note.pk }}"</span><span class="p">&gt;&lt;/</span><span class="nt">td</span><span class="p">&gt;&lt;</span><span class="nt">td</span><span class="p">&gt;</span>{{ note }}<span class="p">&lt;/</span><span class="nt">td</span><span class="p">&gt;&lt;/</span><span class="nt">tr</span><span class="p">&gt;</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>  {% endfor %}
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="p">&lt;/</span><span class="nt">table</span><span class="p">&gt;</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="p">&lt;</span><span class="nt">button</span> <span class="na">hx-post</span><span class="o">=</span><span class="s">"{% url 'archive-notes' %}"</span> <span class="na">hx-include</span><span class="o">=</span><span class="s">"[name=ids]:checked"</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>        <span class="na">hx-headers</span><span class="o">=</span><span class="s">'{"X-CSRFToken": "{{ csrf_token }}"}'</span> <span class="na">name</span><span class="o">=</span><span class="s">"archive"</span><span class="p">&gt;</span>Archive<span class="p">&lt;/</span><span class="nt">button</span><span class="p">&gt;</span>
+</span></code></pre></div>
+<ul>
+<li><strong>Each name is read as a query string is</strong>, by the kernel's
+  <code>flat_arguments</code>: every value of an array parameter, so <code>ids=3&amp;ids=5</code> is
+  <code>[3, 5]</code>, a comma list split (<code>ids=3,5</code>), the last value of anything else,
+  and a blank absent, so a post with nothing ticked carries no <code>ids</code>. It is
+  then merged with the route's arguments and coerced by its declaration.</li>
+<li><strong>Any other posted key never reaches the service</strong>, a parameter of the spec
+  included, so the closed argument set stays closed.</li>
+<li><strong>A refused value is a refused post</strong>: <code>ids=x</code> answers 400 with
+  <code>"ids.0: Enter a whole number."</code> in <code>errors</code>, as does a list the shape
+  check refuses (too short for a <code>min_length</code>), or under <code>refusal_redirect</code>
+  that message and a redirect back to the list. It is never a 404:
+  <code>route_refusal_404</code> is the route's alone.</li>
+<li><strong><code>as_view()</code> checks the names</strong>: each must be a parameter of the spec, and
+  none may be one <code>route_kwargs</code> fills from the URL, since a parameter is
+  the route's or the post's, never both. <code>posted_arguments</code> must be a tuple.</li>
+</ul>
 <h2 id="every-required-parameter-has-a-source">Every required parameter has a source<a class="headerlink" href="#every-required-parameter-has-a-source" title="Permanent link">&para;</a></h2>
-<p><strong><code>as_view()</code> refuses a spec demanding a parameter that only a post could
-supply</strong>, since no post to this page carries one. Which parameters the call
+<p><strong><code>as_view()</code> refuses a spec demanding a parameter that nothing but a post
+could supply</strong>, since no post to this page carries one unless
+<code>posted_arguments</code> names it. Which parameters the call
 demands is the kernel's answer, read through <code>bind_arguments</code> on a call
 carrying nothing: a parameter that is optional or declares a default is not
 demanded, and nor is a key a typed <code>kwargs</code> provider fills or may decline,
-or any read an untyped provider reaches. Each one left must be supplied by one of three
+or any read an untyped provider reaches. Each one left must be supplied by one of four
 sources, as they stand when the URLconf is imported:</p>
 <table>
 <thead>
@@ -1038,6 +1136,10 @@ sources, as they stand when the URLconf is imported:</p>
 <td>the binding</td>
 <td>each name <code>server_arguments</code> binds a value to</td>
 </tr>
+<tr>
+<td>the post</td>
+<td>each name <code>posted_arguments</code> lists</td>
+</tr>
 </tbody>
 </table>
 <p><strong>The route must say what it fills.</strong> <code>as_view()</code> is called while the
@@ -1048,7 +1150,7 @@ only the parameters it maps a kwarg into, so under <code>{"org": None}</code>, f
 <code>include()</code> prefix, a <code>pk</code> the route still passes under its own name is not
 counted until it is mapped to itself: <code>{"org": None, "pk": "pk"}</code>. Without
 any:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>SpecConfirmView requires pk, which no post to a confirmation carries: fill each from the route, naming it in route_kwargs, or from a pool seed, a kwargs provider or server_arguments.
+<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>SpecConfirmView requires pk, which no post to a confirmation carries: fill each from the route, naming it in route_kwargs, or from a pool seed, a kwargs provider or server_arguments, or name it in posted_arguments.
 </span></code></pre></div>
 <p>A seed only <code>get_pool_seeds</code> adds per request is not seen either, since
 there is no request yet: declare it on <code>pool_seeds</code>. A name <code>server_arguments</code>
@@ -1064,10 +1166,14 @@ page that works, and says why.</p>
   fragment at 200, as on every page.</li>
 <li>The context carries <code>errors</code>, every message the refusal holds, as a list of
   strings in the refusal's order. With no field to put one on, a message
-  about a parameter is prefixed with its path: a route value the target's
-  reads refuse is <code>"pk: Enter a whole number."</code>.</li>
+  about a parameter is prefixed with its path: with <code>route_refusal_404</code> off,
+  a route value the target's reads refuse is <code>"pk: Enter a whole number."</code>
+  (on, it is <code>Http404</code>).</li>
 <li><code>code</code> is there for a refusal carrying one, as on a form page, and the
   target is shown again.</li>
+<li>On a page serving <code>actions</code>, <code>unavailable_actions</code>, <code>refused_actions</code>,
+  <code>action_buttons</code> and <code>unavailable</code> are there as GET puts them, asked of the
+  target the post found, so a button GET disables stays disabled.</li>
 <li>A denial is raised for the host's 403 or 404 page.</li>
 </ul>
 <p>A confirmation's denial is the host's to answer, for htmx too, by the
@@ -1079,23 +1185,23 @@ the refusal back instead</strong>, to the page it came from. The URLconf routes 
 example as <code>books/&lt;int:pk&gt;/withdraw/from-the-list/</code>, with
 <code>redirect_field_name="next"</code> beside it, and a row's form posts to it with
 <code>?next=</code> naming the page of the list it sits on:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">urlpatterns</span> <span class="o">+=</span> <span class="p">[</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">path</span><span class="p">(</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>        <span class="s2">"books/&lt;int:pk&gt;/withdraw/from-the-list/"</span><span class="p">,</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>        <span class="n">SpecConfirmView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>            <span class="n">spec</span><span class="o">=</span><span class="n">withdraw_book_spec</span><span class="p">,</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>            <span class="n">template_name</span><span class="o">=</span><span class="s2">"spec_confirm_view.html"</span><span class="p">,</span>
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>            <span class="n">success_url</span><span class="o">=</span><span class="n">reverse_lazy</span><span class="p">(</span><span class="s2">"books"</span><span class="p">),</span>
-</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>            <span class="n">route_kwargs</span><span class="o">=</span><span class="p">(</span><span class="s2">"pk"</span><span class="p">,),</span>
-</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>            <span class="n">commit_button</span><span class="o">=</span><span class="s2">"withdraw"</span><span class="p">,</span>
-</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>            <span class="c1"># A row's button posts here with ?next=, the page of the list it</span>
-</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>            <span class="c1"># sits on, and both outcomes go back there: a success, and a</span>
-</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>            <span class="c1"># refusal, its reason sent as a message.</span>
-</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>            <span class="n">redirect_field_name</span><span class="o">=</span><span class="s2">"next"</span><span class="p">,</span>
-</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>            <span class="n">refusal_redirect</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-</span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>        <span class="p">),</span>
-</span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>    <span class="p">),</span>
-</span><span id="__span-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="p">]</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">urlpatterns</span> <span class="o">+=</span> <span class="p">[</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">path</span><span class="p">(</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>        <span class="s2">"books/&lt;int:pk&gt;/withdraw/from-the-list/"</span><span class="p">,</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>        <span class="n">SpecConfirmView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>            <span class="n">spec</span><span class="o">=</span><span class="n">withdraw_book_spec</span><span class="p">,</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>            <span class="n">template_name</span><span class="o">=</span><span class="s2">"spec_confirm_view.html"</span><span class="p">,</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>            <span class="n">success_url</span><span class="o">=</span><span class="n">reverse_lazy</span><span class="p">(</span><span class="s2">"books"</span><span class="p">),</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>            <span class="n">route_kwargs</span><span class="o">=</span><span class="p">(</span><span class="s2">"pk"</span><span class="p">,),</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>            <span class="n">commit_button</span><span class="o">=</span><span class="s2">"withdraw"</span><span class="p">,</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>            <span class="c1"># A row's button posts here with ?next=, the page of the list it</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>            <span class="c1"># sits on, and both outcomes go back there: a success, and a</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>            <span class="c1"># refusal, its reason sent as a message.</span>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>            <span class="n">redirect_field_name</span><span class="o">=</span><span class="s2">"next"</span><span class="p">,</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>            <span class="n">refusal_redirect</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>        <span class="p">),</span>
+</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a>    <span class="p">),</span>
+</span><span id="__span-8-17"><a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="p">]</span>
 </span></code></pre></div>
 <ul>
 <li><strong>An invalid, a failed or a needs-input refusal is sent back.</strong> Each
