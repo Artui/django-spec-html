@@ -18,6 +18,7 @@ from django_service_specs import (
     SelectorKind,
     SelectorSpec,
     ServiceSpec,
+    SpecRegistry,
     UnknownArguments,
     Unrestricted,
 )
@@ -182,6 +183,21 @@ urlpatterns = [
     ),
 ]
 # --8<-- [end:urls]
+
+
+# --8<-- [start:links]
+# Each operation a row links to, under the name of the URL pattern serving it.
+book_routes = SpecRegistry()
+book_routes.register("withdraw-book", withdraw_book_spec)
+
+urlpatterns += [
+    path(
+        "books/linked/",
+        SpecSelectorView.as_view(spec=book_list_spec, paginate_by=10, link_routes=book_routes),
+        name="linked-books",
+    ),
+]
+# --8<-- [end:links]
 
 
 # --8<-- [start:remembered]

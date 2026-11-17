@@ -16,6 +16,7 @@ from django_service_specs import (
     SelectorKind,
     SelectorSpec,
     ServiceError,
+    SpecRegistry,
     SpecSource,
     UnknownArguments,
     dispatch,
@@ -123,6 +124,9 @@ class SpecSelectorView(SpecRequestBase):
     and ``{% if row|available:"rename" %}`` asks a row what the operation's
     own dispatch would enforce, in no query of its own. See
     [`available`][django_spec_html.templatetags.django_spec_html.available].
+    With ``link_routes`` set, ``{% spec_link row "rename" %}`` renders the
+    URL the operation is served at, the row's values filling its kwargs. See
+    [`spec_link`][django_spec_html.templatetags.django_spec_html.spec_link].
 
     **Paging.** A list is paged by the kernel's ``paginate_output``: the
     page named by ``page_kwarg``, ``paginate_by`` rows to a page, never more
@@ -185,7 +189,8 @@ class SpecSelectorView(SpecRequestBase):
     page size with no ceiling, and a list spec declaring a parameter under a
     paging key, whose value could never reach it; a
     ``table_order_by_field`` the spec does not declare, since no header
-    link would then sort the rows; and ``display_rows`` on a spec whose Output
+    link would then sort the rows; ``link_routes`` that is not a
+    ``SpecRegistry``; and ``display_rows`` on a spec whose Output
     cannot display a row.
 
     Attributes:
@@ -229,6 +234,10 @@ class SpecSelectorView(SpecRequestBase):
             orderable column.
         display_rows: Whether the context carries ``row_displays``, which
             the shipped template renders a row by when there is no table.
+        link_routes: A kernel ``SpecRegistry`` naming each operation a row's
+            affordances lead to by the name of the URL pattern serving it,
+            which the ``spec_link`` tag reverses; ``None``, the default,
+            links nowhere, and the tag raises.
         as_attachment: Whether a ``RETRIEVE`` spec presenting a file through
             the kernel's ``FilePresenter`` answers it as a download, the
             default, or ``inline``, for a browser to show it in place.
@@ -246,6 +255,7 @@ class SpecSelectorView(SpecRequestBase):
     table_order_by_field: str | None = None
     display_rows: bool = True
     as_attachment: bool = True
+    link_routes: SpecRegistry | None = None
     # Only here does an undeclared key a stranger wrote reach dispatch, unlike REJECT.
     unknown_arguments: UnknownArguments = UnknownArguments.IGNORE
 
@@ -287,6 +297,7 @@ class SpecSelectorView(SpecRequestBase):
                 remedy="set table_class, or display_rows = False for a template of the "
                 "project's own",
             )
+        _check_link_routes(label, initkwargs.get("link_routes", cls.link_routes))
         check_shipped_templates(cls, initkwargs)
         return view
 
@@ -343,7 +354,7 @@ class SpecSelectorView(SpecRequestBase):
             served_page = paginate_output(
                 result.value, page=page, limit=limit, max_page_size=self.max_page_size
             )
-            rows = answered_rows(spec, list(served_page.items))
+            rows = answered_rows(spec, list(served_page.items), self.link_routes)
             context["page"] = dataclasses.replace(served_page, items=rows)
             context.update(_links(read, self.page_kwarg, served_page))
         elif file_output(spec) is not None:
@@ -352,7 +363,11 @@ class SpecSelectorView(SpecRequestBase):
             context["rows"] = []
             return self._rendered(self.get_context_data(**context), status=200)
         else:
-            rows = [] if result.value is None else answered_rows(spec, [result.value])
+            rows = (
+                []
+                if result.value is None
+                else answered_rows(spec, [result.value], self.link_routes)
+            )
             if rows:
                 context["row"] = rows[0]
         context["rows"] = rows
@@ -499,6 +514,14 @@ def _check_paging(label: str, spec: SelectorSpec, configured: Mapping[str, Any])
             "page takes its paging keys off the query before the spec reads it, so the "
             "parameter could never be sent. Name another key with page_kwarg or "
             "page_size_kwarg."
+        )
+
+
+def _check_link_routes(label: str, routes: Any) -> None:
+    if routes is not None and not isinstance(routes, SpecRegistry):
+        raise ImproperlyConfigured(
+            f"{label}.link_routes is a {type(routes).__name__}: set a SpecRegistry whose names "
+            "are URL pattern names, or None for a page whose rows link nowhere."
         )
 
 

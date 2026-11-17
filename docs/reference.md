@@ -86,13 +86,14 @@ This package defines none. The argument reader reads one of the kernel's:
         - served_spec
 ::: django_spec_html.types.outcome.Outcome
 
-## Template filters
+## Template filters and tags
 
 `{% load django_spec_html %}` loads them: the library is named for the
 package, so a template reads which package it loads.
 
 ::: django_spec_html.templatetags.django_spec_html.available
 ::: django_spec_html.templatetags.django_spec_html.unavailable
+::: django_spec_html.templatetags.django_spec_html.spec_link
 
 ## The admin
 

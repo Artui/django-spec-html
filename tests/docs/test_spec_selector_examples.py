@@ -246,9 +246,9 @@ def selectors_snippet(containing: str) -> str:
     return "{% load django_spec_html %}" + block
 
 
-def served_books(count: int) -> list[Any]:
+def served_books(count: int, path: str = "/books/") -> list[Any]:
     seed(count)
-    response = Client().get("/books/")
+    response = Client().get(path)
     assert response.status_code == 200
     return list(response.context["rows"])
 
@@ -276,6 +276,27 @@ def test_unavailable_says_why_each_row_has_no_button(
 
     with django_assert_num_queries(0):
         shown = [why.render(Context({"row": row})).strip() for row in rows]
+
+    for row, rendered in zip(rows, shown, strict=True):
+        if row.status == Status.DRAFT:
+            expected = '<span title="not_published">Only a published book can be withdrawn.</span>'
+        elif paused:
+            expected = '<span title="withdrawals_paused">Withdrawals are paused.</span>'
+        else:
+            expected = f'<a href="/books/{row.pk}/withdraw/">Withdraw</a>'
+        assert rendered == expected
+
+
+@pytest.mark.parametrize("paused", [False, True], ids=["open", "paused"])
+def test_spec_link_leads_each_row_to_its_withdraw_page_or_says_why_not(
+    paused: bool, monkeypatch: pytest.MonkeyPatch, django_assert_num_queries: Any
+) -> None:
+    monkeypatch.setattr(spec_selector, "WITHDRAWALS_PAUSED", paused)
+    link = Template(selectors_snippet('{% spec_link row "withdraw" as link %}'))
+    rows = served_books(6, "/books/linked/")
+
+    with django_assert_num_queries(0):
+        shown = [" ".join(link.render(Context({"row": row})).split()) for row in rows]
 
     for row, rendered in zip(rows, shown, strict=True):
         if row.status == Status.DRAFT:

@@ -1,0 +1,3 @@
+{% load django_spec_html %}{% for row in rows %}
+{% spec_link row "rename" as link %}{{ row.title }}:{{ link.url }}{% if not link.available %}:{{ link.code }}{% endif %}
+{% endfor %}

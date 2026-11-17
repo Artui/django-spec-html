@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from django import template
 from django.template import TemplateSyntaxError
+from django.urls import NoReverseMatch, get_resolver, get_urlconf, reverse
+from django_service_specs import row_links
 
-from django_spec_html.views.utils import row_answers
+from django_spec_html.views.utils import RowSource, row_answers, row_source
 
 register = template.Library()
 
@@ -83,6 +85,91 @@ def unavailable(row: Any, name: str) -> dict[str, Any] | None:
     return _Answer(answer)
 
 
+@register.simple_tag
+def spec_link(row: Any, name: str) -> _Link:
+    """The link affordance ``name`` leads to from ``row``: ``{% spec_link row "rename" %}``.
+
+    Renders the URL of the view serving the operation, reversed at render
+    from the URL pattern name ``SpecSelectorView.link_routes`` holds the
+    operation under, with the row's values for its bound reads as the
+    pattern's kwargs: the kernel's ``row_links`` for the row, read with
+    ``link_routes`` as its registry (test_a_link_renders_the_bound_url). A read
+    the pattern does not capture is left out of the URL, for the page it
+    leads to to ask.
+
+    ``{% spec_link row "rename" as link %}`` keeps the whole answer:
+    ``link.url``, ``link.available``, and, when it is not, ``link.code`` and
+    ``link.reason``, as ``unavailable`` answers them, so a row draws the
+    link or why it cannot (test_an_unavailable_link_carries_its_reason). An
+    unavailable link still has its URL, since dispatch, not the link,
+    refuses the call.
+
+    **What cannot be resolved raises at render**, naming the link: a row the
+    page did not serve, a name its spec does not declare, a page with no
+    ``link_routes``, an operation ``link_routes`` does not name or names
+    twice, and a pattern ``reverse`` cannot fill. It raises for an
+    unavailable row too, so a broken route shows on the first render. A
+    tag is never inside an ``{% if %}``, so nothing swallows the error, as
+    ``{% if %}`` swallows the ``available`` filter's inside ``not``.
+
+    Raises:
+        TemplateSyntaxError: the link cannot be resolved, naming it.
+    """
+    _answer(row, name, "spec_link")
+    source = cast(RowSource, row_source(row))
+    where = f"spec_link {name!r}"
+    if source.link_routes is None:
+        raise TemplateSyntaxError(
+            f"{where} was asked about a row a SpecSelectorView served with no link_routes: set "
+            "link_routes to a SpecRegistry naming each operation by its URL pattern name."
+        )
+    try:
+        link = row_links(source.spec, source.row, registry=source.link_routes)[name]
+    except ValueError as refused:
+        raise TemplateSyntaxError(f"{where}: {refused}") from refused
+    if "name" not in link:
+        raise TemplateSyntaxError(
+            f"{where} leads to an operation link_routes does not name: register its spec there "
+            "under the name of the URL pattern serving it."
+        )
+    try:
+        url = _reversed(link["name"], link["arguments"])
+    except NoReverseMatch as refused:
+        raise TemplateSyntaxError(
+            f"{where} leads to URL pattern {link['name']!r}, which cannot be reversed with "
+            f"{link['arguments']!r}: {refused}"
+        ) from refused
+    return _Link(
+        {
+            key: link[key]
+            for key in ("available", "code", "reason", "name", "arguments")
+            if key in link
+        },
+        url=url,
+    )
+
+
+def _reversed(name: str, arguments: dict[str, Any]) -> str:
+    captured = _captured(name)
+    return reverse(name, kwargs={read: arguments[read] for read in arguments if read in captured})
+
+
+def _captured(name: str) -> set[str]:
+    """The kwargs ``name``'s patterns capture: none where a namespace is not found."""
+    *namespaces, view = name.split(":")
+    resolver = get_resolver(get_urlconf())
+    for namespace in namespaces:
+        if namespace not in resolver.namespace_dict:
+            return set()
+        _, resolver = resolver.namespace_dict[namespace]
+    return {
+        param
+        for possibilities, *_ in resolver.reverse_dict.getlist(view)
+        for _, params in possibilities
+        for param in params
+    }
+
+
 def _alters_data(method: _Method) -> _Method:
     # A type checker refuses an ``alters_data`` attribute set directly on a function.
     vars(method)["alters_data"] = True
@@ -99,6 +186,16 @@ class _Answer(dict):
     @_alters_data
     def popitem(self) -> tuple[str, Any]:
         return super().popitem()
+
+
+class _Link(_Answer):
+    """One row's link: its answer, and the URL it renders as."""
+
+    def __init__(self, answer: dict[str, Any], *, url: str) -> None:
+        super().__init__(answer, url=url)
+
+    def __str__(self) -> str:
+        return self["url"]
 
 
 def _answer(row: Any, name: str, asked: str) -> dict[str, Any]:

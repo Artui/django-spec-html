@@ -15,9 +15,17 @@ from django.core.exceptions import ImproperlyConfigured, PermissionDenied, Valid
 from django.core.files.base import ContentFile
 from django.db import connection
 from django.db.models import QuerySet
-from django.http import FileResponse, Http404, HttpRequest, QueryDict, StreamingHttpResponse
+from django.http import (
+    FileResponse,
+    Http404,
+    HttpRequest,
+    HttpResponse,
+    QueryDict,
+    StreamingHttpResponse,
+)
 from django.template import TemplateSyntaxError
 from django.test.utils import CaptureQueriesContext
+from django.urls import path
 from django_service_specs import (
     DEFAULT_PAGE_SIZE,
     DEFAULT_POOL_SEEDS,
@@ -44,6 +52,7 @@ from django_service_specs import (
     ServiceNotFound,
     ServiceSpec,
     ServiceValidationError,
+    SpecRegistry,
     UnknownArguments,
 )
 
@@ -281,6 +290,15 @@ class TestAsView:
             )
 
         assert "every header link sends 't-o'" in str(refused.value)
+
+    def test_link_routes_that_are_no_registry_is_refused(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as refused:
+            SpecSelectorView.as_view(spec=listing(), link_routes={"rename": RENAME})
+
+        assert str(refused.value) == (
+            "SpecSelectorView.link_routes is a dict: set a SpecRegistry whose names are URL "
+            "pattern names, or None for a page whose rows link nowhere."
+        )
 
 
 class TestTheRowsDisplay:
@@ -1580,3 +1598,54 @@ def test_a_callable_row_object_is_read_the_same_way(ada: Any) -> None:
     lines, _ = rendered(spec(row_object=lambda row: row.note), ada)
 
     assert any(line.startswith("archived:") and line != "archived:ok" for line in lines)
+
+
+# A rename reached through its note's pk, which a row's ``pk`` binds.
+RENAME_NOTE = ServiceSpec(
+    service=Record(),
+    permissions=OPEN,
+    instance_selector_spec=one(presenter=None).derive(permissions=None),
+    affordances=[NOT_ARCHIVED, BOOKS_OPEN],
+)
+ROUTES = SpecRegistry()
+ROUTES.register("rename_note", RENAME_NOTE)
+urlpatterns = [
+    path("notes/<int:pk>/rename/", lambda request, pk: HttpResponse(), name="rename_note")
+]
+
+
+class TestLinks:
+    @pytest.fixture(autouse=True)
+    def urlconf(self, settings: Any) -> None:
+        settings.ROOT_URLCONF = __name__
+
+    def test_each_row_links_to_the_operation_s_page(self, ada: Any) -> None:
+        live = Note.objects.create(owner=ada, title="live")
+        archived = Note.objects.create(owner=ada, title="archived", archived=True)
+
+        response = shown(
+            listing(affordances={"rename": RENAME_NOTE}),
+            user=ada,
+            display_rows=False,
+            template_name="spec_selector_links.html",
+            link_routes=ROUTES,
+        )
+
+        assert response.content.decode().split() == [
+            f"live:/notes/{live.pk}/rename/",
+            f"archived:/notes/{archived.pk}/rename/:note_archived",
+        ]
+
+    def test_the_instance_page_s_row_links_too(self, ada: Any) -> None:
+        note = Note.objects.create(owner=ada, title="live")
+
+        response = shown(
+            one(affordances={"rename": RENAME_NOTE}),
+            user=ada,
+            url_kwargs={"pk": note.pk},
+            display_rows=False,
+            template_name="spec_selector_links.html",
+            link_routes=ROUTES,
+        )
+
+        assert response.content.decode().split() == [f"live:/notes/{note.pk}/rename/"]
