@@ -19,8 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `as link`, the link carries `url`, `available`, and the `code` and `reason`
   of an unavailable one, as `unavailable` answers them. What cannot be
   resolved raises `TemplateSyntaxError` at render, naming the link: a page
-  with no `link_routes`, an operation it does not name or names twice, and a
-  pattern `reverse` cannot fill. `as_view()` refuses `link_routes` that is not
+  with no `link_routes`, a row missing the field a required read binds to, an
+  operation it does not name or names twice, and a pattern `reverse` cannot
+  fill. `as_view()` refuses `link_routes` that is not
   a `SpecRegistry`.
 
 ### Changed
