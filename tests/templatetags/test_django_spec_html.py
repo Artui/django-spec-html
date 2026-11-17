@@ -6,7 +6,8 @@ from typing import Any
 
 import pytest
 from django.http import HttpResponse
-from django.template import Context, Template, TemplateSyntaxError
+from django.template import Context, RequestContext, Template, TemplateSyntaxError
+from django.test import RequestFactory
 from django.urls import include, path
 from django_service_specs import (
     Output,
@@ -20,6 +21,7 @@ from django_service_specs import (
     SpecRegistry,
 )
 
+from django_spec_html.templatetags import django_spec_html
 from django_spec_html.templatetags.django_spec_html import available, register
 from django_spec_html.views.utils import answered_rows
 from tests.dispatch.utils import (
@@ -257,6 +259,7 @@ urlpatterns = [
     path("notes/<int:pk>/rename/", _view, name="rename_note"),
     path("notes/<slug:slug>/", _view, name="note_by_slug"),
     path("notes/<str:pk>/", _view, name="note_by_str"),
+    path("rename/", _view, name="rename_any"),
     path("ns/", include(([path("<int:pk>/rename/", _view, name="rename")], "notes"))),
     path("p/<int:pk>/", include(([path("rename/", _view, name="rename")], "prefixed"))),
     path("a/", include(([path("<int:pk>/rename/", _view, name="rename")], "app"), "app-a")),
@@ -298,7 +301,7 @@ def test_a_link_keeps_its_answer_under_as() -> None:
 
     link = register.tags["spec_link"]
     assert rendered(LINK, row) == "/notes/7/rename/"
-    assert dict(link.__wrapped__(row, "rename")) == {
+    assert dict(link.__wrapped__(Context(), row, "rename")) == {
         "available": True,
         "name": "rename_note",
         "arguments": {"pk": 7, "title": "old"},
@@ -373,7 +376,9 @@ def test_an_operation_named_twice_raises_naming_the_link() -> None:
 
 
 @pytest.mark.parametrize(
-    "name", ["note_by_slug", "missing__rename", "no_such_pattern"], ids=["kwargs", "ns", "name"]
+    "name",
+    ["note_by_slug", "rename_any", "missing__rename", "no_such_pattern"],
+    ids=["kwargs", "no-capture", "ns", "name"],
 )
 @pytest.mark.parametrize("flags", [LIVE, ARCHIVED], ids=["available", "unavailable"])
 def test_a_pattern_reverse_cannot_fill_raises_naming_the_link(
@@ -386,7 +391,7 @@ def test_a_pattern_reverse_cannot_fill_raises_naming_the_link(
 
     assert str(refused.value).startswith(
         f"spec_link 'rename' leads to URL pattern {name.replace('__', ':')!r}, which cannot be "
-        "reversed with {'pk': 7, 'title': 'old'}: "
+        "reversed with its required reads {'pk': 7}: "
     )
 
 
@@ -412,3 +417,44 @@ def test_a_row_missing_a_required_read_s_field_raises_naming_the_link() -> None:
         "spec_link 'rename': SelectorSpec.affordances['rename'] binds a required read to ['pk'], "
         "which a dict row does not carry."
     )
+
+
+def test_a_row_s_links_are_read_once_however_many_tags_ask(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read = django_spec_html.row_links
+    calls: list[Any] = []
+    monkeypatch.setattr(
+        django_spec_html, "row_links", lambda *a, **k: calls.append(a) or read(*a, **k)
+    )
+    row = linked(LIVE, rename_note=RENAME_NOTE)
+
+    shown = rendered('{% spec_link row "rename" %} {% spec_link row "rename" as l %}{{ l }}', row)
+
+    assert shown == "/notes/7/rename/ /notes/7/rename/"
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("current_app", "namespace", "url"),
+    [
+        ("app-a", None, "/a/7/rename/"),
+        (None, "app-a", "/a/7/rename/"),
+        ("app-a", "app-b", "/a/7/rename/"),
+        (None, None, "/b/7/rename/"),
+    ],
+    ids=["current-app", "resolved-namespace", "current-app-first", "neither"],
+)
+def test_an_app_namespace_resolves_to_the_request_s_instance_as_url_does(
+    current_app: str | None, namespace: str | None, url: str
+) -> None:
+    request = RequestFactory().get("/")
+    if current_app is not None:
+        request.current_app = current_app
+    if namespace is not None:
+        request.resolver_match = SimpleNamespace(namespace=namespace)
+    row = linked(LIVE, app__rename=RENAME_NOTE)
+    template = Template('{% load django_spec_html %}{% spec_link row "rename" %}')
+
+    assert template.render(RequestContext(request, {"row": row})) == url
+    assert Template('{% url "app:rename" pk=7 %}').render(RequestContext(request, {})) == url

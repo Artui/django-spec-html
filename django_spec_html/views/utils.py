@@ -1211,6 +1211,7 @@ class RowSource:
     spec: SelectorSpec
     row: Any
     link_routes: SpecRegistry | None
+    links: dict[str, dict[str, Any]] = dataclasses.field(default_factory=dict, compare=False)
 
 
 class _AnsweredRow(dict):

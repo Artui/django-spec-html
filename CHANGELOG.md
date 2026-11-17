@@ -14,19 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `{% spec_link row "rename" %}`, renders the URL of the view serving a row's
   affordance: `SpecSelectorView.link_routes`, a kernel `SpecRegistry` naming
   each operation by its URL pattern name, gives the name, and the kernel's
-  `row_links` binds the row's values to the kwargs it is reversed with, at
-  render. A read the pattern does not capture stays out of the URL. With
+  `row_links` binds the row's values for the link's required reads to the
+  kwargs it is reversed with, at render; an optional read stays out of the
+  URL. With
   `as link`, the link carries `url`, `available`, and the `code` and `reason`
   of an unavailable one, as `unavailable` answers them. What cannot be
   resolved raises `TemplateSyntaxError` at render, naming the link: a page
   with no `link_routes`, a row missing the field a required read binds to, an
   operation it does not name or names twice, and a pattern `reverse` cannot
-  fill. `as_view()` refuses `link_routes` that is not
+  fill with exactly the required reads. `as_view()` refuses `link_routes` that is not
   a `SpecRegistry`.
 
 ### Changed
-- **The kernel floor is `django-service-specs>=0.34.0`**, the release that
-  ships `row_links` and `SpecRegistry.name_of`.
+- **The kernel floor is `django-service-specs>=0.34.1`**, the release whose
+  `row_links` names each link's `required` reads.
 
 ## [0.13.0] — 2026-11-14
 
