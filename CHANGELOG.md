@@ -16,14 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each operation by its URL pattern name, gives the name, and the kernel's
   `row_links` binds the row's values for the link's required reads to the
   kwargs it is reversed with, at render; an optional read stays out of the
-  URL. With
-  `as link`, the link carries `url`, `available`, and the `code` and `reason`
-  of an unavailable one, as `unavailable` answers them. What cannot be
-  resolved raises `TemplateSyntaxError` at render, naming the link: a page
+  URL. A row's links are read once however many tags ask, and an application
+  namespace resolves to the request's `current_app`, as `{% url %}` resolves
+  it. With `as link`, the link carries `url`, `available`, and the `code` and
+  `reason` of an unavailable one, as `unavailable` answers them. What cannot
+  be resolved raises `TemplateSyntaxError` at render, naming the link: a page
   with no `link_routes`, a row missing the field a required read binds to, an
   operation it does not name or names twice, and a pattern `reverse` cannot
-  fill with exactly the required reads. `as_view()` refuses `link_routes` that is not
-  a `SpecRegistry`.
+  fill with exactly the required reads. `as_view()` refuses `link_routes` that
+  is not a `SpecRegistry`.
 
 ### Changed
 - **The kernel floor is `django-service-specs>=0.34.1`**, the release whose
