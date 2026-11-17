@@ -300,6 +300,15 @@ class TestAsView:
             "pattern names, or None for a page whose rows link nowhere."
         )
 
+    def test_a_subclass_s_link_routes_that_are_no_registry_is_refused(self) -> None:
+        class Linked(SpecSelectorView):
+            link_routes = {"rename": RENAME}
+
+        with pytest.raises(ImproperlyConfigured) as refused:
+            Linked.as_view(spec=listing())
+
+        assert str(refused.value).startswith("Linked.link_routes is a dict: set a SpecRegistry")
+
 
 class TestTheRowsDisplay:
     def test_a_spec_with_no_output_is_refused(self) -> None:

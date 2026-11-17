@@ -387,3 +387,15 @@ def test_spec_link_raises_for_a_name_the_spec_does_not_declare() -> None:
 
     with pytest.raises(TemplateSyntaxError, match=r"^spec_link was asked about 'renmae'"):
         rendered('{% spec_link row "renmae" %}', row)
+
+
+def test_a_row_missing_a_required_read_s_field_raises_naming_the_link() -> None:
+    row = answered(LINKED, {**LIVE, "title": "old"}, routes(rename_note=RENAME_NOTE))
+
+    with pytest.raises(TemplateSyntaxError) as refused:
+        rendered('{% spec_link row "rename" %}', row)
+
+    assert str(refused.value).startswith(
+        "spec_link 'rename': SelectorSpec.affordances['rename'] binds a required read to ['pk'], "
+        "which a dict row does not carry."
+    )

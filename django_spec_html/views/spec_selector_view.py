@@ -518,7 +518,7 @@ def _check_paging(label: str, spec: SelectorSpec, configured: Mapping[str, Any])
 
 
 def _check_link_routes(label: str, routes: Any) -> None:
-    if routes is not None and not isinstance(routes, SpecRegistry):
+    if not isinstance(routes, (SpecRegistry, type(None))):
         raise ImproperlyConfigured(
             f"{label}.link_routes is a {type(routes).__name__}: set a SpecRegistry whose names "
             "are URL pattern names, or None for a page whose rows link nowhere."

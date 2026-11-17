@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar, cast
 
 from django import template
+from django.core.exceptions import ImproperlyConfigured
 from django.template import TemplateSyntaxError
 from django.urls import NoReverseMatch, get_resolver, get_urlconf, reverse
 from django_service_specs import row_links
@@ -106,8 +107,9 @@ def spec_link(row: Any, name: str) -> _Link:
 
     **What cannot be resolved raises at render**, naming the link: a row the
     page did not serve, a name its spec does not declare, a page with no
-    ``link_routes``, an operation ``link_routes`` does not name or names
-    twice, and a pattern ``reverse`` cannot fill. It raises for an
+    ``link_routes``, a row missing the field a required read binds to, an
+    operation ``link_routes`` does not name or names twice, and a pattern
+    ``reverse`` cannot fill. It raises for an
     unavailable row too, so a broken route shows on the first render. A
     tag is never inside an ``{% if %}``, so nothing swallows the error, as
     ``{% if %}`` swallows the ``available`` filter's inside ``not``.
@@ -125,7 +127,7 @@ def spec_link(row: Any, name: str) -> _Link:
         )
     try:
         link = row_links(source.spec, source.row, registry=source.link_routes)[name]
-    except ValueError as refused:
+    except (ImproperlyConfigured, ValueError) as refused:
         raise TemplateSyntaxError(f"{where}: {refused}") from refused
     if "name" not in link:
         raise TemplateSyntaxError(
