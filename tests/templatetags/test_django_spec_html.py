@@ -258,6 +258,9 @@ urlpatterns = [
     path("notes/<slug:slug>/", _view, name="note_by_slug"),
     path("notes/<str:pk>/", _view, name="note_by_str"),
     path("ns/", include(([path("<int:pk>/rename/", _view, name="rename")], "notes"))),
+    path("p/<int:pk>/", include(([path("rename/", _view, name="rename")], "prefixed"))),
+    path("a/", include(([path("<int:pk>/rename/", _view, name="rename")], "app"), "app-a")),
+    path("b/", include(([path("<int:pk>/rename/", _view, name="rename")], "app"), "app-b")),
 ]
 
 
@@ -311,10 +314,20 @@ def test_an_unavailable_link_carries_its_reason() -> None:
     )
 
 
-def test_a_namespaced_pattern_name_is_reversed() -> None:
-    row = linked(LIVE, notes__rename=RENAME_NOTE)
+@pytest.mark.parametrize(
+    ("name", "url"),
+    [
+        ("notes__rename", "/ns/7/rename/"),
+        ("prefixed__rename", "/p/7/rename/"),
+        ("app__rename", "/b/7/rename/"),
+        ("app-b__rename", "/b/7/rename/"),
+    ],
+    ids=["namespace", "include-prefix", "app-namespace-last-instance", "instance-namespace"],
+)
+def test_a_namespaced_pattern_name_is_reversed_as_reverse_reverses_it(name: str, url: str) -> None:
+    row = linked(LIVE, **{name: RENAME_NOTE})
 
-    assert rendered('{% spec_link row "rename" %}', row) == "/ns/7/rename/"
+    assert rendered('{% spec_link row "rename" %}', row) == url
 
 
 def test_the_url_is_escaped_like_any_value() -> None:

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import suppress
+from itertools import combinations
 from typing import Any, TypeVar, cast
 
 from django import template
 from django.core.exceptions import ImproperlyConfigured
 from django.template import TemplateSyntaxError
-from django.urls import NoReverseMatch, get_resolver, get_urlconf, reverse
+from django.urls import NoReverseMatch, reverse
 from django_service_specs import row_links
 
 from django_spec_html.views.utils import RowSource, row_answers, row_source
@@ -152,24 +154,12 @@ def spec_link(row: Any, name: str) -> _Link:
 
 
 def _reversed(name: str, arguments: dict[str, Any]) -> str:
-    captured = _captured(name)
-    return reverse(name, kwargs={read: arguments[read] for read in arguments if read in captured})
-
-
-def _captured(name: str) -> set[str]:
-    """The kwargs ``name``'s patterns capture: none where a namespace is not found."""
-    *namespaces, view = name.split(":")
-    resolver = get_resolver(get_urlconf())
-    for namespace in namespaces:
-        if namespace not in resolver.namespace_dict:
-            return set()
-        _, resolver = resolver.namespace_dict[namespace]
-    return {
-        param
-        for possibilities, *_ in resolver.reverse_dict.getlist(view)
-        for _, params in possibilities
-        for param in params
-    }
+    """``name`` reversed with the most of ``arguments`` it takes, as spec-rest's href is."""
+    for size in range(len(arguments), -1, -1):
+        for chosen in combinations(arguments, size):
+            with suppress(NoReverseMatch):
+                return reverse(name, kwargs={read: arguments[read] for read in chosen})
+    return reverse(name, kwargs=arguments)
 
 
 def _alters_data(method: _Method) -> _Method:
