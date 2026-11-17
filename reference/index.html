@@ -1371,10 +1371,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#template-filters" class="md-nav__link">
+  <a href="#template-filters-and-tags" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Template filters
+        Template filters and tags
       
     </span>
   </a>
@@ -1397,6 +1397,17 @@
     <span class="md-ellipsis">
       
         unavailable
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_spec_html.templatetags.django_spec_html.spec_link" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        spec_link
       
     </span>
   </a>
@@ -2542,10 +2553,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#template-filters" class="md-nav__link">
+  <a href="#template-filters-and-tags" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Template filters
+        Template filters and tags
       
     </span>
   </a>
@@ -2568,6 +2579,17 @@
     <span class="md-ellipsis">
       
         unavailable
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_spec_html.templatetags.django_spec_html.spec_link" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        spec_link
       
     </span>
   </a>
@@ -5570,7 +5592,10 @@ affordances in bulk, as the spec's <code>affordances</code> declare them, and th
 page reads each row's answers once, so <code>{% load django_spec_html %}</code>
 and <code>{% if row|available:"rename" %}</code> asks a row what the operation's
 own dispatch would enforce, in no query of its own. See
-<a class="autorefs autorefs-internal" title="available" href="#django_spec_html.templatetags.django_spec_html.available"><code>available</code></a>.</p>
+<a class="autorefs autorefs-internal" title="available" href="#django_spec_html.templatetags.django_spec_html.available"><code>available</code></a>.
+With <code>link_routes</code> set, <code>{% spec_link row "rename" %}</code> renders the
+URL the operation is served at, the row's values filling its kwargs. See
+<a class="autorefs autorefs-internal" title="spec_link" href="#django_spec_html.templatetags.django_spec_html.spec_link"><code>spec_link</code></a>.</p>
 <p><strong>Paging.</strong> A list is paged by the kernel's <code>paginate_output</code>: the
 page named by <code>page_kwarg</code>, <code>paginate_by</code> rows to a page, never more
 than <code>max_page_size</code>. A page that is not a whole number is page 1, and
@@ -5625,7 +5650,8 @@ every page refuses them; paging attributes of the wrong type, a client
 page size with no ceiling, and a list spec declaring a parameter under a
 paging key, whose value could never reach it; a
 <code>table_order_by_field</code> the spec does not declare, since no header
-link would then sort the rows; and <code>display_rows</code> on a spec whose Output
+link would then sort the rows; <code>link_routes</code> that is not a
+<code>SpecRegistry</code>; and <code>display_rows</code> on a spec whose Output
 cannot display a row.</p>
 
 
@@ -5825,6 +5851,20 @@ orderable column.</p>
               <div class="doc-md-description">
                 <p>Whether the context carries <code>row_displays</code>, which
 the shipped template renders a row by when there is no table.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="django_spec_html.views.spec_selector_view.SpecSelectorView.link_routes">link_routes</span></code></td>
+            <td>
+                  <code><a class="autorefs autorefs-external" title="django_service_specs.SpecRegistry" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.registry.spec_registry.SpecRegistry">SpecRegistry</a> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A kernel <code>SpecRegistry</code> naming each operation a row's
+affordances lead to by the name of the URL pattern serving it,
+which the <code>spec_link</code> tag reverses; <code>None</code>, the default,
+links nowhere, and the tag raises.</p>
               </div>
             </td>
           </tr>
@@ -6280,7 +6320,7 @@ before Python 3.11 (held by <code>test_its_spelling_is_not_its_value</code>).</p
 
     </div>
 
-</div><h2 id="template-filters">Template filters<a class="headerlink" href="#template-filters" title="Permanent link">&para;</a></h2>
+</div><h2 id="template-filters-and-tags">Template filters and tags<a class="headerlink" href="#template-filters-and-tags" title="Permanent link">&para;</a></h2>
 <p><code>{% load django_spec_html %}</code> loads them: the library is named for the
 package, so a template reads which package it loads.</p>
 
@@ -6401,6 +6441,73 @@ outside <code>{% if %}</code> (test_a_misspelt_name_read_through_with_raises).</
               <div class="doc-md-description">
                 <p><code>row</code> carries no answers, or none for <code>name</code>,
 naming the names it carries.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="django_spec_html.templatetags.django_spec_html.spec_link" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">spec_link</span>
+
+
+<a href="#django_spec_html.templatetags.django_spec_html.spec_link" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">spec_link</span><span class="p">(</span><span class="n">context</span><span class="p">:</span> <span class="n">Context</span><span class="p">,</span> <span class="n">row</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_Link</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p>The link affordance <code>name</code> leads to from <code>row</code>: <code>{% spec_link row "rename" %}</code>.</p>
+<p>Renders the URL of the view serving the operation, reversed at render
+from the URL pattern name <code>SpecSelectorView.link_routes</code> holds the
+operation under, with the row's values for the link's required reads,
+those naming the row, as the pattern's kwargs: the kernel's <code>row_links</code>
+for the row, read with <code>link_routes</code> as its registry
+(test_a_link_renders_the_bound_url). An optional read stays out of the
+URL, for the page it leads to to ask.</p>
+<p><code>{% spec_link row "rename" as link %}</code> keeps the whole answer:
+<code>link.url</code>, <code>link.available</code>, and, when it is not, <code>link.code</code> and
+<code>link.reason</code>, as <code>unavailable</code> answers them, so a row draws the
+link or why it cannot (test_an_unavailable_link_carries_its_reason). An
+unavailable link still has its URL, since dispatch, not the link,
+refuses the call. A row's links are read once, however many tags ask,
+and an application namespace resolves to the request's <code>current_app</code>
+as <code>{% url %}</code> resolves it.</p>
+<p><strong>What cannot be resolved raises at render</strong>, naming the link: a row the
+page did not serve, a name its spec does not declare, a page with no
+<code>link_routes</code>, a row missing the field a required read binds to, an
+operation <code>link_routes</code> does not name or names twice, and a pattern
+<code>reverse</code> cannot fill with exactly the required reads, none included, as
+when a <code>kwargs</code> provider may fill every read. It raises for an
+unavailable row too, so a broken route shows on the first render. A
+tag is never inside an <code>{% if %}</code>, so nothing swallows the error, as
+<code>{% if %}</code> swallows the <code>available</code> filter's inside <code>not</code>.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="django.template.TemplateSyntaxError">TemplateSyntaxError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>the link cannot be resolved, naming it.</p>
               </div>
             </td>
           </tr>

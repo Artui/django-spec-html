@@ -509,6 +509,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#where-a-rows-action-leads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where a row's action leads
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -783,6 +794,17 @@
     <span class="md-ellipsis">
       
         Why a row's action is unavailable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-a-rows-action-leads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where a row's action leads
       
     </span>
   </a>
@@ -1259,6 +1281,41 @@ renders as any missing variable does. The answer is a <code>dict</code>, so
 <code>{{ why|json_script:"why" }}</code> hands it to a script, and a fresh copy per read
 whose <code>clear</code> and <code>popitem</code> no template can call, so a template cannot empty
 it.</p>
+<h3 id="where-a-rows-action-leads">Where a row's action leads<a class="headerlink" href="#where-a-rows-action-leads" title="Permanent link">&para;</a></h3>
+<p><code>{% url %}</code> above spells out each operation's URL and which row field fills
+it. The <code>spec_link</code> tag reads both off the spec instead: set <code>link_routes</code> to
+a kernel <code>SpecRegistry</code> naming each operation by the name of the URL pattern
+serving it, and the tag reverses that name with the row's values for the
+link's required reads, those naming the row, as the kernel's <code>row_links</code>
+binds them:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Each operation a row links to, under the name of the URL pattern serving it.</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">book_routes</span> <span class="o">=</span> <span class="n">SpecRegistry</span><span class="p">()</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">book_routes</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="s2">"withdraw-book"</span><span class="p">,</span> <span class="n">withdraw_book_spec</span><span class="p">)</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">urlpatterns</span> <span class="o">+=</span> <span class="p">[</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">path</span><span class="p">(</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>        <span class="s2">"books/linked/"</span><span class="p">,</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>        <span class="n">SpecSelectorView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="n">book_list_spec</span><span class="p">,</span> <span class="n">paginate_by</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">link_routes</span><span class="o">=</span><span class="n">book_routes</span><span class="p">),</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>        <span class="n">name</span><span class="o">=</span><span class="s2">"linked-books"</span><span class="p">,</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    <span class="p">),</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="p">]</span>
+</span></code></pre></div>
+<div class="language-django highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="cp">{%</span> <span class="k">spec_link</span> <span class="nv">row</span> <span class="s2">"withdraw"</span> <span class="k">as</span> <span class="nv">link</span> <span class="cp">%}</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="cp">{%</span> <span class="k">if</span> <span class="nv">link.available</span> <span class="cp">%}</span><span class="x">&lt;a href="</span><span class="cp">{{</span> <span class="nv">link.url</span> <span class="cp">}}</span><span class="x">"&gt;Withdraw&lt;/a&gt;</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="cp">{%</span> <span class="k">else</span> <span class="cp">%}</span><span class="x">&lt;span title="</span><span class="cp">{{</span> <span class="nv">link.code</span> <span class="cp">}}</span><span class="x">"&gt;</span><span class="cp">{{</span> <span class="nv">link.reason</span> <span class="cp">}}</span><span class="x">&lt;/span&gt;</span><span class="cp">{%</span> <span class="k">endif</span> <span class="cp">%}</span>
+</span></code></pre></div>
+<p><code>{% spec_link row "withdraw" %}</code> on its own renders the URL. With <code>as</code>, the
+link carries <code>url</code>, <code>available</code>, and <code>code</code> and <code>reason</code> when it is not
+available, as <code>unavailable</code> answers them, so it costs no query either. An
+optional read, such as a rename's new title the row happens to carry, stays
+out of the URL for the page it leads to to ask.</p>
+<p><strong>What the tag cannot resolve raises at render</strong>, a <code>TemplateSyntaxError</code>
+naming the link: a page with no <code>link_routes</code>, an operation it does not name
+or names twice, and a pattern <code>reverse</code> cannot fill with exactly the required
+reads, for an unavailable row
+too, so a broken route shows on the first render. A tag never sits inside
+<code>{% if %}</code>, so nothing swallows its error. The kernel's <code>check_links</code> system
+check reports a link that cannot bind before any page renders.</p>
 <p>A row's action refused or gone is the host's to answer, for htmx too, by the
 handlers in <a href="../pages/#denials">a denial under htmx</a>.</p>
 <h2 id="a-django-tables2-table">A django-tables2 table<a class="headerlink" href="#a-django-tables2-table" title="Permanent link">&para;</a></h2>
@@ -1267,20 +1324,20 @@ handlers in <a href="../pages/#denials">a denial under htmx</a>.</p>
 shipped template includes the table's own template. <strong>The package does not
 depend on django-tables2</strong>: install it and list <code>django_tables2</code> in
 <code>INSTALLED_APPS</code> in a project that sets <code>table_class</code>.</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">BookTable</span><span class="p">(</span><span class="n">tables</span><span class="o">.</span><span class="n">Table</span><span class="p">):</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">title</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">()</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="c1"># Not among the OrderingFilter's fields, so its header links no sort.</span>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="n">author</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">(</span><span class="n">accessor</span><span class="o">=</span><span class="s2">"author__name"</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">"Author"</span><span class="p">,</span> <span class="n">orderable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">price</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">()</span>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="c1"># The button where the row may be withdrawn, and otherwise why not.</span>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="n">withdraw</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">TemplateColumn</span><span class="p">(</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>        <span class="s1">'{</span><span class="si">% lo</span><span class="s1">ad django_spec_html %}{% with why=record|unavailable:"withdraw" %}'</span>
-</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>        <span class="s2">"{</span><span class="si">% i</span><span class="s2">f why %}&lt;span&gt;{{ why.reason }}&lt;/span&gt;"</span>
-</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>        <span class="s1">'{</span><span class="si">% e</span><span class="s1">lse %}&lt;a href="{</span><span class="si">% u</span><span class="s1">rl "withdraw-book" record.pk %}"&gt;Withdraw&lt;/a&gt;{</span><span class="si">% e</span><span class="s1">ndif %}'</span>
-</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>        <span class="s2">"{</span><span class="si">% e</span><span class="s2">ndwith %}"</span><span class="p">,</span>
-</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>        <span class="n">orderable</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>        <span class="n">verbose_name</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
-</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>    <span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">BookTable</span><span class="p">(</span><span class="n">tables</span><span class="o">.</span><span class="n">Table</span><span class="p">):</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>    <span class="n">title</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">()</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="c1"># Not among the OrderingFilter's fields, so its header links no sort.</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="n">author</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">(</span><span class="n">accessor</span><span class="o">=</span><span class="s2">"author__name"</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">"Author"</span><span class="p">,</span> <span class="n">orderable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="n">price</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">Column</span><span class="p">()</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>    <span class="c1"># The button where the row may be withdrawn, and otherwise why not.</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="n">withdraw</span> <span class="o">=</span> <span class="n">tables</span><span class="o">.</span><span class="n">TemplateColumn</span><span class="p">(</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>        <span class="s1">'{</span><span class="si">% lo</span><span class="s1">ad django_spec_html %}{% with why=record|unavailable:"withdraw" %}'</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>        <span class="s2">"{</span><span class="si">% i</span><span class="s2">f why %}&lt;span&gt;{{ why.reason }}&lt;/span&gt;"</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>        <span class="s1">'{</span><span class="si">% e</span><span class="s1">lse %}&lt;a href="{</span><span class="si">% u</span><span class="s1">rl "withdraw-book" record.pk %}"&gt;Withdraw&lt;/a&gt;{</span><span class="si">% e</span><span class="s1">ndif %}'</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>        <span class="s2">"{</span><span class="si">% e</span><span class="s2">ndwith %}"</span><span class="p">,</span>
+</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>        <span class="n">orderable</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>        <span class="n">verbose_name</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
+</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>    <span class="p">)</span>
 </span></code></pre></div>
 <p>A <code>TemplateColumn</code> asks each <code>record</code> what it offers, as a template asks a
 row: the example's shows the button, or the reason it is not there. <strong>The table never pages or orders the rows</strong>: they are the spec's page,
@@ -1312,21 +1369,21 @@ download rather than a page: the row it finds is presented through the
 presenter, and the answer is the file, a <code>FileResponse</code> of its bytes or file
 object, or a <code>StreamingHttpResponse</code> for an iterable of bytes, with the
 presenter's content type and <code>Content-Length</code> wherever the size is known.</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">invoice_pdf</span> <span class="o">=</span> <span class="n">SelectorSpec</span><span class="p">(</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">kind</span><span class="o">=</span><span class="n">SelectorKind</span><span class="o">.</span><span class="n">RETRIEVE</span><span class="p">,</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">selector</span><span class="o">=</span><span class="n">invoice_by_pk</span><span class="p">,</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">reads</span><span class="o">=</span><span class="n">Parameters</span><span class="o">.</span><span class="n">of</span><span class="p">(</span><span class="n">Parameter</span><span class="p">(</span><span class="s2">"pk"</span><span class="p">,</span> <span class="s2">"integer"</span><span class="p">,</span> <span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">)),</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="n">presenter</span><span class="o">=</span><span class="n">FilePresenter</span><span class="p">(</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>        <span class="s2">"application/pdf"</span><span class="p">,</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>        <span class="n">filename</span><span class="o">=</span><span class="k">lambda</span> <span class="n">invoice</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"invoice-</span><span class="si">{</span><span class="n">invoice</span><span class="o">.</span><span class="n">pk</span><span class="si">}</span><span class="s2">.pdf"</span><span class="p">,</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>        <span class="n">render</span><span class="o">=</span><span class="n">render_invoice_pdf</span><span class="p">,</span>
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>    <span class="p">),</span>
-</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="p">)</span>
-</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>
-</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="n">path</span><span class="p">(</span>
-</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>    <span class="s2">"invoices/&lt;int:pk&gt;/pdf/"</span><span class="p">,</span>
-</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>    <span class="n">SpecSelectorView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="n">invoice_pdf</span><span class="p">,</span> <span class="n">route_kwargs</span><span class="o">=</span><span class="p">(</span><span class="s2">"pk"</span><span class="p">,)),</span>
-</span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">invoice_pdf</span> <span class="o">=</span> <span class="n">SelectorSpec</span><span class="p">(</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>    <span class="n">kind</span><span class="o">=</span><span class="n">SelectorKind</span><span class="o">.</span><span class="n">RETRIEVE</span><span class="p">,</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="n">selector</span><span class="o">=</span><span class="n">invoice_by_pk</span><span class="p">,</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>    <span class="n">reads</span><span class="o">=</span><span class="n">Parameters</span><span class="o">.</span><span class="n">of</span><span class="p">(</span><span class="n">Parameter</span><span class="p">(</span><span class="s2">"pk"</span><span class="p">,</span> <span class="s2">"integer"</span><span class="p">,</span> <span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">)),</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    <span class="n">presenter</span><span class="o">=</span><span class="n">FilePresenter</span><span class="p">(</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>        <span class="s2">"application/pdf"</span><span class="p">,</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>        <span class="n">filename</span><span class="o">=</span><span class="k">lambda</span> <span class="n">invoice</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"invoice-</span><span class="si">{</span><span class="n">invoice</span><span class="o">.</span><span class="n">pk</span><span class="si">}</span><span class="s2">.pdf"</span><span class="p">,</span>
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>        <span class="n">render</span><span class="o">=</span><span class="n">render_invoice_pdf</span><span class="p">,</span>
+</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>    <span class="p">),</span>
+</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="p">)</span>
+</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>
+</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="n">path</span><span class="p">(</span>
+</span><span id="__span-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>    <span class="s2">"invoices/&lt;int:pk&gt;/pdf/"</span><span class="p">,</span>
+</span><span id="__span-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>    <span class="n">SpecSelectorView</span><span class="o">.</span><span class="n">as_view</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="n">invoice_pdf</span><span class="p">,</span> <span class="n">route_kwargs</span><span class="o">=</span><span class="p">(</span><span class="s2">"pk"</span><span class="p">,)),</span>
+</span><span id="__span-11-15"><a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="p">)</span>
 </span></code></pre></div>
 <p><code>Content-Disposition</code> is <code>attachment</code>, naming the file, quoted by RFC 5987
 for a name outside ASCII; <code>as_attachment = False</code> answers <code>inline</code>, so a
@@ -1344,9 +1401,9 @@ the fragment at 200, since htmx swaps no 4xx by default, and every response
 carries <code>Vary: HX-Request</code>. The shipped page wraps its results in
 <code>&lt;div id="spec-results"&gt;</code> and adds no <code>hx-</code> attribute of its own; a live
 search is the project's:</p>
-<div class="language-django highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="x">&lt;form method="get" hx-get="" hx-target="#spec-results" hx-trigger="input changed delay:300ms"&gt;</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="x">  </span><span class="cp">{{</span> <span class="nv">filter.form</span> <span class="cp">}}</span>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="x">&lt;/form&gt;</span>
+<div class="language-django highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="x">&lt;form method="get" hx-get="" hx-target="#spec-results" hx-trigger="input changed delay:300ms"&gt;</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="x">  </span><span class="cp">{{</span> <span class="nv">filter.form</span> <span class="cp">}}</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="x">&lt;/form&gt;</span>
 </span></code></pre></div>
 <h2 id="how-many-queries-a-page-costs">How many queries a page costs<a class="headerlink" href="#how-many-queries-a-page-costs" title="Permanent link">&para;</a></h2>
 <p>A list page costs the same number of queries whatever its size: the
