@@ -395,6 +395,30 @@ def test_a_pattern_reverse_cannot_fill_raises_naming_the_link(
     )
 
 
+def _fills_any_read() -> dict[str, Any]:
+    return {}
+
+
+def test_a_route_its_empty_required_reads_cannot_fill_raises_saying_so() -> None:
+    target = SelectorSpec(
+        kind=SelectorKind.RETRIEVE, selector=note_by_pk, reads=PK, kwargs=_fills_any_read
+    )
+    spec = RENAME_NOTE.derive(instance_selector_spec=target)
+    row = answered(
+        LINKED.derive(affordances={"rename": spec}),
+        {**LIVE, "pk": 7, "title": "old"},
+        routes(rename_note=spec),
+    )
+
+    with pytest.raises(TemplateSyntaxError) as refused:
+        rendered('{% spec_link row "rename" %}', row)
+
+    assert str(refused.value).startswith(
+        "spec_link 'rename' leads to URL pattern 'rename_note', which cannot be reversed with no "
+        "kwargs, since its required reads are none (a kwargs provider may fill them): "
+    )
+
+
 def test_spec_link_raises_for_a_row_the_page_did_not_serve() -> None:
     with pytest.raises(TemplateSyntaxError, match=r"^spec_link was asked about a dict that"):
         rendered('{% spec_link row "rename" %}', {"pk": 7})

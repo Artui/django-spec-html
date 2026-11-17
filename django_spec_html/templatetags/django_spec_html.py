@@ -111,7 +111,8 @@ def spec_link(context: Context, row: Any, name: str) -> _Link:
     page did not serve, a name its spec does not declare, a page with no
     ``link_routes``, a row missing the field a required read binds to, an
     operation ``link_routes`` does not name or names twice, and a pattern
-    ``reverse`` cannot fill with exactly the required reads. It raises for an
+    ``reverse`` cannot fill with exactly the required reads, none included, as
+    when a ``kwargs`` provider may fill every read. It raises for an
     unavailable row too, so a broken route shows on the first render. A
     tag is never inside an ``{% if %}``, so nothing swallows the error, as
     ``{% if %}`` swallows the ``available`` filter's inside ``not``.
@@ -142,9 +143,14 @@ def spec_link(context: Context, row: Any, name: str) -> _Link:
     try:
         url = reverse(link["name"], kwargs=kwargs, current_app=_current_app(context))
     except NoReverseMatch as refused:
+        given = (
+            f"its required reads {kwargs!r}"
+            if kwargs
+            else "no kwargs, since its required reads are none (a kwargs provider may fill them)"
+        )
         raise TemplateSyntaxError(
-            f"{where} leads to URL pattern {link['name']!r}, which cannot be reversed with its "
-            f"required reads {kwargs!r}: {refused}"
+            f"{where} leads to URL pattern {link['name']!r}, which cannot be reversed with "
+            f"{given}: {refused}"
         ) from refused
     return _Link(
         {

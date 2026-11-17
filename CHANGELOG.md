@@ -23,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   be resolved raises `TemplateSyntaxError` at render, naming the link: a page
   with no `link_routes`, a row missing the field a required read binds to, an
   operation it does not name or names twice, and a pattern `reverse` cannot
-  fill with exactly the required reads. `as_view()` refuses `link_routes` that
+  fill with exactly the required reads, none included, as when a `kwargs`
+  provider may fill every read. `as_view()` refuses `link_routes` that
   is not a `SpecRegistry`.
 
 ### Changed
