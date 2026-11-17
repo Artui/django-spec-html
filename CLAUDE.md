@@ -215,7 +215,7 @@ configured and enforced. isort order is stdlib, third party, first party.
 | --- | --- | --- |
 | Python | 3.10 | 3.10 through 3.14 |
 | Django | 4.2 | 4.2, 5.0, 5.1, 5.2, 6.0, 6.1 |
-| django-service-specs | 0.34.0 | the newest release, and the floor in the `floor` job |
+| django-service-specs | 0.34.1 | the newest release, and the floor in the `floor` job |
 
 The Python and Django floors are the kernel's, and cannot sit below them.
 
