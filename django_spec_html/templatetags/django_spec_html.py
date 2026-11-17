@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from django import template
-from django.template import TemplateSyntaxError
+from django.core.exceptions import ImproperlyConfigured
+from django.template import Context, TemplateSyntaxError
+from django.urls import NoReverseMatch, reverse
+from django_service_specs import row_links
 
-from django_spec_html.views.utils import row_answers
+from django_spec_html.views.utils import RowSource, row_answers, row_source
 
 register = template.Library()
 
@@ -83,6 +86,91 @@ def unavailable(row: Any, name: str) -> dict[str, Any] | None:
     return _Answer(answer)
 
 
+@register.simple_tag(takes_context=True)
+def spec_link(context: Context, row: Any, name: str) -> _Link:
+    """The link affordance ``name`` leads to from ``row``: ``{% spec_link row "rename" %}``.
+
+    Renders the URL of the view serving the operation, reversed at render
+    from the URL pattern name ``SpecSelectorView.link_routes`` holds the
+    operation under, with the row's values for the link's required reads,
+    those naming the row, as the pattern's kwargs: the kernel's ``row_links``
+    for the row, read with ``link_routes`` as its registry
+    (test_a_link_renders_the_bound_url). An optional read stays out of the
+    URL, for the page it leads to to ask.
+
+    ``{% spec_link row "rename" as link %}`` keeps the whole answer:
+    ``link.url``, ``link.available``, and, when it is not, ``link.code`` and
+    ``link.reason``, as ``unavailable`` answers them, so a row draws the
+    link or why it cannot (test_an_unavailable_link_carries_its_reason). An
+    unavailable link still has its URL, since dispatch, not the link,
+    refuses the call. A row's links are read once, however many tags ask,
+    and an application namespace resolves to the request's ``current_app``
+    as ``{% url %}`` resolves it.
+
+    **What cannot be resolved raises at render**, naming the link: a row the
+    page did not serve, a name its spec does not declare, a page with no
+    ``link_routes``, a row missing the field a required read binds to, an
+    operation ``link_routes`` does not name or names twice, and a pattern
+    ``reverse`` cannot fill with exactly the required reads, none included, as
+    when a ``kwargs`` provider may fill every read. It raises for an
+    unavailable row too, so a broken route shows on the first render. A
+    tag is never inside an ``{% if %}``, so nothing swallows the error, as
+    ``{% if %}`` swallows the ``available`` filter's inside ``not``.
+
+    Raises:
+        TemplateSyntaxError: the link cannot be resolved, naming it.
+    """
+    _answer(row, name, "spec_link")
+    source = cast(RowSource, row_source(row))
+    where = f"spec_link {name!r}"
+    if source.link_routes is None:
+        raise TemplateSyntaxError(
+            f"{where} was asked about a row a SpecSelectorView served with no link_routes: set "
+            "link_routes to a SpecRegistry naming each operation by its URL pattern name."
+        )
+    if not source.links:
+        try:
+            source.links.update(row_links(source.spec, source.row, registry=source.link_routes))
+        except (ImproperlyConfigured, ValueError) as refused:
+            raise TemplateSyntaxError(f"{where}: {refused}") from refused
+    link = source.links[name]
+    if "name" not in link:
+        raise TemplateSyntaxError(
+            f"{where} leads to an operation link_routes does not name: register its spec there "
+            "under the name of the URL pattern serving it."
+        )
+    kwargs = {read: link["arguments"][read] for read in link["required"]}
+    try:
+        url = reverse(link["name"], kwargs=kwargs, current_app=_current_app(context))
+    except NoReverseMatch as refused:
+        given = (
+            f"its required reads {kwargs!r}"
+            if kwargs
+            else "no kwargs, since its required reads are none (a kwargs provider may fill them)"
+        )
+        raise TemplateSyntaxError(
+            f"{where} leads to URL pattern {link['name']!r}, which cannot be reversed with "
+            f"{given}: {refused}"
+        ) from refused
+    return _Link(
+        {
+            key: link[key]
+            for key in ("available", "code", "reason", "name", "arguments")
+            if key in link
+        },
+        url=url,
+    )
+
+
+def _current_app(context: Context) -> str | None:
+    """The ``current_app`` ``{% url %}`` reverses with: the request's, else its namespace."""
+    request = getattr(context, "request", None)
+    current_app = getattr(request, "current_app", None)
+    if current_app is not None:
+        return current_app
+    return getattr(getattr(request, "resolver_match", None), "namespace", None)
+
+
 def _alters_data(method: _Method) -> _Method:
     # A type checker refuses an ``alters_data`` attribute set directly on a function.
     vars(method)["alters_data"] = True
@@ -99,6 +187,16 @@ class _Answer(dict):
     @_alters_data
     def popitem(self) -> tuple[str, Any]:
         return super().popitem()
+
+
+class _Link(_Answer):
+    """One row's link: its answer, and the URL it renders as."""
+
+    def __init__(self, answer: dict[str, Any], *, url: str) -> None:
+        super().__init__(answer, url=url)
+
+    def __str__(self) -> str:
+        return self["url"]
 
 
 def _answer(row: Any, name: str, asked: str) -> dict[str, Any]:

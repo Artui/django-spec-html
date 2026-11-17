@@ -244,6 +244,41 @@ renders as any missing variable does. The answer is a `dict`, so
 whose `clear` and `popitem` no template can call, so a template cannot empty
 it.
 
+### Where a row's action leads
+
+`{% url %}` above spells out each operation's URL and which row field fills
+it. The `spec_link` tag reads both off the spec instead: set `link_routes` to
+a kernel `SpecRegistry` naming each operation by the name of the URL pattern
+serving it, and the tag reverses that name with the row's values for the
+link's required reads, those naming the row, as the kernel's `row_links`
+binds them:
+
+```python
+--8<--
+docs/examples/spec_selector.py:links
+--8<--
+```
+
+```django
+{% spec_link row "withdraw" as link %}
+{% if link.available %}<a href="{{ link.url }}">Withdraw</a>
+{% else %}<span title="{{ link.code }}">{{ link.reason }}</span>{% endif %}
+```
+
+`{% spec_link row "withdraw" %}` on its own renders the URL. With `as`, the
+link carries `url`, `available`, and `code` and `reason` when it is not
+available, as `unavailable` answers them, so it costs no query either. An
+optional read, such as a rename's new title the row happens to carry, stays
+out of the URL for the page it leads to to ask.
+
+**What the tag cannot resolve raises at render**, a `TemplateSyntaxError`
+naming the link: a page with no `link_routes`, an operation it does not name
+or names twice, and a pattern `reverse` cannot fill with exactly the required
+reads, for an unavailable row
+too, so a broken route shows on the first render. A tag never sits inside
+`{% if %}`, so nothing swallows its error. The kernel's `check_links` system
+check reports a link that cannot bind before any page renders.
+
 A row's action refused or gone is the host's to answer, for htmx too, by the
 handlers in [a denial under htmx](pages.md#denials).
 

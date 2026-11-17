@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-11-17
+
+### Added
+- **A row links to the page its action is served at.** The `spec_link` tag,
+  `{% spec_link row "rename" %}`, renders the URL of the view serving a row's
+  affordance: `SpecSelectorView.link_routes`, a kernel `SpecRegistry` naming
+  each operation by its URL pattern name, gives the name, and the kernel's
+  `row_links` binds the row's values for the link's required reads to the
+  kwargs it is reversed with, at render; an optional read stays out of the
+  URL. A row's links are read once however many tags ask, and an application
+  namespace resolves to the request's `current_app`, as `{% url %}` resolves
+  it. With `as link`, the link carries `url`, `available`, and the `code` and
+  `reason` of an unavailable one, as `unavailable` answers them. What cannot
+  be resolved raises `TemplateSyntaxError` at render, naming the link: a page
+  with no `link_routes`, a row missing the field a required read binds to, an
+  operation it does not name or names twice, and a pattern `reverse` cannot
+  fill with exactly the required reads, none included, as when a `kwargs`
+  provider may fill every read. `as_view()` refuses `link_routes` that
+  is not a `SpecRegistry`.
+
+### Changed
+- **The kernel floor is `django-service-specs>=0.34.1`**, the release whose
+  `row_links` names each link's `required` reads.
+
 ## [0.13.0] — 2026-11-14
 
 ### Added
@@ -919,7 +943,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/Artui/django-spec-html/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Artui/django-spec-html/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Artui/django-spec-html/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Artui/django-spec-html/compare/v0.10.3...v0.11.0

@@ -69,6 +69,7 @@ from django_service_specs import (
     ServiceNotFound,
     ServiceSpec,
     ServiceValidationError,
+    SpecRegistry,
     UnknownArguments,
     Validator,
     apply_server_arguments,
@@ -1199,18 +1200,35 @@ Underscored, so a template cannot read it past the filter, and named for this
 package, so it takes no name a model or an annotation could hold."""
 
 
+_SOURCE: Final = "_django_spec_html_source"
+"""The attribute a served row carries its ``RowSource`` under, for the ``spec_link`` tag."""
+
+
+@dataclasses.dataclass(frozen=True)
+class RowSource:
+    """What ``row_links`` reads for a served row: its spec, the row as served, the routes."""
+
+    spec: SelectorSpec
+    row: Any
+    link_routes: SpecRegistry | None
+    links: dict[str, dict[str, Any]] = dataclasses.field(default_factory=dict, compare=False)
+
+
 class _AnsweredRow(dict):
     """A mapping row's copy, which can carry the answers a ``dict`` cannot hold as an attribute."""
 
 
-def answered_rows(spec: SelectorSpec, rows: list[Any]) -> list[Any]:
-    """``rows``, each carrying its affordance answers for the ``available`` filter."""
+def answered_rows(
+    spec: SelectorSpec, rows: list[Any], link_routes: SpecRegistry | None = None
+) -> list[Any]:
+    """``rows``, each carrying its affordance answers and its ``RowSource`` for the tags."""
     answered: list[Any] = []
     for row in rows:
         answers = row_affordance_answers(spec, row)
         carrier = _AnsweredRow(row) if isinstance(row, Mapping) else row
         with suppress(AttributeError):
             object.__setattr__(carrier, _ANSWERS, answers)
+            object.__setattr__(carrier, _SOURCE, RowSource(spec, row, link_routes))
         answered.append(carrier)
     return answered
 
@@ -1218,6 +1236,11 @@ def answered_rows(spec: SelectorSpec, rows: list[Any]) -> list[Any]:
 def row_answers(row: Any) -> dict[str, dict[str, Any]] | None:
     """The answers ``answered_rows`` put on ``row``, or ``None`` for a row it never served."""
     return getattr(row, _ANSWERS, None)
+
+
+def row_source(row: Any) -> RowSource | None:
+    """The ``RowSource`` ``answered_rows`` put on ``row``, or ``None`` for a row it never served."""
+    return getattr(row, _SOURCE, None)
 
 
 def refusal_tree(refused: DispatchError | ServiceError) -> Mapping[Any, Any]:
