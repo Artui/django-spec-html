@@ -8,6 +8,15 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "annotated-types"
+version = "0.8.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5f/56/a8120250d128bed162cd73c76d45f6ef9991f3e068f62a8ee060afa3104a/annotated_types-0.8.0.tar.gz", hash = "sha256:13b2beaad985e05e2d6407ee4c4f35590b11f8d693a258a561055cac8f64cab7", size = 15893, upload-time = "2026-07-23T20:16:13.995Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/99/91/8acff4f5e50511b911bbccb72b8628a49c68ce14148cd9f6431094859a90/annotated_types-0.8.0-py3-none-any.whl", hash = "sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0", size = 13427, upload-time = "2026-07-23T20:16:12.938Z" },
+]
+
+[[package]]
 name = "asgiref"
 version = "3.12.1"
 source = { registry = "https://pypi.org/simple" }
@@ -439,15 +448,16 @@ wheels = [
 
 [[package]]
 name = "django-service-specs"
-version = "0.36.0"
+version = "0.38.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "annotated-types" },
     { name = "django" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1e/97/4675cc41c0efd36ec8ca0fe6fd9732d223eac50441cdd95c0443dd941332/django_service_specs-0.36.0.tar.gz", hash = "sha256:f47e8bb48d08e4dcf4689c0f8e7cbbefc0ec7e9f498fd7df0ac0b216964f09c0", size = 1103476, upload-time = "2026-11-24T05:25:47.638Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9b/50/ec770810ae52a5d1c8160d663f5708038aa7c38098188649ef741623d491/django_service_specs-0.38.0.tar.gz", hash = "sha256:9711743aa76156bdfc709e9c84ff7fbca323b8238624ae84ae6e7532b1adb901", size = 1114017, upload-time = "2026-11-24T12:46:46.616Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/00/9f/03a0fd2acda82e9268e95de1f15f052f0efe93d63197d712ae149e3b97ac/django_service_specs-0.36.0-py3-none-any.whl", hash = "sha256:1e39c40877abafe4b4da63b53d3852584ec76b3d9d621c720acc42241dd83c6f", size = 433090, upload-time = "2026-11-24T05:25:45.858Z" },
+    { url = "https://files.pythonhosted.org/packages/ae/58/c7cdf17a9348ba673532353462eabedd39d6cbde9a4a33489c43edde2f1c/django_service_specs-0.38.0-py3-none-any.whl", hash = "sha256:f209c115472e3967f4d779c1b09fdf09fbccd96bec0ad0c3f1527160c922d497", size = 437263, upload-time = "2026-11-24T12:46:44.948Z" },
 ]
 
 [package.optional-dependencies]
@@ -494,7 +504,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=4.2" },
-    { name = "django-service-specs", specifier = ">=0.36.0" },
+    { name = "django-service-specs", specifier = ">=0.38.0" },
 ]
 
 [package.metadata.requires-dev]
