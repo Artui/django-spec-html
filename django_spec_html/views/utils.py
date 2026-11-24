@@ -865,12 +865,10 @@ def admitted(
     served: Served,
 ) -> tuple[Any, Grant, CallSeeds]:
     """The principal, its grant and the request's seeds, once the checks pass."""
-    route_arguments(
-        spec.parameters(call_context=served.call_context),
-        url_kwargs,
-        route_kwargs=served.route_kwargs,
+    route = route_arguments(
+        spec, url_kwargs, route_kwargs=served.route_kwargs, call_context=served.call_context
     )
-    refuse_server_owned(url_kwargs, served.route_kwargs, server_names(served.server))
+    refuse_server_owned(route, url_kwargs, served.route_kwargs, server_names(served.server))
     try:
         principal = request_principal(request)
         seeds = resolve_seeds(
@@ -900,8 +898,7 @@ def _found(
     ask_scope: bool = False,
 ) -> tuple[Any, Grant]:
     """The row, set or ``None`` the post acts on, and the grant vouching for it."""
-    parameters = spec.parameters(call_context=served.call_context)
-    route = coerced_route(parameters, url_kwargs, served, not_found=not_found)
+    route = coerced_route(spec, url_kwargs, served, not_found=not_found)
     arguments = with_binding(spec, route, served)
     try:
         if spec.many and spec.collection_selector_spec is None:
@@ -935,10 +932,17 @@ def _found(
 
 
 def coerced_route(
-    parameters: Parameters, url_kwargs: Mapping[str, Any], served: Served, *, not_found: bool
+    spec: ServiceSpec | SelectorSpec,
+    url_kwargs: Mapping[str, Any],
+    served: Served,
+    *,
+    not_found: bool,
 ) -> dict[str, Any]:
     """The route's captures alone, coerced; checked too where ``not_found``, a refusal a 404."""
-    route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
+    parameters = spec.parameters(call_context=served.call_context)
+    route = route_arguments(
+        spec, url_kwargs, route_kwargs=served.route_kwargs, call_context=served.call_context
+    )
     try:
         coerced = coerce_flat(parameters, route)
         if not_found:
@@ -999,8 +1003,7 @@ def _admitted_to(
     not_found: bool,
 ) -> None:
     """Ask the object check of a row ``target``, else the scope check, as ``_found`` hands them."""
-    parameters = spec.parameters(call_context=served.call_context)
-    route = coerced_route(parameters, url_kwargs, served, not_found=not_found)
+    route = coerced_route(spec, url_kwargs, served, not_found=not_found)
     arguments = with_binding(spec, route, served)
     keywords: dict[str, Any] = {
         "grant": grant,
@@ -1157,8 +1160,8 @@ def without_errors(form: forms.BaseForm) -> None:
     bound.cleaned_data = {}
 
 
-def form_values(form: forms.BaseForm) -> dict[str, Any]:
-    """The values a bound form's post carries, typed for the shape check."""
+def form_values(form: forms.BaseForm, parameters: Parameters) -> dict[str, Any]:
+    """The values a bound form's post carries, typed for the shape check ``parameters`` run."""
     read: dict[str, Any] = {}
     for name, field in form.fields.items():
         if field.disabled:
@@ -1172,7 +1175,10 @@ def form_values(form: forms.BaseForm) -> dict[str, Any]:
             value = form.files.get(form[name].html_name)
         if value is None or value == "":
             continue
-        read[name] = _wire(field, value)
+        typed = _wire(field, value)
+        declared = parameters.get(name)
+        plain = declared is not None and declared.type == "string" and not isinstance(typed, str)
+        read[name] = value if plain else typed
     return read
 
 

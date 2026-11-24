@@ -92,6 +92,7 @@ from tests.http.utils import (
     Handed,
     SeesTenant,
     handed_spec,
+    hashed_spec,
     note_spec,
     signed_in,
 )
@@ -116,6 +117,9 @@ def stored_document(*, attachment: bool = True) -> Document:
 
 
 TEMPLATE = "spec_form.html"
+SHELF = Parameters.of(Parameter("shelf", "string"))
+REQUIRED_SHELF = Parameters.of(Parameter("shelf", "string", required=True))
+WITHHOLDS_SHELF = ServerArguments(withheld=frozenset({"shelf"}))
 REQUIRED = "This field is required."
 CLOSED = "Entries are closed."
 WHOLE = "Enter a whole number."
@@ -1230,10 +1234,10 @@ class TestRefusals:
         assert post(form_view(spec), ada, {"title": "Hi"}).status_code == 302
         assert check.calls == 1
 
-    def test_the_route_wins_a_clash_with_the_form(self, ada: Any) -> None:
+    def test_a_capture_named_like_a_field_leaves_the_field_the_form_s(self, ada: Any) -> None:
         spec = entry_spec()
         post(form_view(spec), ada, {"title": "Hi", "colour": "red"}, colour="blue")
-        assert received(spec)["colour"] == "blue"
+        assert received(spec)["colour"] == "red"
 
     @pytest.mark.parametrize(
         ("detail", "expected"),
@@ -2157,19 +2161,27 @@ class TestThePagesServerArguments:
         assert post(view, ada, {"title": "Hi", "count": "abc"}).status_code == 302
         assert received(spec)["count"] is None
 
-    def test_a_route_capturing_a_withheld_name_is_refused(self, ada: Any) -> None:
-        withheld = ServerArguments(withheld=frozenset({"count"}))
-        view = paged(entry_spec(), server_arguments=withheld).as_view()
+    def test_a_route_capturing_a_withheld_read_is_refused(self, ada: Any) -> None:
+        withheld = ServerArguments(withheld=frozenset({"shelf"}))
+        view = paged(entry_spec(reads=SHELF), server_arguments=withheld).as_view()
         for answer in (
-            lambda: get(view, ada, count="abc"),
-            lambda: post(view, ada, {"title": "Hi"}, count="abc"),
+            lambda: get(view, ada, shelf="abc"),
+            lambda: post(view, ada, {"title": "Hi"}, shelf="abc"),
         ):
             with pytest.raises(ImproperlyConfigured) as refused_:
                 answer()
             assert str(refused_.value).startswith(
-                "The route captures count, which server_arguments answers for. "
-                "Drop each with route_kwargs={'count': None}"
+                "The route captures shelf, which server_arguments answers for. "
+                "Drop each with route_kwargs={'shelf': None}"
             )
+
+    def test_a_capture_named_like_a_withheld_field_fills_nothing(self, ada: Any) -> None:
+        spec = entry_spec()
+        withheld = ServerArguments(withheld=frozenset({"count"}))
+        view = paged(spec, server_arguments=withheld).as_view()
+        assert get(view, ada, count="abc").status_code == 200
+        assert post(view, ada, {"title": "Hi"}, count="abc").status_code == 302
+        assert received(spec)["count"] is None
 
     def test_a_route_kwarg_mapped_onto_a_bound_name_is_refused_at_as_view(self) -> None:
         with pytest.raises(ImproperlyConfigured) as refused_:
@@ -2183,11 +2195,11 @@ class TestThePagesServerArguments:
         )
 
     def test_an_allowed_name_the_server_withholds_is_refused_at_as_view(self) -> None:
-        with pytest.raises(ImproperlyConfigured, match="route_kwargs fills count, which"):
+        with pytest.raises(ImproperlyConfigured, match="route_kwargs fills shelf, which"):
             paged(
-                entry_spec(),
-                route_kwargs=("count",),
-                server_arguments=ServerArguments(withheld=frozenset({"count"})),
+                entry_spec(reads=SHELF),
+                route_kwargs=("shelf",),
+                server_arguments=ServerArguments(withheld=frozenset({"shelf"})),
             ).as_view()
 
     def test_the_target_is_found_by_the_server_s_value(self, ada: Any, note: Note) -> None:
@@ -2853,7 +2865,10 @@ class TestOneResolutionPerRequest:
         ("attributes", "url_kwargs"),
         [
             ({}, {"zone": "eu"}),
-            ({"server_arguments": ServerArguments(withheld=frozenset({"count"}))}, {"count": "1"}),
+            (
+                {"spec": entry_spec(reads=SHELF), "server_arguments": WITHHOLDS_SHELF},
+                {"shelf": "1"},
+            ),
         ],
         ids=["an-undeclared-kwarg", "a-name-the-server-answers-for"],
     )
@@ -2865,7 +2880,9 @@ class TestOneResolutionPerRequest:
         fresh = Fresh()
         check = SeesTenantAtEachQuestion()
         seeds = DEFAULT_POOL_SEEDS.extend(tenant=fresh)
-        view = paged(entry_spec(permissions=[check]), pool_seeds=seeds, **attributes).as_view()
+        spec = attributes.get("spec", entry_spec()).derive(permissions=[check])
+        rest = {key: value for key, value in attributes.items() if key != "spec"}
+        view = paged(spec, pool_seeds=seeds, **rest).as_view()
         with pytest.raises(ImproperlyConfigured):
             if method == "get":
                 get(view, ada, **url_kwargs)
@@ -5064,15 +5081,34 @@ class TestAsViewRefuses:
         spec = form_class_book_spec(DataclassValidator(Catalogued), input_data=server_isbn)
         page(spec, TitleForm, route_kwargs=())
 
-    def test_a_required_parameter_the_route_may_fill_passes(self) -> None:
-        page(form_class_book_spec(DataclassValidator(Catalogued)), TitleForm)
-        page(
-            form_class_book_spec(DataclassValidator(Catalogued)), TitleForm, route_kwargs=("isbn",)
+    def test_a_required_read_the_route_may_fill_passes(self) -> None:
+        spec = form_class_book_spec(reads=REQUIRED_SHELF)
+        page(spec, TitleForm)
+        page(spec, TitleForm, route_kwargs=("shelf",))
+        page(spec, TitleForm, route_kwargs={"code": "shelf"})
+
+    def test_a_required_field_the_form_does_not_post_is_refused_whatever_the_route(self) -> None:
+        assert refusal(form_class_book_spec(DataclassValidator(Catalogued)), TitleForm) == (
+            "SpecFormView.form_class TitleForm does not post 'isbn', which the spec requires, "
+            "and neither the server nor the route fills it."
         )
-        page(
-            form_class_book_spec(DataclassValidator(Catalogued)),
-            TitleForm,
-            route_kwargs={"code": "isbn"},
+
+    @pytest.mark.parametrize(
+        "route_kwargs", [("isbn",), {"code": "isbn"}], ids=["allowed", "renamed"]
+    )
+    def test_a_route_filling_a_field_is_refused_with_the_kernel_s_message(
+        self, route_kwargs: Any
+    ) -> None:
+        with pytest.raises(ImproperlyConfigured) as refused_:
+            page(
+                form_class_book_spec(DataclassValidator(Catalogued)),
+                TitleForm,
+                route_kwargs=route_kwargs,
+            )
+        capture = "isbn" if isinstance(route_kwargs, tuple) else "code"
+        assert str(refused_.value) == (
+            f"The route maps the capture {capture} onto isbn, a Validator field. A field is the "
+            "caller's, never a route's: map the capture to a read, or to None to drop it."
         )
 
     def test_an_optional_parameter_the_form_leaves_out_passes(self) -> None:
@@ -5315,3 +5351,24 @@ class TestAPlainFormDeclaringInstance:
             binding_page(spec_of(CatchesAll, row=True)), ada, {"title": "T"}, pk=str(note.pk)
         )
         assert posted.status_code == 302
+
+
+HASHED = hashed_spec()
+urlpatterns += [path("notes/<hashed:id>/", form_view(HASHED))]
+
+
+def test_a_capture_named_like_a_field_leaves_the_field_the_post_s(ada: Any) -> None:
+    # Through the resolver, so the form reads the URL converter's value if the route fills it.
+    HASHED.service.calls.clear()
+    client = Client()
+    client.force_login(ada)
+    response = client.post("/notes/k42/", {"id": "k7"})
+    assert (response.status_code, response.url) == (302, "/done/")
+    assert received(HASHED) == {"id": 7}
+
+
+def test_a_field_a_registry_declares_a_string_posts_its_spelling(ada: Any) -> None:
+    spec = hashed_spec()
+    response = post(form_view(spec), ada, {"id": "k7"})
+    assert (response.status_code, response.url) == (302, "/done/")
+    assert received(spec) == {"id": 7}

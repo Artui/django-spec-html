@@ -2033,3 +2033,27 @@ class TestARowFormDeclaringTheKey:
             == 302
         )
         assert edit_form_class_sent(spec)[2] == {"title": "Hijack", "id": None, "DELETE": False}
+
+
+class TestARouteCaptureOnAManySpec:
+    def test_a_capture_under_the_list_s_name_route_kwargs_drops_serves(self, ada: Any) -> None:
+        spec = many_spec()
+        view = formset_view(spec, route_kwargs={spec.many_argument: None})
+        response = post(view, ada, posted({"title": "One"}), url_kwargs={spec.many_argument: "x"})
+        assert (response.status_code, response.url) == (302, "/done/")
+
+    def test_a_capture_under_the_list_s_name_is_refused(self, ada: Any) -> None:
+        spec = many_spec()
+        with pytest.raises(ImproperlyConfigured) as refused:
+            post(formset_view(spec), ada, posted({"title": "One"}), url_kwargs={"items": "x"})
+        assert str(refused.value).startswith(
+            "The route captures items, the caller's list on a many spec."
+        )
+
+    def test_a_capture_named_like_a_row_field_is_dropped(self, ada: Any) -> None:
+        spec = many_spec()
+        response = post(
+            formset_view(spec), ada, posted({"title": "One"}), url_kwargs={"title": "x"}
+        )
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert rows(spec) == [{"title": "One", "urgent": False}]

@@ -102,10 +102,11 @@ def dispatch_request(
         principal = request_principal(request)
         arguments = request_arguments(
             request,
-            spec.parameters(call_context=call_context),
+            spec,
             url_kwargs=url_kwargs,
             route_kwargs=route_kwargs,
             server_arguments=server_arguments,
+            call_context=call_context,
         )
         if server_arguments is not None:
             arguments = apply_server_arguments(

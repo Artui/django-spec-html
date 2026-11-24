@@ -33,7 +33,7 @@ from django_spec_html.http.request_arguments import request_arguments
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 from tests.dispatch.utils import make_user
 from tests.dispatch_app.models import Note
-from tests.http.utils import DEEP_JSON, FACTORY
+from tests.http.utils import DEEP_JSON, FACTORY, reading
 
 # The module, which ``http``'s own ``request_arguments`` re-export shadows as an attribute.
 request_arguments_module = importlib.import_module("django_spec_html.http.request_arguments")
@@ -91,12 +91,12 @@ def contents(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def read(request: HttpRequest, parameters: Parameters = FLAT, **kwargs: Any) -> dict[str, Any]:
-    return request_arguments(request, parameters, **kwargs)
+    return request_arguments(request, reading(parameters), **kwargs)
 
 
 def refusal(request: HttpRequest, parameters: Parameters = FLAT, **kwargs: Any) -> dict[Any, Any]:
     with pytest.raises(InvalidArguments) as caught:
-        request_arguments(request, parameters, **kwargs)
+        request_arguments(request, reading(parameters), **kwargs)
     return caught.value.detail
 
 

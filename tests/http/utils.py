@@ -10,10 +10,12 @@ from django.contrib.auth.models import AnonymousUser
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponseBase
 from django.test import AsyncRequestFactory, RequestFactory
+from django.urls import register_converter
 from django_service_specs import (
     AdditionalInputRequired,
     Affordance,
     FormValidator,
+    JsonSchemaRegistry,
     Output,
     Parameter,
     Parameters,
@@ -27,6 +29,49 @@ from django_service_specs import (
 
 from tests.dispatch.utils import OPEN, PK, Record, Titled, Titles, note_by_pk, notes_of
 from tests.dispatch_app.models import Note
+
+
+def reading(parameters: Parameters) -> ServiceSpec:
+    """A spec whose parameters are ``parameters``, its reads, with no Validator."""
+    return ServiceSpec(service=Record(), permissions=OPEN, reads=parameters)
+
+
+class Hashed:
+    """A hashids-like converter: ``k42`` captures as ``42``, so its value is not the URL's."""
+
+    regex = "k[0-9]+"
+
+    def to_python(self, value: str) -> int:
+        return int(value[1:])
+
+    def to_url(self, value: int) -> str:
+        return f"k{value}"
+
+
+register_converter(Hashed, "hashed")
+
+
+class HashedId(forms.IntegerField):
+    """An integer posted in its hashed spelling, ``k42``, as a hashids form field reads one."""
+
+    def to_python(self, value: Any) -> Any:
+        if not isinstance(value, str) or not value.startswith("k"):
+            raise forms.ValidationError("Not a hashed id.", code="invalid")
+        return int(value[1:])
+
+
+class HashedIdForm(forms.Form):
+    id = HashedId()
+
+
+HASHED_AS_STRING = JsonSchemaRegistry().extend(fields=[(HashedId, {"type": "string"})])
+
+
+def hashed_spec() -> ServiceSpec:
+    """A write validated by ``HashedIdForm``, whose ``id`` field a route captures too."""
+    validator = FormValidator(HashedIdForm, json_schema_registry=HASHED_AS_STRING)
+    return ServiceSpec(service=Record(), permissions=OPEN, validator=validator)
+
 
 FACTORY = RequestFactory()
 ASYNC_FACTORY = AsyncRequestFactory()

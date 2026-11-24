@@ -9,8 +9,9 @@ from django_service_specs import InvalidArguments, Parameter, Parameters, coerce
 import django_spec_html
 import django_spec_html.http
 from django_spec_html.http.route_arguments import route_arguments
+from tests.http.utils import reading
 
-ROUTED = Parameters.of(Parameter("pk", "integer"), Parameter("slug", "string"))
+ROUTED = reading(Parameters.of(Parameter("pk", "integer"), Parameter("slug", "string")))
 
 
 def test_a_declared_route_is_returned_as_a_plain_uncoerced_copy() -> None:
@@ -36,7 +37,7 @@ def test_merged_last_and_typed_with_the_rest_one_refusal_carries_every_problem()
     parameters = Parameters.of(Parameter("pk", "integer"), Parameter("count", "integer"))
     read = {"count": "many"}
     with pytest.raises(InvalidArguments) as refused:
-        coerce_flat(parameters, {**read, **route_arguments(parameters, {"pk": "four"})})
+        coerce_flat(parameters, {**read, **route_arguments(reading(parameters), {"pk": "four"})})
     assert set(refused.value.detail) == {"pk", "count"}
 
 

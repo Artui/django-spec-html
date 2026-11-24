@@ -345,7 +345,9 @@ class SpecFormSetView(SpecPageBase):
                 rows.append(_row_arguments(row, rows_parameters))
             except InvalidArguments as refused:
                 refused_rows[index] = refused.detail
-        route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
+        route = route_arguments(
+            spec, url_kwargs, route_kwargs=served.route_kwargs, call_context=served.call_context
+        )
         problems: dict[Any, Any] = {}
         top: dict[str, Any] = {}
         try:
@@ -560,7 +562,7 @@ def _marked(form: forms.BaseForm) -> bool:
 
 def _row_arguments(form: forms.BaseForm, rows_parameters: Parameters) -> dict[str, Any]:
     """One sent form's row: its values read as the form page reads its form, coerced as a row."""
-    return coerce_flat(rows_parameters, form_values(form))
+    return coerce_flat(rows_parameters, form_values(form, rows_parameters))
 
 
 def _split(tree: Mapping[Any, Any], sent: list[forms.BaseForm], many_argument: str) -> list[str]:

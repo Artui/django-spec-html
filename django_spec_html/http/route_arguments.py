@@ -4,25 +4,33 @@ from collections.abc import Mapping
 from typing import Any
 
 from django.core.exceptions import ImproperlyConfigured
-from django_service_specs import Parameters
+from django_service_specs import SelectorSpec, ServiceSpec, SpecSource, kernel_spec, route_captures
 
 
 def route_arguments(
-    parameters: Parameters,
+    spec: ServiceSpec | SelectorSpec | SpecSource,
     url_kwargs: Mapping[str, Any] | None,
     *,
     route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None,
+    call_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The kwargs a route captured, as arguments, each one a parameter the spec declares.
+    """The kwargs a route captured, as arguments, each one a parameter ``spec`` declares.
 
     How ``request_arguments`` reads the route, public so that a host's own
     view reading the rest of its arguments some other way - a bound form, a
     page's own fields - merges the route by the same rule and refuses the
     same misconfiguration.
 
-    Every URL kwarg is an argument, so a route capturing one its spec does not
-    declare is the host's configuration, wrong for every request the route
-    serves, rather than anything a client sent. It is refused as one - Django
+    Every URL kwarg is an argument, except one named like a field of the
+    spec's Validator: a capture holds the converter's ``to_python()`` value
+    and a field reads what the caller sent, so a field-named capture is no
+    argument and the field stays the caller's, by the kernel's
+    [`route_captures`][django_service_specs.specs.route_captures.route_captures]
+    (``test_a_capture_named_like_a_field_leaves_the_field_the_callers``). A
+    target selector wanting that capture reads ``view.kwargs`` through its
+    ``kwargs`` provider. A route capturing a name its spec does not declare
+    is the host's configuration, wrong for every request the route serves,
+    rather than anything a client sent. It is refused as one - Django
     answers it 500 and shows it under ``DEBUG`` - where a client's own
     undeclared argument is a 400. The ``unknown_arguments`` policy does not
     reach it: that policy is about what a client sends, and no client can send
@@ -41,8 +49,9 @@ def route_arguments(
       every other captured kwarg is dropped.
 
     Every target a mapping names, and every name an allow-list lists, is a
-    parameter the spec declares, checked whatever the route captured: the
-    setting is the host's, the same on every route the view is mounted on.
+    parameter the spec declares and no Validator field, checked whatever the
+    route captured: the setting is the host's, the same on every route the
+    view is mounted on, and no rename can make a URL value the caller's.
     Two kwargs filling one parameter, a rename onto a name the route also
     captures, are refused as well, since neither could win honestly. A route
     kwarg is never a server value, whatever it fills: the client's URL chose
@@ -51,25 +60,38 @@ def route_arguments(
 
     Returned as a plain copy and uncoerced, so each caller merges it last,
     where the route wins a clash, and coerces it beside what the client sent:
-    ``coerce_flat(parameters, {**read, **route_arguments(parameters, url_kwargs)})``,
-    so one refusal carries every problem with either.
+    ``coerce_flat(parameters, {**read, **route_arguments(spec, url_kwargs)})``,
+    so one refusal carries every problem with either. ``call_context``
+    reaches the spec's parameters and its Validator, as in dispatch.
 
     Raises:
         ImproperlyConfigured: naming every undeclared kwarg, target or
-            allowed name, in order; or a parameter more than one kwarg fills.
+            allowed name, in order; a target or allowed name that is a
+            Validator field, with the kernel's message; or a parameter more
+            than one kwarg fills.
         TypeError: ``route_kwargs`` is a bare string, which would otherwise
             be read as a tuple of its characters.
     """
-    captured = dict(url_kwargs or {})
-    declared = parameters.names()
-    if route_kwargs is None:
-        _check_declared(captured, declared)
-        return captured
     if isinstance(route_kwargs, str):
         raise TypeError(
             f"route_kwargs is a tuple of names or a mapping, not one string: "
             f"write ({route_kwargs!r},)."
         )
+    spec = kernel_spec(spec)
+    mapped = _as_mapping(route_kwargs)
+    filled = {target for name in url_kwargs or {} if (target := mapped.get(name, name)) is not None}
+    if isinstance(route_kwargs, tuple):
+        filled &= set(route_kwargs)
+    _, namesakes = route_captures(spec, filled, mapped=mapped, call_context=call_context)
+    captured = {
+        name: value
+        for name, value in (url_kwargs or {}).items()
+        if name not in namesakes or name in mapped
+    }
+    declared = spec.parameters(call_context=call_context).names()
+    if route_kwargs is None:
+        _check_declared(captured, declared)
+        return captured
     if isinstance(route_kwargs, Mapping):
         return _mapped(captured, declared, route_kwargs)
     allowed = sorted(set(route_kwargs) - declared)
@@ -80,6 +102,15 @@ def route_arguments(
             "or leave it out of route_kwargs."
         )
     return {name: value for name, value in captured.items() if name in route_kwargs}
+
+
+def _as_mapping(
+    route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
+) -> Mapping[str, str | None]:
+    """``route_kwargs`` as the kernel reads a renaming: an allow-list maps each name to itself."""
+    if isinstance(route_kwargs, Mapping):
+        return route_kwargs
+    return {name: name for name in route_kwargs or ()}
 
 
 def _check_declared(route: Mapping[str, Any], declared: frozenset[str]) -> None:

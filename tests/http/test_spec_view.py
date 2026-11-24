@@ -10,6 +10,8 @@ import django_filters
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 from django.middleware.csrf import CsrfViewMiddleware
+from django.test import Client
+from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
 from django_service_specs import (
     DEFAULT_POOL_SEEDS,
@@ -48,6 +50,7 @@ from tests.http.utils import (
     asking_for_tenant_spec,
     body,
     handed_spec,
+    hashed_spec,
     limited_spec,
     note_spec,
     notes_spec,
@@ -789,3 +792,29 @@ class TestTheJsonRoute:
         )
         with pytest.raises(ImproperlyConfigured, match="presents a list of rows"):
             SpecView.as_view(spec=spec)
+
+
+HASHED = hashed_spec()
+urlpatterns = [path("notes/<hashed:id>/", SpecView.as_view(spec=HASHED))]
+
+
+class TestACaptureNamedLikeAField:
+    @pytest.fixture(autouse=True)
+    def urlconf(self, settings: Any) -> None:
+        settings.ROOT_URLCONF = __name__
+        HASHED.service.calls.clear()
+
+    def test_the_field_is_the_body_s_through_a_value_changing_converter(self) -> None:
+        response = Client().post("/notes/k42/", {"id": "k7"}, content_type="application/json")
+        assert response.status_code == 204
+        assert HASHED.service.calls[0]["data"] == {"id": 7}
+
+    @pytest.mark.parametrize("route_kwargs", [("id",), {"note": "id"}], ids=["allowed", "renamed"])
+    def test_a_route_filling_the_field_is_refused_at_as_view(self, route_kwargs: Any) -> None:
+        with pytest.raises(ImproperlyConfigured) as refused:
+            SpecView.as_view(spec=hashed_spec(), route_kwargs=route_kwargs)
+        capture = next(iter(route_kwargs))
+        assert str(refused.value) == (
+            f"The route maps the capture {capture} onto id, a Validator field. A field is the "
+            "caller's, never a route's: map the capture to a read, or to None to drop it."
+        )

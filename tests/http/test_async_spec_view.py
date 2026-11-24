@@ -7,6 +7,8 @@ import pytest
 from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured, SynchronousOnlyOperation
+from django.test import AsyncClient
+from django.urls import path
 from django.utils.functional import SimpleLazyObject
 from django_service_specs import DEFAULT_POOL_SEEDS, PoolSeeds, ServerArguments, UnknownArguments
 
@@ -23,6 +25,7 @@ from tests.http.utils import (
     asking_for_tenant_spec,
     body,
     handed_spec,
+    hashed_spec,
     limited_spec,
     note_spec,
     notes_spec,
@@ -319,3 +322,16 @@ async def test_a_seed_resolver_reading_the_request_binds(ada: Any) -> None:
     request = posted(ada, {"title": "x"})
     assert (await Seeded.as_view()(request)).status_code == 200
     assert Seeded.spec.service.calls[0]["asker"] is request
+
+
+HASHED = hashed_spec()
+urlpatterns = [path("notes/<hashed:id>/", AsyncSpecView.as_view(spec=HASHED))]
+
+
+async def test_a_capture_named_like_a_field_leaves_the_field_the_body_s(settings: Any) -> None:
+    settings.ROOT_URLCONF = __name__
+    response = await AsyncClient().post(
+        "/notes/k42/", {"id": "k7"}, content_type="application/json"
+    )
+    assert response.status_code == 204
+    assert [call["data"] for call in HASHED.service.calls] == [{"id": 7}]

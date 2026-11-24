@@ -290,7 +290,9 @@ class SpecConfirmView(SpecPageBase):
     ) -> Mapping[str, Any]:
         """The route's kwargs and the posted ``posted_arguments``, coerced by their declarations."""
         parameters = spec.parameters(call_context=served.call_context)
-        route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
+        route = route_arguments(
+            spec, url_kwargs, route_kwargs=served.route_kwargs, call_context=served.call_context
+        )
         read = flat_arguments(parameters, self.request.POST)
         posted = {name: read[name] for name in self.posted_arguments if name in read}
         return coerce_flat(parameters, {**posted, **route})
