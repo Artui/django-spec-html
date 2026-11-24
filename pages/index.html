@@ -1522,7 +1522,10 @@ the form's own widgets</strong>, which is how Django reads a form:</p>
 <li>The URL kwargs are merged last, so the route wins a clash, and typed with
   <a href="https://artui.github.io/django-service-specs/arguments/#flat-transports"><code>coerce_flat</code></a> in the same call as
   everything else: one refusal carries every problem. Each is an argument,
-  so the spec declares each one. A kwarg the route captures and the spec does
+  so the spec declares each one, except a kwarg named like one of the form's
+  fields: that field is the caller's, so the capture is no argument and the
+  field keeps what the post sent, as <a href="../http/#the-url-kwargs">the JSON views</a>
+  read one. A kwarg the route captures and the spec does
   not declare is the host's misconfiguration, wrong for every caller, so it
   raises <code>ImproperlyConfigured</code> under either <code>unknown_arguments</code> policy - the
   policy governs what a client sends - rather than blaming the client with a
@@ -1701,10 +1704,12 @@ field:</p>
   file field over a Validator declaring no clear checkbox takes a plain
   <code>FileInput</code>;</li>
 <li>a required parameter the form does not post, where neither the server
-  (<code>server_owned_keys</code>, <code>server_arguments</code>) nor the route fills it. Only a
-  tuple <code>route_kwargs</code> closes the route; under <code>None</code> or a mapping any
-  parameter may come from the URL, and dispatch refuses one nobody sent. An
-  optional parameter the form leaves out is allowed;</li>
+  (<code>server_owned_keys</code>, <code>server_arguments</code>) nor the route fills it. A
+  Validator field never comes from the URL, so a required field the form
+  does not post is refused whatever <code>route_kwargs</code> says. Of the other
+  parameters, only a tuple <code>route_kwargs</code> closes the route; under <code>None</code> or a
+  mapping any of them may come from the URL, and dispatch refuses one nobody
+  sent. An optional parameter the form leaves out is allowed;</li>
 <li>a field whose type disagrees with its parameter's: the same <code>type</code>, the same
   element type for an array, and the same <code>format</code> where the parameter
   declares one. The rule is exact, so an <code>IntegerField</code> over a <code>number</code>

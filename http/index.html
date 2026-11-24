@@ -520,6 +520,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#the-url-kwargs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The URL kwargs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#kwargs-a-spec-does-not-read" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -739,6 +750,17 @@
   
     <nav class="md-nav" aria-label="Arguments">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-url-kwargs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The URL kwargs
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#kwargs-a-spec-does-not-read" class="md-nav__link">
@@ -1155,12 +1177,27 @@ the same body, <code>attachment-clear=true</code>, and is read as every flat <co
 is: <code>true</code>, <code>false</code>, <code>1</code> or <code>0</code>. A checkbox with no <code>value</code> attribute posts
 <code>on</code>, which is refused, so a page posting to a <code>SpecView</code> gives it
 <code>value="true"</code>.</p>
+<h3 id="the-url-kwargs">The URL kwargs<a class="headerlink" href="#the-url-kwargs" title="Permanent link">&para;</a></h3>
 <p><strong>The URL kwargs are arguments too</strong>, merged last so the route wins a clash, as
 it does in djangorestframework-services. A client-supplied value must not move
 the route's scope: a POST to <code>/notes/4/rename/</code> whose body says <code>"pk": 9</code>
 renames note 4 or nothing. A path segment with no converter arrives as a
 string and goes through <code>coerce_flat</code> like a query value. Every URL kwarg is
-an argument, so the spec declares each one. A route capturing a kwarg its spec
+an argument, so the spec declares each one.</p>
+<p><strong>A kwarg named like a field of the spec's Validator is the caller's, and no
+argument.</strong> A capture holds the URL converter's <code>to_python()</code> value, and a
+field reads what the caller sent, so the two cannot share one: a hashids
+converter turns <code>k42</code> into <code>42</code>, and a form field reading the hashed
+spelling would refuse the <code>42</code>. So under <code>&lt;hashed:id&gt;/</code> a field <code>id</code> is the
+one the body sent, and the capture is left out of the arguments, by the
+kernel's <a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.specs.route_captures.route_captures"><code>route_captures</code></a>
+rule. A target selector wanting the capture reads <code>view.kwargs</code> through its
+<code>kwargs</code> provider. If the
+spec needs the route's value as an argument, declare it as a read under a
+name no field takes, or rename the capture onto one with <code>route_kwargs</code>. No
+rename makes a URL value a field's: a <code>route_kwargs</code> mapping or allow-list
+naming a field is refused by <code>as_view()</code>, with the kernel's message.</p>
+<p>A route capturing a kwarg its spec
 does not declare raises <code>ImproperlyConfigured</code> on the first request it
 serves, under either <code>unknown_arguments</code> policy: the mismatch is the host's,
 wrong for every request, and a 400 would tell the client it had sent
@@ -1200,10 +1237,11 @@ spec does not declare, so the caller merges it last and types it in the same
 call as everything else, and one refusal carries every problem:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">form_arguments</span><span class="p">(</span><span class="n">posted</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">url_kwargs</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">parameters</span> <span class="o">=</span> <span class="n">rename_note_spec</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="k">return</span> <span class="n">coerce_flat</span><span class="p">(</span><span class="n">parameters</span><span class="p">,</span> <span class="p">{</span><span class="o">**</span><span class="n">posted</span><span class="p">,</span> <span class="o">**</span><span class="n">route_arguments</span><span class="p">(</span><span class="n">parameters</span><span class="p">,</span> <span class="n">url_kwargs</span><span class="p">)})</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="k">return</span> <span class="n">coerce_flat</span><span class="p">(</span><span class="n">parameters</span><span class="p">,</span> <span class="p">{</span><span class="o">**</span><span class="n">posted</span><span class="p">,</span> <span class="o">**</span><span class="n">route_arguments</span><span class="p">(</span><span class="n">rename_note_spec</span><span class="p">,</span> <span class="n">url_kwargs</span><span class="p">)})</span>
 </span></code></pre></div>
-<p>Merging the route last is what makes it win a clash with a posted field of the
-same name, and the one <code>coerce_flat</code> call types both.</p>
+<p>Merging the route last is what makes it win a clash with a posted read of the
+same name, and the one <code>coerce_flat</code> call types both. A capture named like a
+field is not in what it returns, so the field keeps the posted value.</p>
 <h2 id="the-principal">The principal<a class="headerlink" href="#the-principal" title="Permanent link">&para;</a></h2>
 <p>The principal is <code>request.user</code>, <strong>anonymous included</strong>: the spec's permission
 check is what decides whether anonymous may act, so it is handed the anonymous

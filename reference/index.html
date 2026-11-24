@@ -6923,8 +6923,10 @@ Copied into a read-only mapping when the value is built.</p>
 from GET, HEAD, POST, PUT, PATCH and DELETE. Any other method is Django's
 own 405, whose <code>Allow</code> header lists exactly the methods served, and
 OPTIONS is Django's own answer. <strong>The URL kwargs are arguments</strong>, merged
-last so the route wins a clash, which means the spec declares each one:
-a route capturing a kwarg its spec does not declare raises
+last so the route wins a clash, which means the spec declares each one,
+except a kwarg named like a field of the spec's Validator: that field is
+the caller's, so the capture is no argument. A route capturing a kwarg
+its spec does not declare raises
 <code>ImproperlyConfigured</code> on the first request it serves, since that is the
 host's configuration rather than anything a client sent. <code>route_kwargs</code>
 renames or drops the kwargs a spec does not declare, as an <code>include()</code>
@@ -7225,7 +7227,8 @@ cannot stand in for a sync one.</p>
 <li><strong>The arguments</strong> are
    <a class="autorefs autorefs-internal" title="request_arguments" href="#django_spec_html.http.request_arguments.request_arguments"><code>request_arguments</code></a>
    for <code>spec.parameters()</code>, with <code>url_kwargs</code> merged last under the
-   names <code>route_kwargs</code> maps them to, and <code>server_arguments</code> applied
+   names <code>route_kwargs</code> maps them to, a kwarg named like a Validator
+   field left out so the field is the caller's, and <code>server_arguments</code> applied
    over them by the kernel's
    <a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.dispatch.apply_server_arguments.apply_server_arguments"><code>apply_server_arguments</code></a>:
    its bound values outrank whatever the client sent, and its withheld
@@ -7254,8 +7257,8 @@ Anything else propagates, a configuration error included: it is wrong for
 every caller, so it belongs to the host's error handling rather than to one
 client's response. A URL kwarg <code>spec</code> does not declare, and that
 <code>route_kwargs</code> neither renames nor drops, is one, raised as
-<code>ImproperlyConfigured</code>: every URL kwarg is an argument, and the route
-is the host's. So is a bound value its parameter refuses: the client
+<code>ImproperlyConfigured</code>: every URL kwarg but a field's namesake is an
+argument, and the route is the host's. So is a bound value its parameter refuses: the client
 neither sent it nor can see it.</p>
 <p><code>spec</code> may be a
 <a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.specs.spec_source.SpecSource"><code>SpecSource</code></a>: it is
@@ -7396,17 +7399,19 @@ the operation's own verdict, so it answers 400 rather than 422.</p>
 <a href="#django_spec_html.http.request_arguments.request_arguments" class="headerlink" title="Permanent link">&para;</a></h2>
 <div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">request_arguments</span><span class="p">(</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">request</span><span class="p">:</span> <span class="n">HttpRequest</span><span class="p">,</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">parameters</span><span class="p">:</span> <span class="n">Parameters</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">spec</span><span class="p">:</span> <span class="n">ServiceSpec</span> <span class="o">|</span> <span class="n">SelectorSpec</span> <span class="o">|</span> <span class="n">SpecSource</span><span class="p">,</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="o">*</span><span class="p">,</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">url_kwargs</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">route_kwargs</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">server_arguments</span><span class="p">:</span> <span class="n">ServerArguments</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">call_context</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents first">
 
-        <p>The arguments a request carries for <code>parameters</code>, typed as a JSON caller would send them.</p>
+        <p>The arguments a request carries for <code>spec</code>, typed as a JSON caller would send them.</p>
+<p>They are read by <code>spec</code>'s parameters, <code>spec.parameters(call_context=call_context)</code>.</p>
 <p>Where they are read from depends on the method and the body:</p>
 <ul>
 <li><strong>GET and HEAD</strong>: the query string, which is flat. Any body is ignored.</li>
@@ -7462,7 +7467,7 @@ since a browser sends a file input only as a file: a single value reads as
 the upload in DRF's merged data too, where an array there would hold the
 field and the uploads together. A POST's uploads are Django's own <code>request.FILES</code>; those in a
 PUT, PATCH or DELETE body are parsed here with its fields. An upload under
-a name <code>parameters</code> do not declare passes through like an undeclared
+a name <code>spec</code>'s parameters do not declare passes through like an undeclared
 field, for the closed argument set to refuse, and a file input left empty
 is no upload, so it is absent. Only a multipart body carries one.</p>
 <p><strong>URL kwargs are merged last</strong>, through <code>coerce_flat</code> as well since a
@@ -7471,8 +7476,10 @@ does in djangorestframework-services: a client-supplied value must not
 move the route's scope, so <code>/notes/4/</code> with <code>pk=9</code> in its body is about
 note 4. On a flat request the two are coerced together, so every refusal
 comes back at once and a clashing client value the route replaced is
-never refused. <code>route_kwargs</code> says which URL kwargs fill which
-parameters, renaming or dropping the rest, as
+never refused. <strong>A kwarg named like a field of the spec's Validator is no
+argument</strong>, so the field is the one the body sent: a converter's
+<code>to_python()</code> value is not what the field reads. <code>route_kwargs</code> says
+which URL kwargs fill which parameters, renaming or dropping the rest, as
 <a class="autorefs autorefs-internal" title="route_arguments" href="#django_spec_html.http.route_arguments.route_arguments"><code>route_arguments</code></a>
 reads it.</p>
 <p><strong>Every name</strong> <code>server_arguments</code> <strong>answers for is dropped</strong> from what
@@ -7481,7 +7488,8 @@ for a bound integer is never refused as the client's 400 for a name it was
 never offered. <strong>A URL kwarg filling one is refused</strong> instead, as the
 host's misconfiguration: the route is the host's, and it may not
 contradict the host's own binding, so a capture the spec should not read
-is dropped explicitly, with <code>route_kwargs={name: None}</code>. Only the names are read
+is dropped explicitly, with <code>route_kwargs={name: None}</code>; a field-named
+capture fills nothing, so it is never refused. Only the names are read
 here: the values are laid by the kernel's
 <a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.dispatch.apply_server_arguments.apply_server_arguments"><code>apply_server_arguments</code></a>,
 which needs the spec to check them, so a host's own view passes the result
@@ -7525,8 +7533,9 @@ its parameter's name.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>a URL kwarg <code>parameters</code> does not declare,
-a <code>route_kwargs</code> naming a parameter they do not, or a URL
+                <p>a URL kwarg <code>spec</code>'s parameters do not declare,
+a <code>route_kwargs</code> naming a parameter they do not or a Validator
+field, or a URL
 kwarg filling a name <code>server_arguments</code> answers for, which is
 the host's route rather than the client's request; see
 <a class="autorefs autorefs-internal" title="route_arguments" href="#django_spec_html.http.route_arguments.route_arguments"><code>route_arguments</code></a>.</p>
@@ -7550,23 +7559,31 @@ the host's route rather than the client's request; see
 
 <a href="#django_spec_html.http.route_arguments.route_arguments" class="headerlink" title="Permanent link">&para;</a></h2>
 <div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">route_arguments</span><span class="p">(</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">parameters</span><span class="p">:</span> <span class="n">Parameters</span><span class="p">,</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">spec</span><span class="p">:</span> <span class="n">ServiceSpec</span> <span class="o">|</span> <span class="n">SelectorSpec</span> <span class="o">|</span> <span class="n">SpecSource</span><span class="p">,</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">url_kwargs</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="o">*</span><span class="p">,</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">route_kwargs</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">call_context</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents first">
 
-        <p>The kwargs a route captured, as arguments, each one a parameter the spec declares.</p>
+        <p>The kwargs a route captured, as arguments, each one a parameter <code>spec</code> declares.</p>
 <p>How <code>request_arguments</code> reads the route, public so that a host's own
 view reading the rest of its arguments some other way - a bound form, a
 page's own fields - merges the route by the same rule and refuses the
 same misconfiguration.</p>
-<p>Every URL kwarg is an argument, so a route capturing one its spec does not
-declare is the host's configuration, wrong for every request the route
-serves, rather than anything a client sent. It is refused as one - Django
+<p>Every URL kwarg is an argument, except one named like a field of the
+spec's Validator: a capture holds the converter's <code>to_python()</code> value
+and a field reads what the caller sent, so a field-named capture is no
+argument and the field stays the caller's, by the kernel's
+<a class="autorefs autorefs-external" href="https://artui.github.io/django-service-specs/reference/#django_service_specs.specs.route_captures.route_captures"><code>route_captures</code></a>
+(<code>test_the_field_is_the_body_s_through_a_value_changing_converter</code>). A
+target selector wanting that capture reads <code>view.kwargs</code> through its
+<code>kwargs</code> provider. A route capturing a name its spec does not declare
+is the host's configuration, wrong for every request the route serves,
+rather than anything a client sent. It is refused as one - Django
 answers it 500 and shows it under <code>DEBUG</code> - where a client's own
 undeclared argument is a 400. The <code>unknown_arguments</code> policy does not
 reach it: that policy is about what a client sends, and no client can send
@@ -7584,8 +7601,10 @@ whose kwargs are not all the spec's, as an <code>include()</code> prefix such as
   every other captured kwarg is dropped.</li>
 </ul>
 <p>Every target a mapping names, and every name an allow-list lists, is a
-parameter the spec declares, checked whatever the route captured: the
-setting is the host's, the same on every route the view is mounted on.
+parameter the spec declares, no Validator field and no <code>many</code> spec's
+list, checked whatever the route captured: the setting is the host's, the
+same on every route the view is mounted on, and no rename can make a URL
+value the caller's.
 Two kwargs filling one parameter, a rename onto a name the route also
 captures, are refused as well, since neither could win honestly. A route
 kwarg is never a server value, whatever it fills: the client's URL chose
@@ -7593,8 +7612,9 @@ it, so a malformed one is the client's 400, as anything a client sent is
 (<code>test_a_renamed_kwarg_that_does_not_parse_is_the_clients_400</code>).</p>
 <p>Returned as a plain copy and uncoerced, so each caller merges it last,
 where the route wins a clash, and coerces it beside what the client sent:
-<code>coerce_flat(parameters, {**read, **route_arguments(parameters, url_kwargs)})</code>,
-so one refusal carries every problem with either.</p>
+<code>coerce_flat(parameters, {**read, **route_arguments(spec, url_kwargs)})</code>,
+so one refusal carries every problem with either. <code>call_context</code>
+reaches the spec's parameters and its Validator, as in dispatch.</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
@@ -7613,7 +7633,10 @@ so one refusal carries every problem with either.</p>
             <td>
               <div class="doc-md-description">
                 <p>naming every undeclared kwarg, target or
-allowed name, in order; or a parameter more than one kwarg fills.</p>
+allowed name, in order; a target or allowed name that is a
+Validator field, with the kernel's message; one that is a <code>many</code>
+spec's list, naming each capture; or a parameter more than one
+kwarg fills.</p>
               </div>
             </td>
           </tr>
