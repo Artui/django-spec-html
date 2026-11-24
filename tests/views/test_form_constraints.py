@@ -19,7 +19,10 @@ from django_spec_html.views.spec_form_set_view import SpecFormSetView
 from django_spec_html.views.spec_form_view import SpecFormView
 from tests.dispatch.utils import OPEN, Record
 
-TIGHT = "The form only renders, so the spec must be at least as tight as the form."
+TIGHT = (
+    "The form only renders, so the spec must be at least as tight as the form: declare it on "
+    "the spec's Validator."
+)
 
 
 class Declared(Validator):
@@ -187,3 +190,18 @@ class TestAFormSetRowForm:
 
     def test_a_tighter_spec_passes(self) -> None:
         rows(LongTitleForm, string("title", json_schema_extra=string_lengths(max_length=10)))
+
+
+class TestUnderActions:
+    def test_the_refusal_names_the_action(self) -> None:
+        ok = spec(string("title", json_schema_extra=string_lengths(max_length=100)))
+        with pytest.raises(ImproperlyConfigured) as refused:
+            SpecFormView.as_view(
+                actions={"save": ok, "draft": spec(string("title"))},
+                form_class=LongTitleForm,
+                template_name="spec_form.html",
+                success_url="/done/",
+            )
+        assert str(refused.value) == held(
+            "LongTitleForm", "title", MAX_100, "none", view="SpecFormView.actions['draft']"
+        )

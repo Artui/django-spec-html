@@ -1338,7 +1338,10 @@ def _check_agreement(named: str, field: Any, parameter: Any) -> None:
         )
 
 
-_TIGHT: Final = "The form only renders, so the spec must be at least as tight as the form."
+_TIGHT: Final = (
+    "The form only renders, so the spec must be at least as tight as the form: declare it on "
+    "the spec's Validator."
+)
 
 
 def _check_constraints(named: str, posted: Parameter, parameter: Parameter) -> None:

@@ -20,8 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`max_length`, or `min_length` on a required field) or choices the spec's parameter does
   not hold: no `maxLength` or `minLength`, or a looser one, and choices that are not a
   subset of the form's. 0.15.0 accepted these forms; a spec as tight as the form, or
-  tighter, still passes. Numeric bounds are not compared, so a `PositiveIntegerField`'s
-  `min_value=0` asks nothing of the spec. The check is the kernel's `constraints_not_held`.
+  tighter, still passes. Lengths nobody wrote count too: a `ModelForm` field over a
+  `CharField` or `EmailField` column states the column's length, and a bare
+  `forms.EmailField()` states 320, so their parameters need one. Tighten the spec with
+  `Annotated[str, MaxLen(n)]` (or `MinLen`, `Len`) on a `DataclassValidator`, pydantic's
+  `Field(max_length=n)`, or `json_schema_extra=string_lengths(max_length=n)` on a
+  hand-built `Parameter`, which states `maxLength` and `minLength`. Numeric bounds are not
+  compared, so a `PositiveIntegerField`'s `min_value=0` asks nothing of the spec. The check
+  is the kernel's `constraints_not_held`.
+- **Requires django-service-specs 0.38.0**, for `constraints_not_held`.
 
 ### Fixed
 - **`SpecFormView.as_view()` counts a parameter an untyped provider fills.** A
