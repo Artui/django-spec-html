@@ -5042,6 +5042,14 @@ def server_isbn() -> Isbned:
     return {"isbn": "x"}
 
 
+def untyped_isbn(view: Any, request: Any):
+    return {"isbn": "x"}
+
+
+def untyped_shelf(view: Any, request: Any):
+    return {"shelf": "s"}
+
+
 @dataclasses.dataclass
 class CataloguedBook:
     title: str
@@ -5080,6 +5088,21 @@ class TestAsViewRefuses:
     def test_a_required_parameter_a_provider_fills_passes(self) -> None:
         spec = form_class_book_spec(DataclassValidator(Catalogued), input_data=server_isbn)
         page(spec, TitleForm, route_kwargs=())
+
+    def test_a_required_field_an_untyped_input_data_provider_fills_passes(self, ada: Any) -> None:
+        spec = form_class_book_spec(DataclassValidator(Catalogued), input_data=untyped_isbn)
+        view = page(spec, TitleForm, route_kwargs=())
+        assert get(view, ada).status_code == 200
+        response = form_class_post(view, ada, {"title": "Dune"})
+        assert (response.status_code, response["Location"]) == (302, "/done/")
+        assert spec.service.calls[0]["data"] == Catalogued(title="Dune", isbn="x")
+
+    def test_a_required_read_an_untyped_kwargs_provider_fills_passes(self, ada: Any) -> None:
+        spec = form_class_book_spec(reads=REQUIRED_SHELF, kwargs=untyped_shelf)
+        view = page(spec, TitleForm, route_kwargs=())
+        response = form_class_post(view, ada, {"title": "Dune"})
+        assert (response.status_code, response["Location"]) == (302, "/done/")
+        assert spec.service.calls[0]["shelf"] == "s"
 
     def test_a_required_read_the_route_may_fill_passes(self) -> None:
         spec = form_class_book_spec(reads=REQUIRED_SHELF)

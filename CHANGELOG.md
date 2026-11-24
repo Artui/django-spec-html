@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`SpecFormView.as_view()` counts a parameter an untyped provider fills.** A
+  `form_class` that does not post a required parameter was refused unless a provider was
+  annotated to fill it, so a spec whose `input_data(view, request)` or `kwargs` provider
+  returns an unannotated mapping was refused at import though dispatch accepts its call.
+  The check now reads the kernel's `provider_reached`, the set dispatch's shape check
+  relaxes by, typed and untyped providers alike.
+
 ## [0.15.0] — 2026-11-24
 
 ### Changed
