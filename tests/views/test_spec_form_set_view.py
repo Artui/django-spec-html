@@ -2042,6 +2042,13 @@ class TestARouteCaptureOnAManySpec:
         response = post(view, ada, posted({"title": "One"}), url_kwargs={spec.many_argument: "x"})
         assert (response.status_code, response.url) == (302, "/done/")
 
+    def test_a_capture_an_allow_list_leaves_out_under_the_list_s_name_serves(
+        self, ada: Any
+    ) -> None:
+        view = formset_view(many_spec(), route_kwargs=())
+        response = post(view, ada, posted({"title": "One"}), url_kwargs={"items": "x"})
+        assert (response.status_code, response.url) == (302, "/done/")
+
     def test_a_capture_under_the_list_s_name_is_refused(self, ada: Any) -> None:
         spec = many_spec()
         with pytest.raises(ImproperlyConfigured) as refused:

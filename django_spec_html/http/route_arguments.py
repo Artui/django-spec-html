@@ -26,7 +26,7 @@ def route_arguments(
     and a field reads what the caller sent, so a field-named capture is no
     argument and the field stays the caller's, by the kernel's
     [`route_captures`][django_service_specs.specs.route_captures.route_captures]
-    (``test_a_capture_named_like_a_field_leaves_the_field_the_callers``). A
+    (``test_the_field_is_the_body_s_through_a_value_changing_converter``). A
     target selector wanting that capture reads ``view.kwargs`` through its
     ``kwargs`` provider. A route capturing a name its spec does not declare
     is the host's configuration, wrong for every request the route serves,

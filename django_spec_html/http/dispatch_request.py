@@ -56,7 +56,8 @@ def dispatch_request(
     2. **The arguments** are
        [`request_arguments`][django_spec_html.http.request_arguments.request_arguments]
        for ``spec.parameters()``, with ``url_kwargs`` merged last under the
-       names ``route_kwargs`` maps them to, and ``server_arguments`` applied
+       names ``route_kwargs`` maps them to, a kwarg named like a Validator
+       field left out so the field is the caller's, and ``server_arguments`` applied
        over them by the kernel's
        [`apply_server_arguments`][django_service_specs.dispatch.apply_server_arguments.apply_server_arguments]:
        its bound values outrank whatever the client sent, and its withheld
@@ -85,8 +86,8 @@ def dispatch_request(
     every caller, so it belongs to the host's error handling rather than to one
     client's response. A URL kwarg ``spec`` does not declare, and that
     ``route_kwargs`` neither renames nor drops, is one, raised as
-    ``ImproperlyConfigured``: every URL kwarg is an argument, and the route
-    is the host's. So is a bound value its parameter refuses: the client
+    ``ImproperlyConfigured``: every URL kwarg but a field's namesake is an
+    argument, and the route is the host's. So is a bound value its parameter refuses: the client
     neither sent it nor can see it.
 
     ``spec`` may be a

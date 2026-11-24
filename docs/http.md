@@ -216,12 +216,30 @@ is: `true`, `false`, `1` or `0`. A checkbox with no `value` attribute posts
 `on`, which is refused, so a page posting to a `SpecView` gives it
 `value="true"`.
 
+### The URL kwargs
+
 **The URL kwargs are arguments too**, merged last so the route wins a clash, as
 it does in djangorestframework-services. A client-supplied value must not move
 the route's scope: a POST to `/notes/4/rename/` whose body says `"pk": 9`
 renames note 4 or nothing. A path segment with no converter arrives as a
 string and goes through `coerce_flat` like a query value. Every URL kwarg is
-an argument, so the spec declares each one. A route capturing a kwarg its spec
+an argument, so the spec declares each one.
+
+**A kwarg named like a field of the spec's Validator is the caller's, and no
+argument.** A capture holds the URL converter's `to_python()` value, and a
+field reads what the caller sent, so the two cannot share one: a hashids
+converter turns `k42` into `42`, and a form field reading the hashed
+spelling would refuse the `42`. So under `<hashed:id>/` a field `id` is the
+one the body sent, and the capture is left out of the arguments, by the
+kernel's [`route_captures`][django_service_specs.specs.route_captures.route_captures]
+rule, the one every HTTP edge splits its captures by. A target selector
+wanting the capture reads `view.kwargs` through its `kwargs` provider. If the
+spec needs the route's value as an argument, declare it as a read under a
+name no field takes, or rename the capture onto one with `route_kwargs`. No
+rename makes a URL value a field's: a `route_kwargs` mapping or allow-list
+naming a field is refused by `as_view()`, with the kernel's message.
+
+A route capturing a kwarg its spec
 does not declare raises `ImproperlyConfigured` on the first request it
 serves, under either `unknown_arguments` policy: the mismatch is the host's,
 wrong for every request, and a 400 would tell the client it had sent
@@ -270,8 +288,9 @@ docs/examples/http.py:route_arguments
 --8<--
 ```
 
-Merging the route last is what makes it win a clash with a posted field of the
-same name, and the one `coerce_flat` call types both.
+Merging the route last is what makes it win a clash with a posted read of the
+same name, and the one `coerce_flat` call types both. A capture named like a
+field is not in what it returns, so the field keeps the posted value.
 
 ## The principal
 

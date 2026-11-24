@@ -9,7 +9,7 @@ from django_service_specs import InvalidArguments, Parameter, Parameters, coerce
 import django_spec_html
 import django_spec_html.http
 from django_spec_html.http.route_arguments import route_arguments
-from tests.http.utils import reading
+from tests.http.utils import hashed_spec, reading
 
 ROUTED = reading(Parameters.of(Parameter("pk", "integer"), Parameter("slug", "string")))
 
@@ -115,3 +115,19 @@ def test_it_is_public_from_the_subpackage_and_the_root() -> None:
     # A host reading arguments its own way merges the route as the entry points do.
     assert "route_arguments" in django_spec_html.http.__all__
     assert "route_arguments" in django_spec_html.__all__
+
+
+class TestACaptureNamedLikeAField:
+    def test_it_is_no_argument_and_is_never_refused_as_undeclared(self) -> None:
+        assert route_arguments(hashed_spec(), {"id": 42}) == {}
+
+    def test_a_mapping_may_still_rename_it_onto_a_read(self) -> None:
+        spec = hashed_spec().derive(reads=Parameters.of(Parameter("note", "integer")))
+        assert route_arguments(spec, {"id": 42}, route_kwargs={"id": "note"}) == {"note": 42}
+
+    def test_a_mapping_or_an_allow_list_onto_it_is_refused_whatever_the_route_captured(
+        self,
+    ) -> None:
+        for route_kwargs in ({"pk": "id"}, ("id",)):
+            with pytest.raises(ImproperlyConfigured, match="onto id, a Validator field"):
+                route_arguments(hashed_spec(), None, route_kwargs=route_kwargs)

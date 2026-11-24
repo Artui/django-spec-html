@@ -203,7 +203,10 @@ the form's own widgets**, which is how Django reads a form:
 - The URL kwargs are merged last, so the route wins a clash, and typed with
   [`coerce_flat`](https://artui.github.io/django-service-specs/arguments/#flat-transports) in the same call as
   everything else: one refusal carries every problem. Each is an argument,
-  so the spec declares each one. A kwarg the route captures and the spec does
+  so the spec declares each one, except a kwarg named like one of the form's
+  fields: that field is the caller's, so the capture is no argument and the
+  field keeps what the post sent, as [the JSON views](http.md#the-url-kwargs)
+  read one. A kwarg the route captures and the spec does
   not declare is the host's misconfiguration, wrong for every caller, so it
   raises `ImproperlyConfigured` under either `unknown_arguments` policy - the
   policy governs what a client sends - rather than blaming the client with a
@@ -331,10 +334,12 @@ field:
   file field over a Validator declaring no clear checkbox takes a plain
   `FileInput`;
 - a required parameter the form does not post, where neither the server
-  (`server_owned_keys`, `server_arguments`) nor the route fills it. Only a
-  tuple `route_kwargs` closes the route; under `None` or a mapping any
-  parameter may come from the URL, and dispatch refuses one nobody sent. An
-  optional parameter the form leaves out is allowed;
+  (`server_owned_keys`, `server_arguments`) nor the route fills it. A
+  Validator field never comes from the URL, so a required field the form
+  does not post is refused whatever `route_kwargs` says. Of the other
+  parameters, only a tuple `route_kwargs` closes the route; under `None` or a
+  mapping any of them may come from the URL, and dispatch refuses one nobody
+  sent. An optional parameter the form leaves out is allowed;
 - a field whose type disagrees with its parameter's: the same `type`, the same
   element type for an array, and the same `format` where the parameter
   declares one. The rule is exact, so an `IntegerField` over a `number`
