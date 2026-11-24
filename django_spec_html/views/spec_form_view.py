@@ -29,6 +29,7 @@ from django_service_specs import (
     clean_held_to_their_columns,
     coerce_flat,
     form_keywords,
+    provider_reached,
     route_captures,
     server_owned_keys,
 )
@@ -867,10 +868,10 @@ def _check_form_class(
     route: Mapping[str, str | None] | tuple[str, ...] | None,
     server: ServerArguments | None,
 ) -> None:
-    """Refuse a ``form_class`` whose post the spec would not read as the form declares it."""
+    """Refuse a ``form_class`` whose post dispatch would refuse, a provider's keys filled."""
     declared = spec.parameters()
     posted = checked_page_form(label, spec.validator, form_class, declared)
-    filled = server_owned_keys(spec) | server_names(server)
+    filled = provider_reached(spec) | server_owned_keys(spec) | server_names(server)
     _, fields = route_captures(spec, declared.names())
     for parameter in declared.items:
         name = parameter.name
