@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **A success answered with `HX-Refresh` sends no trigger.** With `success_refresh = True`
+  the response carried `HX-Trigger: spec-succeeded`, or the page's own trigger, beside the
+  refresh, though the reload replaces every listener that could handle it. It now carries
+  `HX-Refresh: true` alone. `as_view()` no longer refuses a refresh with a trigger timed to
+  `"swap"` or `"settle"`, since no timing is sent.
+
 ### Fixed
 - **`SpecFormView.as_view()` counts a parameter an untyped provider fills.** A
   `form_class` that does not post a required parameter was refused unless a provider was

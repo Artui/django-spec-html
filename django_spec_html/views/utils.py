@@ -462,11 +462,11 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         return self.success_trigger
 
     def fragment_success(self, result: DispatchResult) -> HttpResponse:
-        """A success, answered to the htmx request that posted it."""
+        """A success, answered to the htmx request that posted it; a reload sends no trigger."""
         if self.success_refresh:
             response = HttpResponse()
             response["HX-Refresh"] = "true"
-            return self._triggered(response, result)
+            return response
         try:
             template = select_template(
                 [_address(name, _SPEC_RESULT) for name in self.get_fragment_template_names()],
@@ -749,11 +749,6 @@ def _check_success_trigger(
     refresh = initkwargs.get("success_refresh", cls.success_refresh)
     if not isinstance(refresh, bool):
         raise ImproperlyConfigured(f"{label}.success_refresh must be a bool; got {refresh!r}.")
-    if refresh and trigger is not None and timing != "receive":
-        raise ImproperlyConfigured(
-            f"{label} refreshes on success, so a trigger timed to {timing!r} never fires: "
-            "htmx reloads the page before any swap. Time it to 'receive'."
-        )
 
 
 def _sendable(trigger: Any) -> bool:

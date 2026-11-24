@@ -925,7 +925,7 @@ every page with a post, shape the success answered in place:
 | --- | --- | --- |
 | `success_trigger` | `"spec-succeeded"` | an event's name as it is; a mapping of event names to payloads as the JSON htmx reads, each payload the event's `detail`; `None` sends no trigger |
 | `success_trigger_timing` | `"receive"` | the trigger in `HX-Trigger`; `"swap"` in `HX-Trigger-After-Swap`, `"settle"` in `HX-Trigger-After-Settle` |
-| `success_refresh` | `False` | `HX-Refresh: true` and an empty body in place of the result fragment, which the page then need not define, with the trigger beside it |
+| `success_refresh` | `False` | `HX-Refresh: true` and an empty body in place of the result fragment, which the page then need not define, and no trigger: nothing on the page survives the reload to handle one |
 
 `get_success_trigger(result)` returns `success_trigger`; override it for a
 payload that depends on the result:
@@ -944,9 +944,8 @@ escaped, so the header carries it whole. `as_view()` refuses an empty name, a
 mapping with no names or a key that is not one, a timing that is not one of
 the three, and a `success_refresh` that is not a bool. Whether a payload
 encodes is known only when it is sent, so one that does not raises
-`ImproperlyConfigured` then. A refresh with a trigger timed to `"swap"` or
-`"settle"` is refused at `as_view()`: htmx fires `HX-Trigger` and then
-reloads, so a trigger waiting for a swap never fires. None of these reaches a
+`ImproperlyConfigured` then. A refresh sends no trigger at any timing, since
+the reload replaces every listener that could handle it. None of these reaches a
 post without htmx, which is redirected as before, nor an `HX-Redirect`.
 
 **A template with no fragment at the address** answers htmx with Django's
