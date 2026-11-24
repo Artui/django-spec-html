@@ -7,7 +7,6 @@ from django.contrib.auth import get_user_model
 from django.test import RequestFactory
 from django.urls import get_resolver
 
-from docs.examples.recipes import RetitleForm
 from tests.adapter_app.models import Author, Book, Edition
 
 pytestmark = pytest.mark.django_db
@@ -38,14 +37,9 @@ def test_a_form_naming_instance_is_handed_the_row(book: Book) -> None:
     assert form.fields["title"].help_text == "Was The Dispossessed."
 
 
-def test_a_form_popping_instance_from_kwargs_raises_key_error() -> None:
-    class Popping(RetitleForm):
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            kwargs.pop("instance")
-            super().__init__(*args, **kwargs)
-
+def test_a_form_popping_instance_from_kwargs_raises_key_error_on_the_page(book: Book) -> None:
     with pytest.raises(KeyError):
-        Popping()
+        serve(FACTORY.get(f"/books/{book.pk}/popping/")).render()
 
 
 def test_a_new_row_takes_its_tenant_and_an_existing_row_keeps_its_own(book: Book) -> None:

@@ -366,12 +366,21 @@ field:
   would silently not run: it belongs in the Validator. Django's own are
   allowed;
 - a field whose choices or string length its parameter does not hold: a
-  `max_length` or `min_length` the parameter does not declare, or declares
-  looser, and choices that are not a subset of the form's. The form only
-  renders, so a rule it alone states would never run.
+  `max_length` or `min_length` the parameter does not declare in
+  `maxLength`/`minLength`, or declares looser, and choices that are not a
+  subset of the form's. The form only renders, so a rule it alone states would
+  never run. On a `Parameter`, `max_length` counts array elements and is
+  refused on a string, so tighten the spec with `Annotated[str, MaxLen(n)]`,
+  `MinLen` or `Len` on a `DataclassValidator`, pydantic's
+  `Field(max_length=n)`, or `json_schema_extra=string_lengths(max_length=n)`
+  on a hand-built `Parameter` (`string_lengths` is at the kernel's root).
+  Every `ModelForm` field over a `CharField` or `EmailField` column states
+  the column's length, and `forms.EmailField()` states 320, so those
+  parameters need a length too.
 
-Numeric bounds, decimal places and `nullable` are not compared: the Validator
-refuses at the post, in its own words. Under [`actions`](#one-form-several-operations),
+Numeric bounds, decimal places and `nullable` are not compared, so a bound
+only the form states is never enforced: declare it on the Validator, which
+refuses at the post in its own words. Under [`actions`](#one-form-several-operations),
 every action shares the page's `form_class`, over any Validator but a
 `FormValidator`, and each is checked as above.
 
