@@ -15,9 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `42` reached the form as `"42"` and every post answered 400. The capture is now left out
   of the arguments, on the JSON views, `dispatch_request`, `adispatch_request`, every page
   and `request_arguments`, so the field keeps the value the body or the form posted, by
-  the kernel's `route_captures`, the rule spec-rest follows too. Such a capture is no
-  longer refused as undeclared, nor as filling a name `server_arguments` answers for,
-  and a `route_kwargs={name: None}` written only to drop it can go. A target selector
+  the kernel's `route_captures` rule. Such a capture is no longer refused as undeclared,
+  nor as filling a name `server_arguments` answers for, and a `route_kwargs={name: None}` written only to drop it can go. A target selector
   wanting the capture reads `view.kwargs` through its `kwargs` provider. On a `many` spec
   a capture named like a row's field is dropped the same way, where it was refused as
   undeclared, and a capture under the list's own name is refused with the kernel's
@@ -26,7 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field, or an allow-list naming one, is refused when the URLconf is imported, with the
   kernel's message naming the capture and the field. A `form_class` page whose form does
   not post a required field is refused by `as_view()` whatever `route_kwargs` says, since
-  the route can no longer fill it.
+  the route can no longer fill it. On a `many` spec, a mapping or an allow-list filling
+  the list is refused there too, naming each capture, where it was refused only when a
+  request came, under the list's name.
 - **`route_arguments(spec, url_kwargs, ...)` and `request_arguments(request, spec, ...)`
   take the spec where they took its parameters**, and a `call_context=` keyword reaching
   its parameters and its Validator, since the split needs the Validator's fields. A
@@ -46,7 +47,8 @@ form.
   an `IntegerField` subclass through its `to_python()` whatever its parameter said, so a
   hashids field the kernel's `JsonSchemaRegistry` declares a `string` reached the shape
   check as an integer and was refused, `Expected a string`. A field whose parameter is a
-  plain string now keeps the spelling it was posted in, for the form to read.
+  plain string now keeps the spelling it was posted in, for the form to read, on the form
+  page and on each row of the formset page.
 
 ## [0.14.0] — 2026-11-17
 

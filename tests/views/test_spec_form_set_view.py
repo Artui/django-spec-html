@@ -50,7 +50,15 @@ from django_spec_html.views.utils import SpecPageBase
 from tests.adapter_app.models import Author
 from tests.dispatch.utils import OPEN, Record, Refuse, Titled, make_user, notes_of
 from tests.dispatch_app.models import Note
-from tests.http.utils import FACTORY, DeclaredByTheRequest, Handed, handed_spec, signed_in
+from tests.http.utils import (
+    FACTORY,
+    HASHED_AS_STRING,
+    DeclaredByTheRequest,
+    Handed,
+    HashedIdForm,
+    handed_spec,
+    signed_in,
+)
 from tests.views.utils import Fresh, SeesTenantAtEachQuestion
 
 pytestmark = pytest.mark.django_db
@@ -2057,6 +2065,13 @@ class TestARouteCaptureOnAManySpec:
             "The route captures items, the caller's list on a many spec."
         )
 
+    def test_a_rename_onto_the_list_is_refused_at_as_view_naming_the_capture(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as refused:
+            formset_view(many_spec(), route_kwargs={"x": "items"})
+        assert str(refused.value).startswith(
+            "route_kwargs fills items, the caller's list on a many spec, from x."
+        )
+
     def test_a_capture_named_like_a_row_field_is_dropped(self, ada: Any) -> None:
         spec = many_spec()
         response = post(
@@ -2064,3 +2079,11 @@ class TestARouteCaptureOnAManySpec:
         )
         assert (response.status_code, response.url) == (302, "/done/")
         assert rows(spec) == [{"title": "One", "urgent": False}]
+
+
+def test_a_row_field_a_registry_declares_a_string_posts_its_spelling(ada: Any) -> None:
+    validator = Watched(HashedIdForm, json_schema_registry=HASHED_AS_STRING)
+    spec = many_spec(HashedIdForm, validator=validator)
+    response = post(formset_view(spec), ada, posted({"id": "k7"}))
+    assert (response.status_code, response.url) == (302, "/done/")
+    assert rows(spec) == [{"id": "k7"}]

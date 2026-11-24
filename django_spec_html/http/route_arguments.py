@@ -49,9 +49,10 @@ def route_arguments(
       every other captured kwarg is dropped.
 
     Every target a mapping names, and every name an allow-list lists, is a
-    parameter the spec declares and no Validator field, checked whatever the
-    route captured: the setting is the host's, the same on every route the
-    view is mounted on, and no rename can make a URL value the caller's.
+    parameter the spec declares, no Validator field and no ``many`` spec's
+    list, checked whatever the route captured: the setting is the host's, the
+    same on every route the view is mounted on, and no rename can make a URL
+    value the caller's.
     Two kwargs filling one parameter, a rename onto a name the route also
     captures, are refused as well, since neither could win honestly. A route
     kwarg is never a server value, whatever it fills: the client's URL chose
@@ -67,8 +68,9 @@ def route_arguments(
     Raises:
         ImproperlyConfigured: naming every undeclared kwarg, target or
             allowed name, in order; a target or allowed name that is a
-            Validator field, with the kernel's message; or a parameter more
-            than one kwarg fills.
+            Validator field, with the kernel's message; one that is a ``many``
+            spec's list, naming each capture; or a parameter more than one
+            kwarg fills.
         TypeError: ``route_kwargs`` is a bare string, which would otherwise
             be read as a tuple of its characters.
     """
@@ -79,15 +81,12 @@ def route_arguments(
         )
     spec = kernel_spec(spec)
     mapped = _as_mapping(route_kwargs)
+    _refuse_the_list(spec, mapped)
     filled = {target for name in url_kwargs or {} if (target := mapped.get(name, name)) is not None}
     if isinstance(route_kwargs, tuple):
         filled &= set(route_kwargs)
     _, namesakes = route_captures(spec, filled, mapped=mapped, call_context=call_context)
-    captured = {
-        name: value
-        for name, value in (url_kwargs or {}).items()
-        if name not in namesakes or name in mapped
-    }
+    captured = {name: value for name, value in (url_kwargs or {}).items() if name not in namesakes}
     declared = spec.parameters(call_context=call_context).names()
     if route_kwargs is None:
         _check_declared(captured, declared)
@@ -111,6 +110,19 @@ def _as_mapping(
     if isinstance(route_kwargs, Mapping):
         return route_kwargs
     return {name: name for name in route_kwargs or ()}
+
+
+def _refuse_the_list(spec: ServiceSpec | SelectorSpec, mapped: Mapping[str, str | None]) -> None:
+    """Refuse ``route_kwargs`` filling a ``many`` spec's list, naming each capture that would."""
+    if not isinstance(spec, ServiceSpec) or not spec.many:
+        return
+    onto = sorted(name for name, target in mapped.items() if target == spec.many_argument)
+    if onto:
+        raise ImproperlyConfigured(
+            f"route_kwargs fills {spec.many_argument}, the caller's list on a many spec, "
+            f"from {', '.join(onto)}. The list is the body's: map each to a read, or to None "
+            "to drop it."
+        )
 
 
 def _check_declared(route: Mapping[str, Any], declared: frozenset[str]) -> None:

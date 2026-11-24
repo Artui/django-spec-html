@@ -9,7 +9,7 @@ from django_service_specs import InvalidArguments, Parameter, Parameters, coerce
 import django_spec_html
 import django_spec_html.http
 from django_spec_html.http.route_arguments import route_arguments
-from tests.http.utils import hashed_spec, reading
+from tests.http.utils import by_the_call, hashed_spec, reading
 
 ROUTED = reading(Parameters.of(Parameter("pk", "integer"), Parameter("slug", "string")))
 
@@ -131,3 +131,12 @@ class TestACaptureNamedLikeAField:
         for route_kwargs in ({"pk": "id"}, ("id",)):
             with pytest.raises(ImproperlyConfigured, match="onto id, a Validator field"):
                 route_arguments(hashed_spec(), None, route_kwargs=route_kwargs)
+
+
+class TestTheCallDeclaresTheSplit:
+    def test_a_capture_the_call_makes_a_field_is_no_argument(self) -> None:
+        assert route_arguments(by_the_call(), {"id": 42}, call_context={}) == {}
+
+    def test_a_capture_the_call_does_not_declare_is_refused(self) -> None:
+        with pytest.raises(ImproperlyConfigured, match="The route captures legacy"):
+            route_arguments(by_the_call(), {"legacy": 1}, call_context={})

@@ -232,7 +232,7 @@ converter turns `k42` into `42`, and a form field reading the hashed
 spelling would refuse the `42`. So under `<hashed:id>/` a field `id` is the
 one the body sent, and the capture is left out of the arguments, by the
 kernel's [`route_captures`][django_service_specs.specs.route_captures.route_captures]
-rule, the one every HTTP edge splits its captures by. A target selector
+rule. A target selector
 wanting the capture reads `view.kwargs` through its `kwargs` provider. If the
 spec needs the route's value as an argument, declare it as a read under a
 name no field takes, or rename the capture onto one with `route_kwargs`. No

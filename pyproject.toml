@@ -40,6 +40,8 @@ dependencies = [
     # kernel's specs, so this package cannot support a Django the kernel does
     # not.
     "django>=4.2",
+    # The route needs 0.36.0: ``route_captures`` splits a capture named like a
+    # Validator field from the arguments, imported from the kernel's root.
     # The page's pool needs 0.31.0: ``seeded_pool``, which ``call_pool``
     # imports from the kernel's root, so below it the package fails at import.
     # The stamp needs 0.29.0: ``build_call_context`` builds every call context

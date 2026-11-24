@@ -67,6 +67,19 @@ class HashedIdForm(forms.Form):
 HASHED_AS_STRING = JsonSchemaRegistry().extend(fields=[(HashedId, {"type": "string"})])
 
 
+class FieldsByTheCall(FormValidator):
+    """A Validator whose one field is ``id`` to a call and ``legacy`` to every other reader."""
+
+    def parameters(self, *, call_context: dict[str, Any] | None = None) -> Parameters:
+        return Parameters.of(Parameter("legacy" if call_context is None else "id", "string"))
+
+
+def by_the_call() -> ServiceSpec:
+    """A write whose Validator's fields are the call's, ``FieldsByTheCall``."""
+    validator = FieldsByTheCall(HashedIdForm)
+    return ServiceSpec(service=Record(), permissions=OPEN, validator=validator)
+
+
 def hashed_spec() -> ServiceSpec:
     """A write validated by ``HashedIdForm``, whose ``id`` field a route captures too."""
     validator = FormValidator(HashedIdForm, json_schema_registry=HASHED_AS_STRING)

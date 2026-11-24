@@ -101,7 +101,7 @@ def request_arguments(
     the upload in DRF's merged data too, where an array there would hold the
     field and the uploads together. A POST's uploads are Django's own ``request.FILES``; those in a
     PUT, PATCH or DELETE body are parsed here with its fields. An upload under
-    a name ``parameters`` do not declare passes through like an undeclared
+    a name ``spec``'s parameters do not declare passes through like an undeclared
     field, for the closed argument set to refuse, and a file input left empty
     is no upload, so it is absent. Only a multipart body carries one.
 
@@ -136,7 +136,7 @@ def request_arguments(
             under ``non_field_errors``; or ``coerce_flat``'s refusals, each at
             its parameter's name.
         UnsupportedMediaType: a body that is neither JSON nor a form.
-        ImproperlyConfigured: a URL kwarg ``parameters`` does not declare,
+        ImproperlyConfigured: a URL kwarg ``spec``'s parameters do not declare,
             a ``route_kwargs`` naming a parameter they do not or a Validator
             field, or a URL
             kwarg filling a name ``server_arguments`` answers for, which is
