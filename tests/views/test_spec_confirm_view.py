@@ -513,7 +513,7 @@ class TestAQuestion:
 
         seen: list[bool] = []
         spec = archive_spec(service=service, reads=Parameters.of(Parameter("confirmed", "boolean")))
-        spec.service.seen = seen  # ty: ignore[unresolved-attribute]
+        spec.service.seen = seen  # ty: ignore[missing-attribute]
         return spec
 
     def test_it_is_the_page_at_422_with_the_message(self, ada: Any, note: Note) -> None:
@@ -531,7 +531,7 @@ class TestAQuestion:
         spec = self.asking()
         response = post(confirm_view(spec), ada, {**PRESSED, "confirmed": "true"}, pk=note.pk)
         assert response.status_code == 422
-        assert spec.service.seen == [False]  # ty: ignore[unresolved-attribute]
+        assert spec.service.seen == [False]  # ty: ignore[missing-attribute]
 
     def test_htmx_gets_the_fragment_at_200(self, ada: Any, note: Note) -> None:
         view = confirm_view(self.asking(), fragment_template_name=FRAGMENT)
@@ -563,7 +563,7 @@ def stack(settings: Any) -> Callable[..., Any]:
 
     def posted(view: Any, user: Any, url: str) -> Any:
         urls = types.ModuleType("one_page_urls")
-        urls.urlpatterns = [  # ty: ignore[unresolved-attribute]
+        urls.urlpatterns = [  # ty: ignore[missing-attribute]
             path("notes/<int:pk>/", view),
             path("notes/", view),
             *urlpatterns,
@@ -670,7 +670,7 @@ def from_a_row(
 ) -> tuple[Any, Any]:
     """Post the row's button with a messages store, as the middleware leaves the request."""
     request = signed_in(FACTORY.post(f"/notes/{pk}/archive/{query}", data=PRESSED, **extra), user)
-    request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+    request._messages = CookieStorage(request)  # ty: ignore[missing-attribute]
     return view(request, pk=pk), request
 
 
@@ -816,7 +816,7 @@ class TestARefusalRedirect:
             FACTORY.post(f"/notes/{note.pk}/archive/{FROM_THE_LIST}", data=PRESSED), ada
         )
         if store:
-            request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+            request._messages = CookieStorage(request)  # ty: ignore[missing-attribute]
         response = view(request, pk=note.pk)
         assert (response.status_code, response.has_header("Location")) == (status, False)
         assert stored(request) == []
@@ -834,7 +834,7 @@ class TestARefusalRedirect:
                 spec=spec, route_kwargs=None, display_target=True, refusal_redirect=redirects
             )
             request = signed_in(FACTORY.post(f"/notes/{FROM_THE_LIST}", data=PRESSED), ada)
-            request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+            request._messages = CookieStorage(request)  # ty: ignore[missing-attribute]
             with CaptureQueriesContext(connection) as queries:
                 response = view(request)
             read = [each["sql"] for each in queries.captured_queries if "SELECT" in each["sql"]]
@@ -919,7 +919,7 @@ def confirm_spec(*reads: Parameter) -> ServiceSpec:
 def request_for(data: Any = None, **extra: Any) -> Any:
     raw = FACTORY.get("/", **extra) if data is None else FACTORY.post("/", data=data, **extra)
     request = signed_in(raw, make_user("ada"))
-    request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+    request._messages = CookieStorage(request)  # ty: ignore[missing-attribute]
     return request
 
 
@@ -1033,7 +1033,7 @@ def bulk_spec(*reads: Parameter) -> ServiceSpec:
 
 def posted_post(view: Any, data: Any, **extra: Any) -> Any:
     request = signed_in(FACTORY.post("/", data=data, **extra), make_user("ada"))
-    request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+    request._messages = CookieStorage(request)  # ty: ignore[missing-attribute]
     return view(request), request
 
 

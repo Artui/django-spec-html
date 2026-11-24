@@ -184,7 +184,7 @@ def _form(request: HttpRequest) -> tuple[QueryDict, MultiValueDict]:
         return request.POST, request.FILES
     if request.content_type == _URLENCODED:
         return QueryDict(request.body, encoding=request.encoding), MultiValueDict()
-    started: bool = request._read_started  # ty: ignore[unresolved-attribute]
+    started: bool = request._read_started  # ty: ignore[missing-attribute]
     stream = BytesIO(request.body) if started else request
     return MultiPartParser(request.META, stream, request.upload_handlers, request.encoding).parse()
 

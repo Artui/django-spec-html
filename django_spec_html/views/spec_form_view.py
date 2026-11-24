@@ -727,7 +727,7 @@ def _check_redirect_field(label: str, form_class: type[forms.BaseForm], name: An
 
 def _declared(form_class: type[forms.BaseForm]) -> dict[str, forms.Field]:
     """The fields ``form_class`` declares, by name."""
-    return form_class.base_fields  # ty: ignore[unresolved-attribute]
+    return form_class.base_fields  # ty: ignore[missing-attribute]
 
 
 def _check_asked_fields(
@@ -738,7 +738,7 @@ def _check_asked_fields(
         raise ImproperlyConfigured(
             f"{label}.asked_fields must be a tuple of the form's field names; got {asked!r}."
         )
-    fields: dict[str, forms.Field] = form_class.base_fields  # ty: ignore[unresolved-attribute]
+    fields: dict[str, forms.Field] = form_class.base_fields  # ty: ignore[missing-attribute]
     owned = server_names(server)
     for name in asked:
         if name not in fields:
@@ -820,7 +820,7 @@ def _built_form(
         return form_class(**bound, **keywords)
     if issubclass(form_class, forms.BaseModelForm) and isinstance(target, form_class._meta.model):
         return form_class(**bound, **keywords, instance=copy.copy(target))
-    fields: dict[str, forms.Field] = form_class.base_fields  # ty: ignore[unresolved-attribute]
+    fields: dict[str, forms.Field] = form_class.base_fields  # ty: ignore[missing-attribute]
     names = [name for name, field in fields.items() if not field.disabled]
     own = {name: value for name, value in keywords.items() if name != "initial"}
     initial = {**keywords.get("initial", {}), **model_to_dict(target, fields=names)}
