@@ -58,6 +58,7 @@ from django_service_specs import (
     Grant,
     InvalidArguments,
     NotPermitted,
+    Parameter,
     Parameters,
     PoolSeeds,
     PresentationContext,
@@ -80,6 +81,7 @@ from django_service_specs import (
     check_arguments,
     check_requested_input,
     coerce_flat,
+    constraints_not_held,
     dispatch,
     enforce_affordances,
     file_output,
@@ -1301,6 +1303,7 @@ def checked_page_form(
                 "dispatch as an unknown argument."
             )
         _check_agreement(named, field, parameters[name])
+        _check_constraints(named, field, parameters[name])
     return posted
 
 
@@ -1333,6 +1336,15 @@ def _check_agreement(named: str, field: Any, parameter: Any) -> None:
             f"{named} {verb} {field.name!r}, and the spec {spec_verb}: the form and the spec "
             "must agree on whether it may be left out."
         )
+
+
+_TIGHT: Final = "The form only renders, so the spec must be at least as tight as the form."
+
+
+def _check_constraints(named: str, posted: Parameter, parameter: Parameter) -> None:
+    """Refuse a string length or choice set the form states and the spec does not hold."""
+    for missed in constraints_not_held(parameter, posted):
+        raise ImproperlyConfigured(f"{named} posts {missed} {_TIGHT}")
 
 
 def _shape(parameter: Any, fmt: str | None) -> tuple[Any, ...]:

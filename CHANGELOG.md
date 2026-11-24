@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refresh, though the reload replaces every listener that could handle it. It now carries
   `HX-Refresh: true` alone. `as_view()` no longer refuses a refresh with a trigger timed to
   `"swap"` or `"settle"`, since no timing is sent.
+- **`as_view()` holds a `form_class` to the spec's string lengths and choices.** A
+  `form_class` only renders, so a rule only the form states was never run: a form's
+  `max_length=100` over a parameter with no length let a longer value through to the
+  database. `SpecFormView` and `SpecFormSetView` now refuse a field whose string length
+  (`max_length`, or `min_length` on a required field) or choices the spec's parameter does
+  not hold: no `maxLength` or `minLength`, or a looser one, and choices that are not a
+  subset of the form's. 0.15.0 accepted these forms; a spec as tight as the form, or
+  tighter, still passes. Numeric bounds are not compared, so a `PositiveIntegerField`'s
+  `min_value=0` asks nothing of the spec. The check is the kernel's `constraints_not_held`.
 
 ### Fixed
 - **`SpecFormView.as_view()` counts a parameter an untyped provider fills.** A
