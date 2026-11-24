@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the arguments, on the JSON views, `dispatch_request`, `adispatch_request`, every page
   and `request_arguments`, so the field keeps the value the body or the form posted, by
   the kernel's `route_captures` rule. Such a capture is no longer refused as undeclared,
-  nor as filling a name `server_arguments` answers for, and a `route_kwargs={name: None}` written only to drop it can go. A target selector
-  wanting the capture reads `view.kwargs` through its `kwargs` provider. On a `many` spec
+  nor as filling a name `server_arguments` answers for, and a `route_kwargs={name: None}`
+  written only to drop it can go. A target selector wanting the capture reads
+  `view.kwargs` through its `kwargs` provider. On a `many` spec
   a capture named like a row's field is dropped the same way, where it was refused as
   undeclared, and a capture under the list's own name is refused with the kernel's
   message, where it was an argument.

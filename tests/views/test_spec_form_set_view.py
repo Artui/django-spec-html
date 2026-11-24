@@ -2072,6 +2072,17 @@ class TestARouteCaptureOnAManySpec:
             "route_kwargs fills items, the caller's list on a many spec, from x."
         )
 
+    def test_every_capture_renamed_onto_the_list_is_named_in_order(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as refused:
+            formset_view(many_spec(), route_kwargs={"y": "items", "x": "items"})
+        assert "the caller's list on a many spec, from x, y." in str(refused.value)
+
+    def test_an_allow_list_naming_the_list_is_refused_at_as_view(self) -> None:
+        with pytest.raises(
+            ImproperlyConfigured, match="the caller's list on a many spec, from items"
+        ):
+            formset_view(many_spec(), route_kwargs=("items",))
+
     def test_a_capture_named_like_a_row_field_is_dropped(self, ada: Any) -> None:
         spec = many_spec()
         response = post(

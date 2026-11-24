@@ -133,6 +133,11 @@ class TestACaptureNamedLikeAField:
                 route_arguments(hashed_spec(), None, route_kwargs=route_kwargs)
 
 
+def test_a_rename_onto_a_read_named_like_a_list_is_no_many_spec_s_list() -> None:
+    spec = reading(Parameters.of(Parameter("items", "string")))
+    assert route_arguments(spec, {"x": "v"}, route_kwargs={"x": "items"}) == {"items": "v"}
+
+
 class TestTheCallDeclaresTheSplit:
     def test_a_capture_the_call_makes_a_field_is_no_argument(self) -> None:
         assert route_arguments(by_the_call(), {"id": 42}, call_context={}) == {}
