@@ -109,7 +109,7 @@ async def arename_note(request: HttpRequest, pk: int) -> HttpResponse:
 # --8<-- [start:route_arguments]
 def form_arguments(posted: Mapping[str, Any], url_kwargs: Mapping[str, Any]) -> dict[str, Any]:
     parameters = rename_note_spec.parameters()
-    return coerce_flat(parameters, {**posted, **route_arguments(parameters, url_kwargs)})
+    return coerce_flat(parameters, {**posted, **route_arguments(rename_note_spec, url_kwargs)})
 
 
 # --8<-- [end:route_arguments]

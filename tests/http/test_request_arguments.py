@@ -33,7 +33,7 @@ from django_spec_html.http.request_arguments import request_arguments
 from django_spec_html.http.unsupported_media_type import UnsupportedMediaType
 from tests.dispatch.utils import make_user
 from tests.dispatch_app.models import Note
-from tests.http.utils import DEEP_JSON, FACTORY
+from tests.http.utils import DEEP_JSON, FACTORY, by_the_call, reading
 
 # The module, which ``http``'s own ``request_arguments`` re-export shadows as an attribute.
 request_arguments_module = importlib.import_module("django_spec_html.http.request_arguments")
@@ -91,12 +91,12 @@ def contents(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def read(request: HttpRequest, parameters: Parameters = FLAT, **kwargs: Any) -> dict[str, Any]:
-    return request_arguments(request, parameters, **kwargs)
+    return request_arguments(request, reading(parameters), **kwargs)
 
 
 def refusal(request: HttpRequest, parameters: Parameters = FLAT, **kwargs: Any) -> dict[Any, Any]:
     with pytest.raises(InvalidArguments) as caught:
-        request_arguments(request, parameters, **kwargs)
+        request_arguments(request, reading(parameters), **kwargs)
     return caught.value.detail
 
 
@@ -806,3 +806,9 @@ class TestArrayLength:
         wide = Parameters.of(Parameter("ids", "array", items="integer", max_length=5))
         assert read(FACTORY.get("/?ids=1,2,3,4,5"), wide) == {"ids": [1, 2, 3, 4, 5]}
         assert refusal(FACTORY.get("/?ids=1,2,3,4,5,6"), wide) == {"ids": [self.TOO_MANY % 5]}
+
+
+def test_the_call_s_context_splits_the_route() -> None:
+    request = FACTORY.post("/", data="id=k7", content_type=FORM)
+    read = request_arguments(request, by_the_call(), url_kwargs={"id": 42}, call_context={})
+    assert read == {"id": "k7"}

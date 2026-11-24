@@ -23,8 +23,10 @@ class SpecView(SpecViewBase):
     from GET, HEAD, POST, PUT, PATCH and DELETE. Any other method is Django's
     own 405, whose ``Allow`` header lists exactly the methods served, and
     OPTIONS is Django's own answer. **The URL kwargs are arguments**, merged
-    last so the route wins a clash, which means the spec declares each one:
-    a route capturing a kwarg its spec does not declare raises
+    last so the route wins a clash, which means the spec declares each one,
+    except a kwarg named like a field of the spec's Validator: that field is
+    the caller's, so the capture is no argument. A route capturing a kwarg
+    its spec does not declare raises
     ``ImproperlyConfigured`` on the first request it serves, since that is the
     host's configuration rather than anything a client sent. ``route_kwargs``
     renames or drops the kwargs a spec does not declare, as an ``include()``

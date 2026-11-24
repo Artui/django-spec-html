@@ -1068,7 +1068,6 @@ DIRECTION = Parameter("direction", "string", required=True, choices=("up", "down
 
 
 class Reorder(forms.Form):
-    direction = forms.ChoiceField(choices=[("up", "Up"), ("down", "Down")], required=False)
     title = forms.CharField(max_length=5, required=False)
 
 
@@ -1087,7 +1086,12 @@ def notes(*, direction: str) -> QuerySet[Note]:
 
 
 def route_form_view(**initkwargs: Any) -> Any:
-    spec = ServiceSpec(service=Record(), validator=FormValidator(Reorder), permissions=OPEN)
+    spec = ServiceSpec(
+        service=Record(),
+        validator=FormValidator(Reorder),
+        permissions=OPEN,
+        reads=Parameters.of(DIRECTION),
+    )
     return SpecFormView.as_view(
         spec=spec, template_name="spec_form.html", success_url="/done/", **initkwargs
     )
@@ -1215,7 +1219,7 @@ class TestTurnedOff:
     def test_a_form_post_is_refused_on_its_form(self, ada: Any) -> None:
         response = post(route_form_view(route_refusal_404=False), ada, {"title": "Hi"}, "sideways")
         errors = response.context_data["form"].errors
-        assert (response.status_code, errors) == (400, {"direction": [INVALID]})
+        assert (response.status_code, errors) == (400, {"__all__": [f"direction: {INVALID}"]})
 
     def test_a_confirm_post_is_refused_on_its_page(self, ada: Any) -> None:
         response = post(confirm_view(route_refusal_404=False), ada, {}, "sideways")

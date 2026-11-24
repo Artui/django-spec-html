@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-11-24
+
+### Changed
+- **A route capture named like a field of the spec's Validator is no argument; the field
+  is the caller's.** A capture holds the URL converter's `to_python()` value and a field
+  reads what the caller sent, so writing one into the other broke every converter that
+  changes the value: under `<hashed:id>/` with a form field `id`, a hashids converter's
+  `42` reached the form as `"42"` and every post answered 400. The capture is now left out
+  of the arguments, on the JSON views, `dispatch_request`, `adispatch_request`, every page
+  and `request_arguments`, so the field keeps the value the body or the form posted, by
+  the kernel's `route_captures` rule. Such a capture is no longer refused as undeclared,
+  nor as filling a name `server_arguments` answers for, and a `route_kwargs={name: None}`
+  written only to drop it can go. A target selector wanting the capture reads
+  `view.kwargs` through its `kwargs` provider. On a `many` spec
+  a capture named like a row's field is dropped the same way, where it was refused as
+  undeclared, and a capture under the list's own name is refused with the kernel's
+  message, where it was an argument.
+- **`route_kwargs` may not fill a Validator field.** A mapping renaming a capture onto a
+  field, or an allow-list naming one, is refused when the URLconf is imported, with the
+  kernel's message naming the capture and the field. A `form_class` page whose form does
+  not post a required field is refused by `as_view()` whatever `route_kwargs` says, since
+  the route can no longer fill it. On a `many` spec, a mapping or an allow-list filling
+  the list is refused there too, naming each capture, where it was refused only when a
+  request came, under the list's name.
+- **`route_arguments(spec, url_kwargs, ...)` and `request_arguments(request, spec, ...)`
+  take the spec where they took its parameters**, and a `call_context=` keyword reaching
+  its parameters and its Validator, since the split needs the Validator's fields. A
+  host's view writes `route_arguments(spec, url_kwargs)` where it wrote
+  `route_arguments(spec.parameters(), url_kwargs)`.
+- **Requires django-service-specs 0.36.0**, for `route_captures`.
+
+**Migration.** A spec that read a capture through a field of the same name now sees the
+posted value, or none. If the form needed the route's value, declare the capture as a
+read under a name no field takes, or rename it onto one with
+`route_kwargs={"id": "note"}`, and read it there; a target selector reads it through
+its `kwargs` provider. Where the form must not send the field at all, drop it from the
+form.
+
+### Fixed
+- **A form field a schema rule declares a string posts through the page.** The page read
+  an `IntegerField` subclass through its `to_python()` whatever its parameter said, so a
+  hashids field the kernel's `JsonSchemaRegistry` declares a `string` reached the shape
+  check as an integer and was refused, `Expected a string`. A field whose parameter is a
+  plain string now keeps the spelling it was posted in, for the form to read, on the form
+  page and on each row of the formset page.
+
 ## [0.14.0] — 2026-11-17
 
 ### Added
@@ -943,7 +989,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/Artui/django-spec-html/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Artui/django-spec-html/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Artui/django-spec-html/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Artui/django-spec-html/compare/v0.11.0...v0.12.0

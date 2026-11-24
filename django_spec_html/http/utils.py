@@ -283,7 +283,7 @@ def check_request_hooks(
             )
     route_kwargs = _configured(view_class, initkwargs, "route_kwargs")
     if route_kwargs is not None:
-        route_arguments(kernel_spec(spec).parameters(), None, route_kwargs=route_kwargs)
+        route_arguments(spec, None, route_kwargs=route_kwargs)
     server = _configured(view_class, initkwargs, "server_arguments")
     if server is not None:
         check_server_arguments(
@@ -335,12 +335,17 @@ def server_names(server: ServerArguments | None) -> frozenset[str]:
 
 
 def refuse_server_owned(
+    route: Mapping[str, Any],
     url_kwargs: Mapping[str, Any] | None,
     route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None,
     owned: frozenset[str],
 ) -> None:
-    """Refuse a captured kwarg that would fill a name the server answers for."""
-    filling = sorted(name for name in url_kwargs or {} if _filled_by(name, route_kwargs) in owned)
+    """Refuse a captured kwarg that fills, in ``route``, a name the server answers for."""
+    filling = sorted(
+        name
+        for name in url_kwargs or {}
+        if (target := _filled_by(name, route_kwargs)) in owned and target in route
+    )
     if filling:
         raise ImproperlyConfigured(
             f"The route captures {', '.join(filling)}, which server_arguments answers for. "

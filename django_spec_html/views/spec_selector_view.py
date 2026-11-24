@@ -307,8 +307,7 @@ class SpecSelectorView(SpecRequestBase):
         served = self._served(request)
         principal, grant, seeds = admitted(spec, request, kwargs, served)
         if self.route_refusal_404:
-            parameters = spec.parameters(call_context=served.call_context)
-            coerced_route(parameters, kwargs, served, not_found=True)
+            coerced_route(spec, kwargs, served, not_found=True)
         listing = spec.kind is SelectorKind.LIST
         read = self._query(request)
         query, page, limit = self._paging(read) if listing else (read, None, None)
@@ -321,10 +320,11 @@ class SpecSelectorView(SpecRequestBase):
         try:
             arguments = request_arguments(
                 _reading(request, query),
-                spec.parameters(call_context=served.call_context),
+                spec,
                 url_kwargs=kwargs,
                 route_kwargs=served.route_kwargs,
                 server_arguments=served.server,
+                call_context=served.call_context,
             )
             result = dispatch(
                 spec,

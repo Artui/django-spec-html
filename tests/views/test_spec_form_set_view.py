@@ -50,7 +50,15 @@ from django_spec_html.views.utils import SpecPageBase
 from tests.adapter_app.models import Author
 from tests.dispatch.utils import OPEN, Record, Refuse, Titled, make_user, notes_of
 from tests.dispatch_app.models import Note
-from tests.http.utils import FACTORY, DeclaredByTheRequest, Handed, handed_spec, signed_in
+from tests.http.utils import (
+    FACTORY,
+    HASHED_AS_STRING,
+    DeclaredByTheRequest,
+    Handed,
+    HashedIdForm,
+    handed_spec,
+    signed_in,
+)
 from tests.views.utils import Fresh, SeesTenantAtEachQuestion
 
 pytestmark = pytest.mark.django_db
@@ -2033,3 +2041,60 @@ class TestARowFormDeclaringTheKey:
             == 302
         )
         assert edit_form_class_sent(spec)[2] == {"title": "Hijack", "id": None, "DELETE": False}
+
+
+class TestARouteCaptureOnAManySpec:
+    def test_a_capture_under_the_list_s_name_route_kwargs_drops_serves(self, ada: Any) -> None:
+        spec = many_spec()
+        view = formset_view(spec, route_kwargs={spec.many_argument: None})
+        response = post(view, ada, posted({"title": "One"}), url_kwargs={spec.many_argument: "x"})
+        assert (response.status_code, response.url) == (302, "/done/")
+
+    def test_a_capture_an_allow_list_leaves_out_under_the_list_s_name_serves(
+        self, ada: Any
+    ) -> None:
+        view = formset_view(many_spec(), route_kwargs=())
+        response = post(view, ada, posted({"title": "One"}), url_kwargs={"items": "x"})
+        assert (response.status_code, response.url) == (302, "/done/")
+
+    def test_a_capture_under_the_list_s_name_is_refused(self, ada: Any) -> None:
+        spec = many_spec()
+        with pytest.raises(ImproperlyConfigured) as refused:
+            post(formset_view(spec), ada, posted({"title": "One"}), url_kwargs={"items": "x"})
+        assert str(refused.value).startswith(
+            "The route captures items, the caller's list on a many spec."
+        )
+
+    def test_a_rename_onto_the_list_is_refused_at_as_view_naming_the_capture(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as refused:
+            formset_view(many_spec(), route_kwargs={"x": "items"})
+        assert str(refused.value).startswith(
+            "route_kwargs fills items, the caller's list on a many spec, from x."
+        )
+
+    def test_every_capture_renamed_onto_the_list_is_named_in_order(self) -> None:
+        with pytest.raises(ImproperlyConfigured) as refused:
+            formset_view(many_spec(), route_kwargs={"y": "items", "x": "items"})
+        assert "the caller's list on a many spec, from x, y." in str(refused.value)
+
+    def test_an_allow_list_naming_the_list_is_refused_at_as_view(self) -> None:
+        with pytest.raises(
+            ImproperlyConfigured, match="the caller's list on a many spec, from items"
+        ):
+            formset_view(many_spec(), route_kwargs=("items",))
+
+    def test_a_capture_named_like_a_row_field_is_dropped(self, ada: Any) -> None:
+        spec = many_spec()
+        response = post(
+            formset_view(spec), ada, posted({"title": "One"}), url_kwargs={"title": "x"}
+        )
+        assert (response.status_code, response.url) == (302, "/done/")
+        assert rows(spec) == [{"title": "One", "urgent": False}]
+
+
+def test_a_row_field_a_registry_declares_a_string_posts_its_spelling(ada: Any) -> None:
+    validator = Watched(HashedIdForm, json_schema_registry=HASHED_AS_STRING)
+    spec = many_spec(HashedIdForm, validator=validator)
+    response = post(formset_view(spec), ada, posted({"id": "k7"}))
+    assert (response.status_code, response.url) == (302, "/done/")
+    assert rows(spec) == [{"id": "k7"}]

@@ -14,10 +14,14 @@ from django_service_specs import (
     CodedMessage,
     InvalidArguments,
     Parameters,
+    SelectorSpec,
     ServerArguments,
+    ServiceSpec,
+    SpecSource,
     coerce_flat,
     expected_type_refusal,
     flat_arguments,
+    kernel_spec,
 )
 
 from django_spec_html.http.route_arguments import route_arguments
@@ -30,13 +34,16 @@ _MULTIPART = "multipart/form-data"
 
 def request_arguments(
     request: HttpRequest,
-    parameters: Parameters,
+    spec: ServiceSpec | SelectorSpec | SpecSource,
     *,
     url_kwargs: Mapping[str, Any] | None = None,
     route_kwargs: Mapping[str, str | None] | tuple[str, ...] | None = None,
     server_arguments: ServerArguments | None = None,
+    call_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The arguments a request carries for ``parameters``, typed as a JSON caller would send them.
+    """The arguments a request carries for ``spec``, typed as a JSON caller would send them.
+
+    They are read by ``spec``'s parameters, ``spec.parameters(call_context=call_context)``.
 
     Where they are read from depends on the method and the body:
 
@@ -94,7 +101,7 @@ def request_arguments(
     the upload in DRF's merged data too, where an array there would hold the
     field and the uploads together. A POST's uploads are Django's own ``request.FILES``; those in a
     PUT, PATCH or DELETE body are parsed here with its fields. An upload under
-    a name ``parameters`` do not declare passes through like an undeclared
+    a name ``spec``'s parameters do not declare passes through like an undeclared
     field, for the closed argument set to refuse, and a file input left empty
     is no upload, so it is absent. Only a multipart body carries one.
 
@@ -104,8 +111,10 @@ def request_arguments(
     move the route's scope, so ``/notes/4/`` with ``pk=9`` in its body is about
     note 4. On a flat request the two are coerced together, so every refusal
     comes back at once and a clashing client value the route replaced is
-    never refused. ``route_kwargs`` says which URL kwargs fill which
-    parameters, renaming or dropping the rest, as
+    never refused. **A kwarg named like a field of the spec's Validator is no
+    argument**, so the field is the one the body sent: a converter's
+    ``to_python()`` value is not what the field reads. ``route_kwargs`` says
+    which URL kwargs fill which parameters, renaming or dropping the rest, as
     [`route_arguments`][django_spec_html.http.route_arguments.route_arguments]
     reads it.
 
@@ -115,7 +124,8 @@ def request_arguments(
     never offered. **A URL kwarg filling one is refused** instead, as the
     host's misconfiguration: the route is the host's, and it may not
     contradict the host's own binding, so a capture the spec should not read
-    is dropped explicitly, with ``route_kwargs={name: None}``. Only the names are read
+    is dropped explicitly, with ``route_kwargs={name: None}``; a field-named
+    capture fills nothing, so it is never refused. Only the names are read
     here: the values are laid by the kernel's
     [`apply_server_arguments`][django_service_specs.dispatch.apply_server_arguments.apply_server_arguments],
     which needs the spec to check them, so a host's own view passes the result
@@ -126,15 +136,18 @@ def request_arguments(
             under ``non_field_errors``; or ``coerce_flat``'s refusals, each at
             its parameter's name.
         UnsupportedMediaType: a body that is neither JSON nor a form.
-        ImproperlyConfigured: a URL kwarg ``parameters`` does not declare,
-            a ``route_kwargs`` naming a parameter they do not, or a URL
+        ImproperlyConfigured: a URL kwarg ``spec``'s parameters do not declare,
+            a ``route_kwargs`` naming a parameter they do not or a Validator
+            field, or a URL
             kwarg filling a name ``server_arguments`` answers for, which is
             the host's route rather than the client's request; see
             [`route_arguments`][django_spec_html.http.route_arguments.route_arguments].
     """
-    route = route_arguments(parameters, url_kwargs, route_kwargs=route_kwargs)
+    spec = kernel_spec(spec)
+    parameters = spec.parameters(call_context=call_context)
+    route = route_arguments(spec, url_kwargs, route_kwargs=route_kwargs, call_context=call_context)
     owned = server_names(server_arguments)
-    refuse_server_owned(url_kwargs, route_kwargs, owned)
+    refuse_server_owned(route, url_kwargs, route_kwargs, owned)
     if request.method in ("GET", "HEAD"):
         read = {**flat_arguments(parameters, request.GET), **route}
         return coerce_flat(parameters, without(read, owned))

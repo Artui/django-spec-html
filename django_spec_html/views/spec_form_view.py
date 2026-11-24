@@ -29,6 +29,7 @@ from django_service_specs import (
     clean_held_to_their_columns,
     coerce_flat,
     form_keywords,
+    route_captures,
     server_owned_keys,
 )
 
@@ -623,8 +624,10 @@ class SpecFormView(SpecPageBase):
     ) -> Mapping[str, Any]:
         """The post's arguments: the form's values, and the route's kwargs, coerced together."""
         parameters = spec.parameters(call_context=served.call_context)
-        route = route_arguments(parameters, url_kwargs, route_kwargs=served.route_kwargs)
-        return coerce_flat(parameters, {**form_values(form), **route})
+        route = route_arguments(
+            spec, url_kwargs, route_kwargs=served.route_kwargs, call_context=served.call_context
+        )
+        return coerce_flat(parameters, {**form_values(form, parameters), **route})
 
     def _refreshed(
         self,
@@ -868,9 +871,10 @@ def _check_form_class(
     declared = spec.parameters()
     posted = checked_page_form(label, spec.validator, form_class, declared)
     filled = server_owned_keys(spec) | server_names(server)
+    _, fields = route_captures(spec, declared.names())
     for parameter in declared.items:
         name = parameter.name
-        closed = isinstance(route, tuple) and name not in route
+        closed = name in fields or (isinstance(route, tuple) and name not in route)
         if parameter.required and name not in posted and name not in filled and closed:
             raise ImproperlyConfigured(
                 f"{label}.form_class {form_class.__name__} does not post {name!r}, which the "
