@@ -364,9 +364,13 @@ field:
 - `form_class` over a `FormValidator`, whose form is already the page's;
 - a form defining its own `clean()` or `clean_<field>()`, a rule the page
   would silently not run: it belongs in the Validator. Django's own are
-  allowed.
+  allowed;
+- a field whose choices or string length its parameter does not hold: a
+  `max_length` or `min_length` the parameter does not declare, or declares
+  looser, and choices that are not a subset of the form's. The form only
+  renders, so a rule it alone states would never run.
 
-Choices, lengths, bounds and `nullable` are not compared: the Validator
+Numeric bounds, decimal places and `nullable` are not compared: the Validator
 refuses at the post, in its own words. Under [`actions`](#one-form-several-operations),
 every action shares the page's `form_class`, over any Validator but a
 `FormValidator`, and each is checked as above.
