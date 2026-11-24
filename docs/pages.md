@@ -285,6 +285,20 @@ The URLconf routes it as `books/shelve/`. A signed-in user who is not staff is
 offered only the authors already on the shelves, and a post naming another is
 refused on the author field; staff are offered every author.
 
+**A plain form is handed the row it acts on only if its `__init__` names
+`instance`**, as a parameter of its own, not inside `**kwargs`:
+
+```python
+--8<--
+docs/examples/recipes.py:instance
+--8<--
+```
+
+The page passes `instance` as the found row, or `None` on a create, to a form
+whose signature names it. A form that takes `**kwargs` alone is never handed
+it, so `kwargs.pop("instance")` raises `KeyError` on every request. A
+`ModelForm` takes `instance` as Django does, and is handed a copy of the row.
+
 ## A form over any Validator
 
 A spec validated by a `DataclassValidator`, a `PydanticValidator` or any other
@@ -906,7 +920,9 @@ bodies and a cache keyed on fewer would hand a fragment to a page load.
   defines `spec-result`, that is rendered in place at 200, and
   `HX-Trigger: spec-succeeded` names an event for the rest of the page to
   listen for. Its context is `result`, `view`, `spec` and `extra_context`, and
-  no `form`, since the post's form is done with. Otherwise it is `HX-Redirect`
+  no `form`, since the post's form is done with. `result` is the kernel's
+  `DispatchResult`, so a template reads the service's answer as `result.value`:
+  the `spec-result` above renders `Added {{ result.value.title }}.` Otherwise it is `HX-Redirect`
   to a safe `next` when the page reads one, else to `get_success_url(result)`,
   at 200 and never a 302: an XHR follows a 302
   itself and would swap the next page into the form. The URL is encoded and
@@ -1177,6 +1193,32 @@ takes none, such as `SpecFormSetView`. On `SpecFormView` every action is
 validated by a `FormValidator` of one form class, or shares the page's
 [`form_class`](#a-form-over-any-validator), since the page posts one form, and
 no key is the name of one of its fields, which every submit posts.
+
+### One operation over several areas
+
+An operation kept as one spec per area - a club's and a section's, each
+finding its own target through its own route kwarg - is two `as_view()`
+mounts, one per route. Where the two routes should share one view name, or
+one URL entry, a function in the URLconf picks between the two views by the
+route kwarg the request captured:
+
+```python
+--8<--
+docs/examples/recipes.py:areas
+--8<--
+```
+
+```python
+--8<--
+docs/examples/recipes.py:urls
+--8<--
+```
+
+Each `as_view()` is checked when the URLconf is imported, as any page's is,
+so a spec the view refuses fails at import, not on the request that reaches
+it. Each page keeps what its own spec gives it: its form, its target, its
+affordances and its admission. Nothing is shared between the two but the
+URLconf's choice.
 
 ## A post that does not commit
 
