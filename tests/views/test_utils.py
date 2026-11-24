@@ -1392,10 +1392,13 @@ class TestTheRefresh:
         assert response["Vary"] == VARY
 
     @pytest.mark.usefixtures("result_fragment")
-    def test_a_refresh_carries_the_trigger_htmx_fires_before_it_reloads(self) -> None:
-        response = trigger_posted(trigger_page(success_refresh=True))
+    @pytest.mark.parametrize("trigger", [{}, {"success_trigger": {"saved": {"id": 1}}}])
+    def test_a_refresh_sends_no_trigger_nothing_survives_to_handle(
+        self, trigger: dict[str, Any]
+    ) -> None:
+        response = trigger_posted(trigger_page(success_refresh=True, **trigger))
         assert response.content == b""
-        assert hx_headers(response) == {"HX-Trigger": "spec-succeeded", "HX-Refresh": "true"}
+        assert hx_headers(response) == {"HX-Refresh": "true"}
 
 
 @pytest.mark.usefixtures("result_fragment")
@@ -1410,8 +1413,6 @@ class TestCheckedAtAsView:
             ({"success_trigger": {1: 1}}, "success_trigger must be"),
             ({"success_trigger_timing": "load"}, "success_trigger_timing must be"),
             ({"success_refresh": 1}, "success_refresh must be"),
-            ({"success_refresh": True, "success_trigger_timing": "swap"}, "never fires"),
-            ({"success_refresh": True, "success_trigger_timing": "settle"}, "never fires"),
         ],
     )
     def test_a_value_the_page_cannot_send_is_refused(
@@ -1424,7 +1425,6 @@ class TestCheckedAtAsView:
         with pytest.raises(ImproperlyConfigured, match="success_trigger_timing must be"):
             trigger_page().as_view(spec=save_spec(), success_trigger_timing="load")
 
-    def test_a_refresh_without_a_trigger_takes_any_timing(self) -> None:
-        trigger_page(
-            success_refresh=True, success_trigger=None, success_trigger_timing="swap"
-        ).as_view(spec=save_spec())
+    @pytest.mark.parametrize("timing", ["swap", "settle"])
+    def test_a_refresh_takes_any_timing(self, timing: str) -> None:
+        trigger_page(success_refresh=True, success_trigger_timing=timing).as_view(spec=save_spec())

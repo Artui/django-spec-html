@@ -65,6 +65,7 @@ from django_service_specs import (
     UnknownArguments,
     ValidationContext,
     Validator,
+    string_lengths,
     update_from_input,
 )
 
@@ -4853,12 +4854,6 @@ class TestAFormClassOverADataclassValidator:
         assert (response.status_code, set(errors)) == (200, {"pages"})
 
 
-@dataclasses.dataclass
-class TagRow:
-    key: str
-    count: int
-
-
 class TagForm(forms.ModelForm):
     count = forms.IntegerField()
 
@@ -4867,12 +4862,17 @@ class TagForm(forms.ModelForm):
         fields = ("key",)
 
 
+def tag_spec() -> ServiceSpec:
+    key = Parameter("key", "string", required=True, json_schema_extra=string_lengths(max_length=50))
+    return form_class_book_spec(Declared(key, Parameter("count", "integer", required=True)))
+
+
 @override_settings(ROOT_URLCONF=__name__)
 class TestAModelFormClassRunsNoQuery(TestCase):
     def setUp(self) -> None:
         self.ada = make_user("ada")
         Tag.objects.create(key="red")
-        self.spec = form_class_book_spec(DataclassValidator(TagRow))
+        self.spec = tag_spec()
 
     def test_a_refused_post_asks_no_uniqueness(self) -> None:
         view = page(self.spec, TagForm)
@@ -5219,7 +5219,7 @@ class TestAsViewRefuses:
         )
 
     def test_a_model_form_s_own_clean_is_django_s(self) -> None:
-        page(form_class_book_spec(DataclassValidator(TagRow)), TagForm)
+        page(tag_spec(), TagForm)
 
     def test_a_commit_button_named_like_a_field_of_the_form_class(self) -> None:
         message = refusal(form_class_book_spec(), BookForm, commit_button="title")

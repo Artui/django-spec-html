@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-11-24
+
+### Changed
+- **A success answered with `HX-Refresh` sends no trigger.** With `success_refresh = True`
+  the response carried `HX-Trigger: spec-succeeded`, or the page's own trigger, beside the
+  refresh, though the reload replaces every listener that could handle it. It now carries
+  `HX-Refresh: true` alone. `as_view()` no longer refuses a refresh with a trigger timed to
+  `"swap"` or `"settle"`, since no timing is sent.
+- **`as_view()` holds a `form_class` to the spec's string lengths and choices.** A
+  `form_class` only renders, so a rule only the form states was never run: a form's
+  `max_length=100` over a parameter with no length let a longer value through to the
+  database. `SpecFormView` and `SpecFormSetView` now refuse a field whose string length
+  (`max_length`, or `min_length` on a required field) or choices the spec's parameter does
+  not hold: no `maxLength` or `minLength`, or a looser one, and choices that are not a
+  subset of the form's. 0.15.0 accepted these forms; a spec as tight as the form, or
+  tighter, still passes. Lengths nobody wrote count too: a `ModelForm` field over a
+  `CharField` or `EmailField` column states the column's length, and a bare
+  `forms.EmailField()` states 320, so their parameters need one. Tighten the spec with
+  `Annotated[str, MaxLen(n)]` (or `MinLen`, `Len`) on a `DataclassValidator`, pydantic's
+  `Field(max_length=n)`, or `json_schema_extra=string_lengths(max_length=n)` on a
+  hand-built `Parameter`, which states `maxLength` and `minLength`. Numeric bounds are not
+  compared, so a `PositiveIntegerField`'s `min_value=0` asks nothing of the spec. The check
+  is the kernel's `constraints_not_held`.
+- **Requires django-service-specs 0.38.0**, for `constraints_not_held`.
+
 ### Fixed
 - **`SpecFormView.as_view()` counts a parameter an untyped provider fills.** A
   `form_class` that does not post a required parameter was refused unless a provider was
@@ -997,7 +1022,8 @@ form.
   so a refused post answers at the status a JSON client reads for the same
   refusal.
 
-[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/Artui/django-spec-html/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/Artui/django-spec-html/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/Artui/django-spec-html/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Artui/django-spec-html/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Artui/django-spec-html/compare/v0.12.0...v0.13.0

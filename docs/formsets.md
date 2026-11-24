@@ -223,6 +223,20 @@ docs/examples/spec_form_set_edit.py:urls
   spec with no `collection_selector_spec`, which would otherwise build every
   row of the model.
 
+**A new row of a tenant's set takes its tenant in the row form.** A model
+formset's blank form builds its own instance, and the tenant key is no field
+of the form, so nothing sets it for the form's own `clean()` and widgets to
+read as `self.instance.author`. The row form takes the tenant
+from the `FormValidator`'s `form_kwargs` and sets it on a row that has no key yet:
+
+```python
+--8<--
+docs/examples/recipes.py:tenant
+--8<--
+```
+
+A row already in the set keeps the tenant it has.
+
 ## A success
 
 A success redirects to `success_url`, or answers `HX-Redirect` or the result

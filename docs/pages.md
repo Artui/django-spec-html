@@ -285,6 +285,20 @@ The URLconf routes it as `books/shelve/`. A signed-in user who is not staff is
 offered only the authors already on the shelves, and a post naming another is
 refused on the author field; staff are offered every author.
 
+**A plain form is handed the row it acts on only if its `__init__` names
+`instance`**, as a parameter of its own, not inside `**kwargs`:
+
+```python
+--8<--
+docs/examples/recipes.py:instance
+--8<--
+```
+
+The page passes `instance` as the found row, or `None` on a create, to a form
+whose signature names it. A form that takes `**kwargs` alone is never handed
+it, so `kwargs.pop("instance")` raises `KeyError` on every request. A
+`ModelForm` takes `instance` as Django does, and is handed a copy of the row.
+
 ## A form over any Validator
 
 A spec validated by a `DataclassValidator`, a `PydanticValidator` or any other
@@ -350,10 +364,23 @@ field:
 - `form_class` over a `FormValidator`, whose form is already the page's;
 - a form defining its own `clean()` or `clean_<field>()`, a rule the page
   would silently not run: it belongs in the Validator. Django's own are
-  allowed.
+  allowed;
+- a field whose choices or string length its parameter does not hold: a
+  `max_length` or `min_length` the parameter does not declare in
+  `maxLength`/`minLength`, or declares looser, and choices that are not a
+  subset of the form's. The form only renders, so a rule it alone states would
+  never run. On a `Parameter`, `max_length` counts array elements and is
+  refused on a string, so tighten the spec with `Annotated[str, MaxLen(n)]`,
+  `MinLen` or `Len` on a `DataclassValidator`, pydantic's
+  `Field(max_length=n)`, or `json_schema_extra=string_lengths(max_length=n)`
+  on a hand-built `Parameter` (`string_lengths` is at the kernel's root).
+  Every `ModelForm` field over a `CharField` or `EmailField` column states
+  the column's length, and `forms.EmailField()` states 320, so those
+  parameters need a length too.
 
-Choices, lengths, bounds and `nullable` are not compared: the Validator
-refuses at the post, in its own words. Under [`actions`](#one-form-several-operations),
+Numeric bounds, decimal places and `nullable` are not compared, so a bound
+only the form states is never enforced: declare it on the Validator, which
+refuses at the post in its own words. Under [`actions`](#one-form-several-operations),
 every action shares the page's `form_class`, over any Validator but a
 `FormValidator`, and each is checked as above.
 
@@ -614,6 +641,13 @@ answers before the tool runs, and keep the spec's tool out of its `exempt`
 list.
 
 ## What the request carries
+
+A spec that a django-spec-rest viewset also serves is handed this page as its
+`view` and the Django request as its `request`. A permission class reading
+`view.kwargs` or `request.user` works on both mounts, and one calling a method
+of the DRF view does not: spec-rest's
+[serving a spec on a spec-html page](https://artui.github.io/django-spec-rest/recipes/one-spec-on-a-page/)
+shows the bridge, and the way that needs none.
 
 The page reads the request as [the JSON views](http.md#what-the-request-carries)
 do, with the same attributes and hooks, checked by the same code:
@@ -906,7 +940,9 @@ bodies and a cache keyed on fewer would hand a fragment to a page load.
   defines `spec-result`, that is rendered in place at 200, and
   `HX-Trigger: spec-succeeded` names an event for the rest of the page to
   listen for. Its context is `result`, `view`, `spec` and `extra_context`, and
-  no `form`, since the post's form is done with. Otherwise it is `HX-Redirect`
+  no `form`, since the post's form is done with. `result` is the kernel's
+  `DispatchResult`, so a template reads the service's answer as `result.value`:
+  the `spec-result` above renders `Added {{ result.value.title }}.` Otherwise it is `HX-Redirect`
   to a safe `next` when the page reads one, else to `get_success_url(result)`,
   at 200 and never a 302: an XHR follows a 302
   itself and would swap the next page into the form. The URL is encoded and
@@ -925,7 +961,7 @@ every page with a post, shape the success answered in place:
 | --- | --- | --- |
 | `success_trigger` | `"spec-succeeded"` | an event's name as it is; a mapping of event names to payloads as the JSON htmx reads, each payload the event's `detail`; `None` sends no trigger |
 | `success_trigger_timing` | `"receive"` | the trigger in `HX-Trigger`; `"swap"` in `HX-Trigger-After-Swap`, `"settle"` in `HX-Trigger-After-Settle` |
-| `success_refresh` | `False` | `HX-Refresh: true` and an empty body in place of the result fragment, which the page then need not define, with the trigger beside it |
+| `success_refresh` | `False` | `HX-Refresh: true` and an empty body in place of the result fragment, which the page then need not define, and no trigger: nothing on the page survives the reload to handle one |
 
 `get_success_trigger(result)` returns `success_trigger`; override it for a
 payload that depends on the result:
@@ -944,9 +980,8 @@ escaped, so the header carries it whole. `as_view()` refuses an empty name, a
 mapping with no names or a key that is not one, a timing that is not one of
 the three, and a `success_refresh` that is not a bool. Whether a payload
 encodes is known only when it is sent, so one that does not raises
-`ImproperlyConfigured` then. A refresh with a trigger timed to `"swap"` or
-`"settle"` is refused at `as_view()`: htmx fires `HX-Trigger` and then
-reloads, so a trigger waiting for a swap never fires. None of these reaches a
+`ImproperlyConfigured` then. A refresh sends no trigger at any timing, since
+the reload replaces every listener that could handle it. None of these reaches a
 post without htmx, which is redirected as before, nor an `HX-Redirect`.
 
 **A template with no fragment at the address** answers htmx with Django's
@@ -1178,6 +1213,32 @@ takes none, such as `SpecFormSetView`. On `SpecFormView` every action is
 validated by a `FormValidator` of one form class, or shares the page's
 [`form_class`](#a-form-over-any-validator), since the page posts one form, and
 no key is the name of one of its fields, which every submit posts.
+
+### One operation over several areas
+
+An operation kept as one spec per area - a club's and a section's, each
+finding its own target through its own route kwarg - is two `as_view()`
+mounts, one per route. Where the two routes should share one view name, or
+one URL entry, a function in the URLconf picks between the two views by the
+route kwarg the request captured:
+
+```python
+--8<--
+docs/examples/recipes.py:areas
+--8<--
+```
+
+```python
+--8<--
+docs/examples/recipes.py:urls
+--8<--
+```
+
+Each `as_view()` is checked when the URLconf is imported, as any page's is,
+so a spec the view refuses fails at import, not on the request that reaches
+it. Each page keeps what its own spec gives it: its form, its target, its
+affordances and its admission. Nothing is shared between the two but the
+URLconf's choice.
 
 ## A post that does not commit
 

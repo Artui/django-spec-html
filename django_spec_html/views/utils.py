@@ -58,6 +58,7 @@ from django_service_specs import (
     Grant,
     InvalidArguments,
     NotPermitted,
+    Parameter,
     Parameters,
     PoolSeeds,
     PresentationContext,
@@ -80,6 +81,7 @@ from django_service_specs import (
     check_arguments,
     check_requested_input,
     coerce_flat,
+    constraints_not_held,
     dispatch,
     enforce_affordances,
     file_output,
@@ -462,11 +464,11 @@ class SpecPageBase(SpecRequestBase, metaclass=ABCMeta):
         return self.success_trigger
 
     def fragment_success(self, result: DispatchResult) -> HttpResponse:
-        """A success, answered to the htmx request that posted it."""
+        """A success, answered to the htmx request that posted it; a reload sends no trigger."""
         if self.success_refresh:
             response = HttpResponse()
             response["HX-Refresh"] = "true"
-            return self._triggered(response, result)
+            return response
         try:
             template = select_template(
                 [_address(name, _SPEC_RESULT) for name in self.get_fragment_template_names()],
@@ -749,11 +751,6 @@ def _check_success_trigger(
     refresh = initkwargs.get("success_refresh", cls.success_refresh)
     if not isinstance(refresh, bool):
         raise ImproperlyConfigured(f"{label}.success_refresh must be a bool; got {refresh!r}.")
-    if refresh and trigger is not None and timing != "receive":
-        raise ImproperlyConfigured(
-            f"{label} refreshes on success, so a trigger timed to {timing!r} never fires: "
-            "htmx reloads the page before any swap. Time it to 'receive'."
-        )
 
 
 def _sendable(trigger: Any) -> bool:
@@ -1306,6 +1303,7 @@ def checked_page_form(
                 "dispatch as an unknown argument."
             )
         _check_agreement(named, field, parameters[name])
+        _check_constraints(named, field, parameters[name])
     return posted
 
 
@@ -1338,6 +1336,18 @@ def _check_agreement(named: str, field: Any, parameter: Any) -> None:
             f"{named} {verb} {field.name!r}, and the spec {spec_verb}: the form and the spec "
             "must agree on whether it may be left out."
         )
+
+
+_TIGHT: Final = (
+    "The form only renders, so the spec must be at least as tight as the form: declare it on "
+    "the spec's Validator."
+)
+
+
+def _check_constraints(named: str, posted: Parameter, parameter: Parameter) -> None:
+    """Refuse a string length or choice set the form states and the spec does not hold."""
+    for missed in constraints_not_held(parameter, posted):
+        raise ImproperlyConfigured(f"{named} posts {missed} {_TIGHT}")
 
 
 def _shape(parameter: Any, fmt: str | None) -> tuple[Any, ...]:
