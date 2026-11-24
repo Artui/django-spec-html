@@ -642,6 +642,13 @@ list.
 
 ## What the request carries
 
+A spec that a django-spec-rest viewset also serves is handed this page as its
+`view` and the Django request as its `request`. A permission class reading
+`view.kwargs` or `request.user` works on both mounts, and one calling a method
+of the DRF view does not: spec-rest's
+[serving a spec on a spec-html page](https://artui.github.io/django-spec-rest/recipes/one-spec-on-a-page/)
+shows the bridge, and the way that needs none.
+
 The page reads the request as [the JSON views](http.md#what-the-request-carries)
 do, with the same attributes and hooks, checked by the same code:
 
