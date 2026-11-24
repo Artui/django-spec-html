@@ -4510,7 +4510,7 @@ def stack(settings: Any) -> Callable[..., Any]:
 
     def posted(view: Any, user: Any, data: Mapping[str, Any], **headers: str) -> Any:
         urls = types.ModuleType("one_page_urls")
-        urls.urlpatterns = [path("page/", view), *urlpatterns]  # ty: ignore[unresolved-attribute]
+        urls.urlpatterns = [path("page/", view), *urlpatterns]  # ty: ignore[missing-attribute]
         settings.ROOT_URLCONF = urls
         client = Client()
         client.force_login(user)
@@ -4626,7 +4626,7 @@ def calls(spec: ServiceSpec) -> list[dict[str, Any]]:
 def request_for(data: Any = None, **extra: Any) -> Any:
     raw = FACTORY.get("/", **extra) if data is None else FACTORY.post("/", data=data, **extra)
     request = signed_in(raw, make_user("ada"))
-    request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+    request._messages = CookieStorage(request)  # ty: ignore[missing-attribute]
     return request
 
 

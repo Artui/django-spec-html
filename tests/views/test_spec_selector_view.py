@@ -179,7 +179,7 @@ class TestAsView:
 
     def test_an_async_hook_is_refused_by_the_check_every_view_makes(self) -> None:
         class Seeded(SpecSelectorView):
-            async def get_pool_seeds(self, request: Any) -> Any:  # ty: ignore[invalid-method-override]
+            async def get_pool_seeds(self, request: Any) -> Any:  # ty: ignore[incompatible-method-override]
                 return TENANT_SEEDS
 
         with pytest.raises(ImproperlyConfigured, match=r"Seeded.get_pool_seeds is async"):
@@ -1430,7 +1430,7 @@ class TestTheQueryHook:
 
     def test_an_async_hook_is_refused(self) -> None:
         class Awaited(SpecSelectorView):
-            async def get_query(self, request: HttpRequest) -> QueryDict:  # ty: ignore[invalid-method-override]
+            async def get_query(self, request: HttpRequest) -> QueryDict:  # ty: ignore[incompatible-method-override]
                 return request.GET
 
         with pytest.raises(ImproperlyConfigured) as refused:

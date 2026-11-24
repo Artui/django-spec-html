@@ -128,7 +128,7 @@ def calls(spec: ServiceSpec) -> list[dict[str, Any]]:
 def request_for(data: Any = None, **extra: Any) -> Any:
     raw = FACTORY.get("/", **extra) if data is None else FACTORY.post("/", data=data, **extra)
     request = signed_in(raw, make_user("ada"))
-    request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+    request._messages = CookieStorage(request)  # ty: ignore[missing-attribute]
     return request
 
 
@@ -657,7 +657,7 @@ class TestARefusedPostKeepsEachActionsState:
     def test_the_refused_post_s_fragment_keeps_each_action_s_state(self, note: Note) -> None:
         raw = FACTORY.post("/", data=BLANK_SAVE, HTTP_HX_REQUEST="true")
         request = signed_in(raw, make_user("ada"))
-        request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+        request._messages = CookieStorage(request)  # ty: ignore[missing-attribute]
         response = save_then(row_spec(TITLED))(request, pk=str(note.pk))
         html = rendered(response)
         assert "<html" not in html
@@ -1146,7 +1146,7 @@ def route_get(view: Any, user: Any, direction: str) -> Any:
 
 def route_posted(data: Mapping[str, Any], user: Any) -> Any:
     request = signed_in(FACTORY.post("/", data=data), user)
-    request._messages = CookieStorage(request)  # ty: ignore[unresolved-attribute]
+    request._messages = CookieStorage(request)  # ty: ignore[missing-attribute]
     return request
 
 

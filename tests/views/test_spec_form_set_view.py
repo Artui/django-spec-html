@@ -791,7 +791,7 @@ def stack(settings: Any) -> Callable[..., Any]:
 
     def through(view: Any, user: Any, data: Mapping[str, Any]) -> Any:
         urls = types.ModuleType("one_page_urls")
-        urls.urlpatterns = [path("page/", view), *urlpatterns]  # ty: ignore[unresolved-attribute]
+        urls.urlpatterns = [path("page/", view), *urlpatterns]  # ty: ignore[missing-attribute]
         settings.ROOT_URLCONF = urls
         client = Client()
         client.force_login(user)
