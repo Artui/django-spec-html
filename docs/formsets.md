@@ -227,8 +227,7 @@ docs/examples/spec_form_set_edit.py:urls
 formset's blank form builds its own instance, and the tenant key is no field
 of the form, so nothing sets it for the form's own `clean()` and widgets to
 read as `self.instance.author`. The row form takes the tenant
-from `form_kwargs` (a `FormValidator`'s, or `get_form_kwargs()` on a page
-naming a `form_class`) and sets it on a row that has no key yet:
+from the `FormValidator`'s `form_kwargs` and sets it on a row that has no key yet:
 
 ```python
 --8<--

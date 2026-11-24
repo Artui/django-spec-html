@@ -33,6 +33,12 @@ class RetitleForm(forms.Form):
 # --8<-- [end:instance]
 
 
+class PoppingForm(RetitleForm):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.pop("instance")
+        super().__init__(*args, **kwargs)
+
+
 # --8<-- [start:tenant]
 class TenantRowForm(forms.ModelForm):
     class Meta:
@@ -159,6 +165,13 @@ retitle_spec = ServiceSpec(
     ),
 )
 
+popping_spec = ServiceSpec(
+    service=retitle,
+    permissions=[Unrestricted()],
+    validator=FormValidator(PoppingForm),
+    instance_selector_spec=retitle_spec.instance_selector_spec,
+)
+
 # --8<-- [start:urls]
 urlpatterns = [
     path("clubs/<int:club>/add/", add_to_an_area),
@@ -170,6 +183,10 @@ urlpatterns += [
     path(
         "books/<int:pk>/retitle/",
         SpecFormView.as_view(spec=retitle_spec, route_kwargs=("pk",), success_url="/done/"),
+    ),
+    path(
+        "books/<int:pk>/popping/",
+        SpecFormView.as_view(spec=popping_spec, route_kwargs=("pk",), success_url="/done/"),
     ),
     path("books/keep/", SpecFormSetView.as_view(spec=keep_books_spec, success_url="/done/")),
 ]
