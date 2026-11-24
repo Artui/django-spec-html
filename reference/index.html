@@ -3589,7 +3589,7 @@ it in place.</p>
                 <p>The event a success answered in place triggers, read
 by <code>get_success_trigger</code>: an event's name, a mapping of event
 names to payloads, or <code>None</code> for none; <code>"spec-succeeded"</code> by
-default, checked at <code>as_view()</code>.</p>
+default, checked at <code>as_view()</code>. A refresh sends none.</p>
               </div>
             </td>
           </tr>
@@ -3614,8 +3614,8 @@ the default, <code>"swap"</code> or <code>"settle"</code>, for <code>HX-Trigger<
             <td>
               <div class="doc-md-description">
                 <p>Whether a success answered in place is <code>HX-Refresh</code>
-and an empty body in place of the result fragment: <code>False</code> by
-default, checked at <code>as_view()</code>.</p>
+and an empty body in place of the result fragment, with no trigger:
+<code>False</code> by default, checked at <code>as_view()</code>.</p>
               </div>
             </td>
           </tr>
@@ -3956,7 +3956,7 @@ default, checked at <code>as_view()</code>.</p>
 
     <div class="doc doc-contents ">
 
-        <p>A success, answered to the htmx request that posted it.</p>
+        <p>A success, answered to the htmx request that posted it; a reload sends no trigger.</p>
 
 
     </div>
@@ -4362,7 +4362,7 @@ redirects to <code>get_refusal_url</code>, its messages sent through
                 <p>The event a success answered in place triggers, read
 by <code>get_success_trigger</code>: an event's name, a mapping of event
 names to payloads, or <code>None</code> for none; <code>"spec-succeeded"</code> by
-default, checked at <code>as_view()</code>.</p>
+default, checked at <code>as_view()</code>. A refresh sends none.</p>
               </div>
             </td>
           </tr>
@@ -4387,8 +4387,8 @@ the default, <code>"swap"</code> or <code>"settle"</code>, for <code>HX-Trigger<
             <td>
               <div class="doc-md-description">
                 <p>Whether a success answered in place is <code>HX-Refresh</code>
-and an empty body in place of the result fragment: <code>False</code> by
-default, checked at <code>as_view()</code>.</p>
+and an empty body in place of the result fragment, with no trigger:
+<code>False</code> by default, checked at <code>as_view()</code>.</p>
               </div>
             </td>
           </tr>
@@ -4756,7 +4756,7 @@ Override it to read the result, under <code>result.value</code>.</p>
 
     <div class="doc doc-contents ">
 
-        <p>A success, answered to the htmx request that posted it.</p>
+        <p>A success, answered to the htmx request that posted it; a reload sends no trigger.</p>
 
 
     </div>
@@ -5099,7 +5099,7 @@ did not match would; <code>False</code> answers it as 0.12.0 did.</p>
                 <p>The event a success answered in place triggers, read
 by <code>get_success_trigger</code>: an event's name, a mapping of event
 names to payloads, or <code>None</code> for none; <code>"spec-succeeded"</code> by
-default, checked at <code>as_view()</code>.</p>
+default, checked at <code>as_view()</code>. A refresh sends none.</p>
               </div>
             </td>
           </tr>
@@ -5124,8 +5124,8 @@ the default, <code>"swap"</code> or <code>"settle"</code>, for <code>HX-Trigger<
             <td>
               <div class="doc-md-description">
                 <p>Whether a success answered in place is <code>HX-Refresh</code>
-and an empty body in place of the result fragment: <code>False</code> by
-default, checked at <code>as_view()</code>.</p>
+and an empty body in place of the result fragment, with no trigger:
+<code>False</code> by default, checked at <code>as_view()</code>.</p>
               </div>
             </td>
           </tr>
@@ -5475,7 +5475,7 @@ or the result, under <code>result.value</code>.</p>
 
     <div class="doc doc-contents ">
 
-        <p>A success, answered to the htmx request that posted it.</p>
+        <p>A success, answered to the htmx request that posted it; a reload sends no trigger.</p>
 
 
     </div>
